@@ -19,6 +19,8 @@ pub mod perax_core {
 
         let state = &mut ctx.accounts.state;
         state.authority = ctx.accounts.authority.key();
+        state.pending_authority = Pubkey::default();
+        state.has_pending_authority = false;
         state.token_mint = params.token_mint;
         state.treasury = params.treasury;
         state.utility_vault = params.utility_vault;
@@ -90,6 +92,59 @@ pub mod perax_core {
         emit!(PauseStatusChanged {
             authority: state.authority,
             is_paused,
+        });
+
+        Ok(())
+    }
+
+    pub fn nominate_authority(ctx: Context<UpdateConfig>, new_authority: Pubkey) -> Result<()> {
+        require!(new_authority != Pubkey::default(), PeraxError::InvalidAuthority);
+
+        let state = &mut ctx.accounts.state;
+        require!(new_authority != state.authority, PeraxError::InvalidAuthority);
+
+        state.pending_authority = new_authority;
+        state.has_pending_authority = true;
+
+        emit!(AuthorityTransferNominated {
+            current_authority: state.authority,
+            pending_authority: state.pending_authority,
+        });
+
+        Ok(())
+    }
+
+    pub fn cancel_authority_transfer(ctx: Context<UpdateConfig>) -> Result<()> {
+        let state = &mut ctx.accounts.state;
+        require!(state.has_pending_authority, PeraxError::NoPendingAuthority);
+
+        let cancelled_authority = state.pending_authority;
+        state.pending_authority = Pubkey::default();
+        state.has_pending_authority = false;
+
+        emit!(AuthorityTransferCancelled {
+            authority: state.authority,
+            cancelled_authority,
+        });
+
+        Ok(())
+    }
+
+    pub fn accept_authority(ctx: Context<AcceptAuthority>) -> Result<()> {
+        let state = &mut ctx.accounts.state;
+        let new_authority = ctx.accounts.pending_authority.key();
+
+        require!(state.has_pending_authority, PeraxError::NoPendingAuthority);
+        require!(state.pending_authority == new_authority, PeraxError::Unauthorized);
+
+        let previous_authority = state.authority;
+        state.authority = new_authority;
+        state.pending_authority = Pubkey::default();
+        state.has_pending_authority = false;
+
+        emit!(AuthorityTransferAccepted {
+            previous_authority,
+            new_authority,
         });
 
         Ok(())
@@ -231,6 +286,18 @@ pub struct UpdateConfig<'info> {
 }
 
 #[derive(Accounts)]
+pub struct AcceptAuthority<'info> {
+    #[account(
+        mut,
+        seeds = [b"perax-state"],
+        bump = state.bump
+    )]
+    pub state: Account<'info, PeraxState>,
+
+    pub pending_authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
 pub struct RecordUtilityPayment<'info> {
     #[account(
         seeds = [b"perax-state"],
@@ -307,6 +374,8 @@ impl<'info> PayWithSplit<'info> {
 #[derive(InitSpace)]
 pub struct PeraxState {
     pub authority: Pubkey,
+    pub pending_authority: Pubkey,
+    pub has_pending_authority: bool,
     pub token_mint: Pubkey,
     pub treasury: Pubkey,
     pub utility_vault: Pubkey,
@@ -342,6 +411,24 @@ pub struct ConfigUpdated {
 pub struct PauseStatusChanged {
     pub authority: Pubkey,
     pub is_paused: bool,
+}
+
+#[event]
+pub struct AuthorityTransferNominated {
+    pub current_authority: Pubkey,
+    pub pending_authority: Pubkey,
+}
+
+#[event]
+pub struct AuthorityTransferCancelled {
+    pub authority: Pubkey,
+    pub cancelled_authority: Pubkey,
+}
+
+#[event]
+pub struct AuthorityTransferAccepted {
+    pub previous_authority: Pubkey,
+    pub new_authority: Pubkey,
 }
 
 #[event]
@@ -387,4 +474,8 @@ pub enum PeraxError {
     InvalidUtilityVault,
     #[msg("The payment amount is above the configured maximum payment amount.")]
     PaymentAmountTooLarge,
+    #[msg("The new authority is invalid.")]
+    InvalidAuthority,
+    #[msg("There is no pending authority transfer.")]
+    NoPendingAuthority,
 }
