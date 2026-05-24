@@ -24,6 +24,7 @@ pub mod perax_core {
         state.utility_vault = params.utility_vault;
         state.burn_bps = params.burn_bps;
         state.treasury_bps = params.treasury_bps;
+        state.max_payment_amount = params.max_payment_amount;
         state.is_paused = false;
         state.bump = ctx.bumps.state;
 
@@ -34,6 +35,7 @@ pub mod perax_core {
             utility_vault: state.utility_vault,
             burn_bps: state.burn_bps,
             treasury_bps: state.treasury_bps,
+            max_payment_amount: state.max_payment_amount,
         });
 
         Ok(())
@@ -60,6 +62,10 @@ pub mod perax_core {
             state.treasury_bps = treasury_bps;
         }
 
+        if let Some(max_payment_amount) = params.max_payment_amount {
+            state.max_payment_amount = max_payment_amount;
+        }
+
         require!(
             state.burn_bps.saturating_add(state.treasury_bps) <= MAX_BPS,
             PeraxError::InvalidBasisPoints
@@ -71,6 +77,7 @@ pub mod perax_core {
             utility_vault: state.utility_vault,
             burn_bps: state.burn_bps,
             treasury_bps: state.treasury_bps,
+            max_payment_amount: state.max_payment_amount,
         });
 
         Ok(())
@@ -97,7 +104,7 @@ pub mod perax_core {
     ) -> Result<()> {
         let state = &ctx.accounts.state;
         require!(!state.is_paused, PeraxError::ProgramPaused);
-        require!(amount > 0, PeraxError::InvalidAmount);
+        validate_payment_amount(state, amount)?;
         require!(
             burn_amount.saturating_add(treasury_amount) <= amount,
             PeraxError::InvalidPaymentSplit
@@ -118,7 +125,7 @@ pub mod perax_core {
     pub fn pay_with_split(ctx: Context<PayWithSplit>, amount: u64, reference: [u8; 32]) -> Result<()> {
         let state = &ctx.accounts.state;
         require!(!state.is_paused, PeraxError::ProgramPaused);
-        require!(amount > 0, PeraxError::InvalidAmount);
+        validate_payment_amount(state, amount)?;
 
         let burn_amount = amount
             .checked_mul(state.burn_bps as u64)
@@ -164,6 +171,16 @@ pub mod perax_core {
     }
 }
 
+fn validate_payment_amount(state: &PeraxState, amount: u64) -> Result<()> {
+    require!(amount > 0, PeraxError::InvalidAmount);
+
+    if state.max_payment_amount > 0 {
+        require!(amount <= state.max_payment_amount, PeraxError::PaymentAmountTooLarge);
+    }
+
+    Ok(())
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct InitializeParams {
     pub token_mint: Pubkey,
@@ -171,6 +188,7 @@ pub struct InitializeParams {
     pub utility_vault: Pubkey,
     pub burn_bps: u16,
     pub treasury_bps: u16,
+    pub max_payment_amount: u64,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -179,6 +197,7 @@ pub struct UpdateConfigParams {
     pub utility_vault: Option<Pubkey>,
     pub burn_bps: Option<u16>,
     pub treasury_bps: Option<u16>,
+    pub max_payment_amount: Option<u64>,
 }
 
 #[derive(Accounts)]
@@ -236,13 +255,17 @@ pub struct PayWithSplit<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
 
-    #[account(mut, constraint = payer_token_account.owner == payer.key() @ PeraxError::Unauthorized)]
+    #[account(
+        mut,
+        constraint = payer_token_account.owner == payer.key() @ PeraxError::Unauthorized,
+        constraint = payer_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
+    )]
     pub payer_token_account: Account<'info, TokenAccount>,
 
-    #[account(mut)]
+    #[account(mut, constraint = treasury_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint)]
     pub treasury_token_account: Account<'info, TokenAccount>,
 
-    #[account(mut)]
+    #[account(mut, constraint = utility_vault_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint)]
     pub utility_vault_token_account: Account<'info, TokenAccount>,
 
     #[account(mut)]
@@ -289,6 +312,7 @@ pub struct PeraxState {
     pub utility_vault: Pubkey,
     pub burn_bps: u16,
     pub treasury_bps: u16,
+    pub max_payment_amount: u64,
     pub is_paused: bool,
     pub bump: u8,
 }
@@ -301,6 +325,7 @@ pub struct ConfigInitialized {
     pub utility_vault: Pubkey,
     pub burn_bps: u16,
     pub treasury_bps: u16,
+    pub max_payment_amount: u64,
 }
 
 #[event]
@@ -310,6 +335,7 @@ pub struct ConfigUpdated {
     pub utility_vault: Pubkey,
     pub burn_bps: u16,
     pub treasury_bps: u16,
+    pub max_payment_amount: u64,
 }
 
 #[event]
@@ -359,4 +385,6 @@ pub enum PeraxError {
     InvalidTreasuryAccount,
     #[msg("The utility vault token account does not match the configured utility vault.")]
     InvalidUtilityVault,
+    #[msg("The payment amount is above the configured maximum payment amount.")]
+    PaymentAmountTooLarge,
 }
