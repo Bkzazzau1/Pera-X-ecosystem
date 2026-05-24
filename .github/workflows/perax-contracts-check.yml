@@ -25,6 +25,13 @@ jobs:
         with:
           components: rustfmt
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: perax-contracts/package.json
+
       - name: Cache cargo registry and build
         uses: Swatinem/rust-cache@v2
         with:
@@ -34,6 +41,14 @@ jobs:
         run: |
           rustc --version
           cargo --version
+
+      - name: Install TypeScript dependencies
+        working-directory: perax-contracts
+        run: npm install
+
+      - name: Typecheck Anchor TypeScript tests
+        working-directory: perax-contracts
+        run: npm run typecheck
 
       - name: Normalize formatting
         working-directory: perax-contracts
