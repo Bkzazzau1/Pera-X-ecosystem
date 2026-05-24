@@ -1,6 +1,7 @@
 {
   "scripts": {
-    "test": "anchor test"
+    "test": "anchor test",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.30.1"
