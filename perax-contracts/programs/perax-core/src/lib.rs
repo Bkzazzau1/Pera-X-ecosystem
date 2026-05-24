@@ -492,3 +492,6 @@ pub enum PeraxError {
     #[msg("The payment or decision reference is invalid.")]
     InvalidReference,
 }
+
+#[cfg(test)]
+mod tests;
