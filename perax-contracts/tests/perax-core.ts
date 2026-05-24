@@ -8,15 +8,37 @@ describe("perax-core", () => {
 
   const program = anchor.workspace.PeraxCore as Program;
 
-  it("initializes the Perax state account", async () => {
+  it("initializes the Perax trading company payment configuration", async () => {
     const [state] = anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("perax-state")],
       program.programId
     );
 
-    await program.methods.initialize().accounts({ state }).rpc();
+    const tokenMint = anchor.web3.Keypair.generate().publicKey;
+    const tradingCompanyTokenAccount = anchor.web3.Keypair.generate().publicKey;
+    const maxPaymentAmount = new anchor.BN(1_000_000);
+
+    await program.methods
+      .initialize({
+        tokenMint,
+        tradingCompanyTokenAccount,
+        maxPaymentAmount,
+      })
+      .accounts({
+        state,
+        authority: provider.wallet.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
 
     const account = await program.account.peraxState.fetch(state);
+
     expect(account.authority.toBase58()).to.equal(provider.wallet.publicKey.toBase58());
+    expect(account.tokenMint.toBase58()).to.equal(tokenMint.toBase58());
+    expect(account.tradingCompanyTokenAccount.toBase58()).to.equal(
+      tradingCompanyTokenAccount.toBase58()
+    );
+    expect(account.maxPaymentAmount.toString()).to.equal(maxPaymentAmount.toString());
+    expect(account.isPaused).to.equal(false);
   });
 });
