@@ -3,18 +3,14 @@ use anchor_spl::token::{self, Burn, Mint, Token, TokenAccount, Transfer};
 
 declare_id!("11111111111111111111111111111111");
 
-const MAX_BPS: u16 = 10_000;
-
 #[program]
 pub mod perax_core {
     use super::*;
 
     pub fn initialize(ctx: Context<Initialize>, params: InitializeParams) -> Result<()> {
-        require!(params.burn_bps <= MAX_BPS, PeraxError::InvalidBasisPoints);
-        require!(params.treasury_bps <= MAX_BPS, PeraxError::InvalidBasisPoints);
         require!(
-            params.burn_bps.saturating_add(params.treasury_bps) <= MAX_BPS,
-            PeraxError::InvalidBasisPoints
+            params.trading_company_token_account != Pubkey::default(),
+            PeraxError::InvalidTradingCompanyAccount
         );
 
         let state = &mut ctx.accounts.state;
@@ -22,10 +18,7 @@ pub mod perax_core {
         state.pending_authority = Pubkey::default();
         state.has_pending_authority = false;
         state.token_mint = params.token_mint;
-        state.treasury = params.treasury;
-        state.utility_vault = params.utility_vault;
-        state.burn_bps = params.burn_bps;
-        state.treasury_bps = params.treasury_bps;
+        state.trading_company_token_account = params.trading_company_token_account;
         state.max_payment_amount = params.max_payment_amount;
         state.is_paused = false;
         state.bump = ctx.bumps.state;
@@ -33,10 +26,7 @@ pub mod perax_core {
         emit!(ConfigInitialized {
             authority: state.authority,
             token_mint: state.token_mint,
-            treasury: state.treasury,
-            utility_vault: state.utility_vault,
-            burn_bps: state.burn_bps,
-            treasury_bps: state.treasury_bps,
+            trading_company_token_account: state.trading_company_token_account,
             max_payment_amount: state.max_payment_amount,
         });
 
@@ -46,39 +36,21 @@ pub mod perax_core {
     pub fn update_config(ctx: Context<UpdateConfig>, params: UpdateConfigParams) -> Result<()> {
         let state = &mut ctx.accounts.state;
 
-        if let Some(treasury) = params.treasury {
-            state.treasury = treasury;
-        }
-
-        if let Some(utility_vault) = params.utility_vault {
-            state.utility_vault = utility_vault;
-        }
-
-        if let Some(burn_bps) = params.burn_bps {
-            require!(burn_bps <= MAX_BPS, PeraxError::InvalidBasisPoints);
-            state.burn_bps = burn_bps;
-        }
-
-        if let Some(treasury_bps) = params.treasury_bps {
-            require!(treasury_bps <= MAX_BPS, PeraxError::InvalidBasisPoints);
-            state.treasury_bps = treasury_bps;
+        if let Some(trading_company_token_account) = params.trading_company_token_account {
+            require!(
+                trading_company_token_account != Pubkey::default(),
+                PeraxError::InvalidTradingCompanyAccount
+            );
+            state.trading_company_token_account = trading_company_token_account;
         }
 
         if let Some(max_payment_amount) = params.max_payment_amount {
             state.max_payment_amount = max_payment_amount;
         }
 
-        require!(
-            state.burn_bps.saturating_add(state.treasury_bps) <= MAX_BPS,
-            PeraxError::InvalidBasisPoints
-        );
-
         emit!(ConfigUpdated {
             authority: state.authority,
-            treasury: state.treasury,
-            utility_vault: state.utility_vault,
-            burn_bps: state.burn_bps,
-            treasury_bps: state.treasury_bps,
+            trading_company_token_account: state.trading_company_token_account,
             max_payment_amount: state.max_payment_amount,
         });
 
@@ -150,76 +122,79 @@ pub mod perax_core {
         Ok(())
     }
 
-    pub fn record_utility_payment(
-        ctx: Context<RecordUtilityPayment>,
+    pub fn pay_to_trading_company(
+        ctx: Context<PayToTradingCompany>,
         amount: u64,
-        burn_amount: u64,
-        treasury_amount: u64,
         reference: [u8; 32],
     ) -> Result<()> {
         let state = &ctx.accounts.state;
         require!(!state.is_paused, PeraxError::ProgramPaused);
         validate_payment_amount(state, amount)?;
-        require!(
-            burn_amount.saturating_add(treasury_amount) <= amount,
-            PeraxError::InvalidPaymentSplit
-        );
+        validate_reference(reference)?;
 
-        emit!(UtilityPaymentRecorded {
+        let payment_record = &mut ctx.accounts.payment_record;
+        payment_record.reference = reference;
+        payment_record.payer = ctx.accounts.payer.key();
+        payment_record.amount = amount;
+        payment_record.token_mint = state.token_mint;
+        payment_record.trading_company_token_account = state.trading_company_token_account;
+        payment_record.created_at = Clock::get()?.unix_timestamp;
+        payment_record.bump = ctx.bumps.payment_record;
+
+        token::transfer(ctx.accounts.payment_transfer_ctx(), amount)?;
+
+        emit!(UtilityPaymentReceived {
             payer: ctx.accounts.payer.key(),
             token_mint: state.token_mint,
+            trading_company_token_account: state.trading_company_token_account,
             amount,
-            burn_amount,
-            treasury_amount,
             reference,
         });
 
         Ok(())
     }
 
-    pub fn pay_with_split(ctx: Context<PayWithSplit>, amount: u64, reference: [u8; 32]) -> Result<()> {
+    pub fn record_external_utility_payment(
+        ctx: Context<RecordExternalUtilityPayment>,
+        amount: u64,
+        reference: [u8; 32],
+        payment_source: [u8; 16],
+    ) -> Result<()> {
         let state = &ctx.accounts.state;
         require!(!state.is_paused, PeraxError::ProgramPaused);
         validate_payment_amount(state, amount)?;
+        validate_reference(reference)?;
 
-        let burn_amount = amount
-            .checked_mul(state.burn_bps as u64)
-            .ok_or(PeraxError::MathOverflow)?
-            .checked_div(MAX_BPS as u64)
-            .ok_or(PeraxError::MathOverflow)?;
-
-        let treasury_amount = amount
-            .checked_mul(state.treasury_bps as u64)
-            .ok_or(PeraxError::MathOverflow)?
-            .checked_div(MAX_BPS as u64)
-            .ok_or(PeraxError::MathOverflow)?;
-
-        let utility_amount = amount
-            .checked_sub(burn_amount)
-            .ok_or(PeraxError::MathOverflow)?
-            .checked_sub(treasury_amount)
-            .ok_or(PeraxError::MathOverflow)?;
-
-        if burn_amount > 0 {
-            token::burn(ctx.accounts.burn_ctx(), burn_amount)?;
-        }
-
-        if treasury_amount > 0 {
-            token::transfer(ctx.accounts.treasury_transfer_ctx(), treasury_amount)?;
-        }
-
-        if utility_amount > 0 {
-            token::transfer(ctx.accounts.utility_transfer_ctx(), utility_amount)?;
-        }
-
-        emit!(UtilityPaymentExecuted {
-            payer: ctx.accounts.payer.key(),
+        emit!(ExternalUtilityPaymentRecorded {
+            authority: ctx.accounts.authority.key(),
             token_mint: state.token_mint,
             amount,
-            burn_amount,
-            treasury_amount,
-            utility_amount,
             reference,
+            payment_source,
+        });
+
+        Ok(())
+    }
+
+    pub fn burn_from_trading_company(
+        ctx: Context<BurnFromTradingCompany>,
+        amount: u64,
+        decision_id: [u8; 32],
+    ) -> Result<()> {
+        let state = &ctx.accounts.state;
+        require!(!state.is_paused, PeraxError::ProgramPaused);
+        require!(amount > 0, PeraxError::InvalidAmount);
+        validate_reference(decision_id)?;
+
+        token::burn(ctx.accounts.burn_ctx(), amount)?;
+
+        emit!(TradingCompanyBurnExecuted {
+            authority: ctx.accounts.authority.key(),
+            trading_company_authority: ctx.accounts.trading_company_authority.key(),
+            token_mint: state.token_mint,
+            trading_company_token_account: state.trading_company_token_account,
+            amount,
+            decision_id,
         });
 
         Ok(())
@@ -236,22 +211,21 @@ fn validate_payment_amount(state: &PeraxState, amount: u64) -> Result<()> {
     Ok(())
 }
 
+fn validate_reference(reference: [u8; 32]) -> Result<()> {
+    require!(reference != [0u8; 32], PeraxError::InvalidReference);
+    Ok(())
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct InitializeParams {
     pub token_mint: Pubkey,
-    pub treasury: Pubkey,
-    pub utility_vault: Pubkey,
-    pub burn_bps: u16,
-    pub treasury_bps: u16,
+    pub trading_company_token_account: Pubkey,
     pub max_payment_amount: u64,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct UpdateConfigParams {
-    pub treasury: Option<Pubkey>,
-    pub utility_vault: Option<Pubkey>,
-    pub burn_bps: Option<u16>,
-    pub treasury_bps: Option<u16>,
+    pub trading_company_token_account: Option<Pubkey>,
     pub max_payment_amount: Option<u64>,
 }
 
@@ -298,26 +272,24 @@ pub struct AcceptAuthority<'info> {
 }
 
 #[derive(Accounts)]
-pub struct RecordUtilityPayment<'info> {
-    #[account(
-        seeds = [b"perax-state"],
-        bump = state.bump
-    )]
-    pub state: Account<'info, PeraxState>,
-
-    pub payer: Signer<'info>,
-}
-
-#[derive(Accounts)]
-pub struct PayWithSplit<'info> {
+#[instruction(amount: u64, reference: [u8; 32])]
+pub struct PayToTradingCompany<'info> {
     #[account(
         seeds = [b"perax-state"],
         bump = state.bump,
         constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint,
-        constraint = treasury_token_account.key() == state.treasury @ PeraxError::InvalidTreasuryAccount,
-        constraint = utility_vault_token_account.key() == state.utility_vault @ PeraxError::InvalidUtilityVault
+        constraint = trading_company_token_account.key() == state.trading_company_token_account @ PeraxError::InvalidTradingCompanyAccount
     )]
     pub state: Account<'info, PeraxState>,
+
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + PaymentRecord::SPACE,
+        seeds = [b"payment", reference.as_ref()],
+        bump
+    )]
+    pub payment_record: Account<'info, PaymentRecord>,
 
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -329,11 +301,63 @@ pub struct PayWithSplit<'info> {
     )]
     pub payer_token_account: Account<'info, TokenAccount>,
 
-    #[account(mut, constraint = treasury_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint)]
-    pub treasury_token_account: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        constraint = trading_company_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
+    )]
+    pub trading_company_token_account: Account<'info, TokenAccount>,
 
-    #[account(mut, constraint = utility_vault_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint)]
-    pub utility_vault_token_account: Account<'info, TokenAccount>,
+    pub token_mint: Account<'info, Mint>,
+
+    pub token_program: Program<'info, Token>,
+
+    pub system_program: Program<'info, System>,
+}
+
+impl<'info> PayToTradingCompany<'info> {
+    fn payment_transfer_ctx(&self) -> CpiContext<'_, '_, '_, 'info, Transfer<'info>> {
+        let accounts = Transfer {
+            from: self.payer_token_account.to_account_info(),
+            to: self.trading_company_token_account.to_account_info(),
+            authority: self.payer.to_account_info(),
+        };
+        CpiContext::new(self.token_program.to_account_info(), accounts)
+    }
+}
+
+#[derive(Accounts)]
+pub struct RecordExternalUtilityPayment<'info> {
+    #[account(
+        seeds = [b"perax-state"],
+        bump = state.bump,
+        has_one = authority @ PeraxError::Unauthorized
+    )]
+    pub state: Account<'info, PeraxState>,
+
+    pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct BurnFromTradingCompany<'info> {
+    #[account(
+        seeds = [b"perax-state"],
+        bump = state.bump,
+        has_one = authority @ PeraxError::Unauthorized,
+        constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint,
+        constraint = trading_company_token_account.key() == state.trading_company_token_account @ PeraxError::InvalidTradingCompanyAccount
+    )]
+    pub state: Account<'info, PeraxState>,
+
+    pub authority: Signer<'info>,
+
+    pub trading_company_authority: Signer<'info>,
+
+    #[account(
+        mut,
+        constraint = trading_company_token_account.owner == trading_company_authority.key() @ PeraxError::Unauthorized,
+        constraint = trading_company_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
+    )]
+    pub trading_company_token_account: Account<'info, TokenAccount>,
 
     #[account(mut)]
     pub token_mint: Account<'info, Mint>,
@@ -341,30 +365,12 @@ pub struct PayWithSplit<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-impl<'info> PayWithSplit<'info> {
+impl<'info> BurnFromTradingCompany<'info> {
     fn burn_ctx(&self) -> CpiContext<'_, '_, '_, 'info, Burn<'info>> {
         let accounts = Burn {
             mint: self.token_mint.to_account_info(),
-            from: self.payer_token_account.to_account_info(),
-            authority: self.payer.to_account_info(),
-        };
-        CpiContext::new(self.token_program.to_account_info(), accounts)
-    }
-
-    fn treasury_transfer_ctx(&self) -> CpiContext<'_, '_, '_, 'info, Transfer<'info>> {
-        let accounts = Transfer {
-            from: self.payer_token_account.to_account_info(),
-            to: self.treasury_token_account.to_account_info(),
-            authority: self.payer.to_account_info(),
-        };
-        CpiContext::new(self.token_program.to_account_info(), accounts)
-    }
-
-    fn utility_transfer_ctx(&self) -> CpiContext<'_, '_, '_, 'info, Transfer<'info>> {
-        let accounts = Transfer {
-            from: self.payer_token_account.to_account_info(),
-            to: self.utility_vault_token_account.to_account_info(),
-            authority: self.payer.to_account_info(),
+            from: self.trading_company_token_account.to_account_info(),
+            authority: self.trading_company_authority.to_account_info(),
         };
         CpiContext::new(self.token_program.to_account_info(), accounts)
     }
@@ -377,33 +383,39 @@ pub struct PeraxState {
     pub pending_authority: Pubkey,
     pub has_pending_authority: bool,
     pub token_mint: Pubkey,
-    pub treasury: Pubkey,
-    pub utility_vault: Pubkey,
-    pub burn_bps: u16,
-    pub treasury_bps: u16,
+    pub trading_company_token_account: Pubkey,
     pub max_payment_amount: u64,
     pub is_paused: bool,
     pub bump: u8,
+}
+
+#[account]
+pub struct PaymentRecord {
+    pub reference: [u8; 32],
+    pub payer: Pubkey,
+    pub amount: u64,
+    pub token_mint: Pubkey,
+    pub trading_company_token_account: Pubkey,
+    pub created_at: i64,
+    pub bump: u8,
+}
+
+impl PaymentRecord {
+    pub const SPACE: usize = 32 + 32 + 8 + 32 + 32 + 8 + 1;
 }
 
 #[event]
 pub struct ConfigInitialized {
     pub authority: Pubkey,
     pub token_mint: Pubkey,
-    pub treasury: Pubkey,
-    pub utility_vault: Pubkey,
-    pub burn_bps: u16,
-    pub treasury_bps: u16,
+    pub trading_company_token_account: Pubkey,
     pub max_payment_amount: u64,
 }
 
 #[event]
 pub struct ConfigUpdated {
     pub authority: Pubkey,
-    pub treasury: Pubkey,
-    pub utility_vault: Pubkey,
-    pub burn_bps: u16,
-    pub treasury_bps: u16,
+    pub trading_company_token_account: Pubkey,
     pub max_payment_amount: u64,
 }
 
@@ -432,50 +444,51 @@ pub struct AuthorityTransferAccepted {
 }
 
 #[event]
-pub struct UtilityPaymentRecorded {
+pub struct UtilityPaymentReceived {
     pub payer: Pubkey,
     pub token_mint: Pubkey,
+    pub trading_company_token_account: Pubkey,
     pub amount: u64,
-    pub burn_amount: u64,
-    pub treasury_amount: u64,
     pub reference: [u8; 32],
 }
 
 #[event]
-pub struct UtilityPaymentExecuted {
-    pub payer: Pubkey,
+pub struct ExternalUtilityPaymentRecorded {
+    pub authority: Pubkey,
     pub token_mint: Pubkey,
     pub amount: u64,
-    pub burn_amount: u64,
-    pub treasury_amount: u64,
-    pub utility_amount: u64,
     pub reference: [u8; 32],
+    pub payment_source: [u8; 16],
+}
+
+#[event]
+pub struct TradingCompanyBurnExecuted {
+    pub authority: Pubkey,
+    pub trading_company_authority: Pubkey,
+    pub token_mint: Pubkey,
+    pub trading_company_token_account: Pubkey,
+    pub amount: u64,
+    pub decision_id: [u8; 32],
 }
 
 #[error_code]
 pub enum PeraxError {
     #[msg("The caller is not authorized to perform this action.")]
     Unauthorized,
-    #[msg("Basis points must be between 0 and 10,000, and total split cannot exceed 10,000.")]
-    InvalidBasisPoints,
     #[msg("The program is currently paused.")]
     ProgramPaused,
     #[msg("Amount must be greater than zero.")]
     InvalidAmount,
-    #[msg("Burn and treasury amounts cannot exceed the total payment amount.")]
-    InvalidPaymentSplit,
-    #[msg("The payment split calculation overflowed.")]
-    MathOverflow,
     #[msg("The token mint does not match the configured Pera-X mint.")]
     InvalidTokenMint,
-    #[msg("The treasury token account does not match the configured treasury.")]
-    InvalidTreasuryAccount,
-    #[msg("The utility vault token account does not match the configured utility vault.")]
-    InvalidUtilityVault,
+    #[msg("The trading company token account does not match the configured account.")]
+    InvalidTradingCompanyAccount,
     #[msg("The payment amount is above the configured maximum payment amount.")]
     PaymentAmountTooLarge,
     #[msg("The new authority is invalid.")]
     InvalidAuthority,
     #[msg("There is no pending authority transfer.")]
     NoPendingAuthority,
+    #[msg("The payment or decision reference is invalid.")]
+    InvalidReference,
 }
