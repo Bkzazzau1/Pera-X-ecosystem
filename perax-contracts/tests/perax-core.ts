@@ -31,7 +31,7 @@ describe("perax-core", () => {
       })
       .rpc();
 
-    const account = await program.account.peraxState.fetch(state);
+    const account = await (program.account as any).peraxState.fetch(state);
 
     expect(account.authority.toBase58()).to.equal(provider.wallet.publicKey.toBase58());
     expect(account.tokenMint.toBase58()).to.equal(tokenMint.toBase58());
