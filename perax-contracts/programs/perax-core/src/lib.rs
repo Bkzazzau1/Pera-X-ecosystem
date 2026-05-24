@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token::{self, Burn, Mint, Token, TokenAccount, Transfer};
 
 declare_id!("11111111111111111111111111111111");
 
@@ -113,6 +114,54 @@ pub mod perax_core {
 
         Ok(())
     }
+
+    pub fn pay_with_split(ctx: Context<PayWithSplit>, amount: u64, reference: [u8; 32]) -> Result<()> {
+        let state = &ctx.accounts.state;
+        require!(!state.is_paused, PeraxError::ProgramPaused);
+        require!(amount > 0, PeraxError::InvalidAmount);
+
+        let burn_amount = amount
+            .checked_mul(state.burn_bps as u64)
+            .ok_or(PeraxError::MathOverflow)?
+            .checked_div(MAX_BPS as u64)
+            .ok_or(PeraxError::MathOverflow)?;
+
+        let treasury_amount = amount
+            .checked_mul(state.treasury_bps as u64)
+            .ok_or(PeraxError::MathOverflow)?
+            .checked_div(MAX_BPS as u64)
+            .ok_or(PeraxError::MathOverflow)?;
+
+        let utility_amount = amount
+            .checked_sub(burn_amount)
+            .ok_or(PeraxError::MathOverflow)?
+            .checked_sub(treasury_amount)
+            .ok_or(PeraxError::MathOverflow)?;
+
+        if burn_amount > 0 {
+            token::burn(ctx.accounts.burn_ctx(), burn_amount)?;
+        }
+
+        if treasury_amount > 0 {
+            token::transfer(ctx.accounts.treasury_transfer_ctx(), treasury_amount)?;
+        }
+
+        if utility_amount > 0 {
+            token::transfer(ctx.accounts.utility_transfer_ctx(), utility_amount)?;
+        }
+
+        emit!(UtilityPaymentExecuted {
+            payer: ctx.accounts.payer.key(),
+            token_mint: state.token_mint,
+            amount,
+            burn_amount,
+            treasury_amount,
+            utility_amount,
+            reference,
+        });
+
+        Ok(())
+    }
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -173,6 +222,64 @@ pub struct RecordUtilityPayment<'info> {
     pub payer: Signer<'info>,
 }
 
+#[derive(Accounts)]
+pub struct PayWithSplit<'info> {
+    #[account(
+        seeds = [b"perax-state"],
+        bump = state.bump,
+        constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint,
+        constraint = treasury_token_account.key() == state.treasury @ PeraxError::InvalidTreasuryAccount,
+        constraint = utility_vault_token_account.key() == state.utility_vault @ PeraxError::InvalidUtilityVault
+    )]
+    pub state: Account<'info, PeraxState>,
+
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    #[account(mut, constraint = payer_token_account.owner == payer.key() @ PeraxError::Unauthorized)]
+    pub payer_token_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub treasury_token_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub utility_vault_token_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub token_mint: Account<'info, Mint>,
+
+    pub token_program: Program<'info, Token>,
+}
+
+impl<'info> PayWithSplit<'info> {
+    fn burn_ctx(&self) -> CpiContext<'_, '_, '_, 'info, Burn<'info>> {
+        let accounts = Burn {
+            mint: self.token_mint.to_account_info(),
+            from: self.payer_token_account.to_account_info(),
+            authority: self.payer.to_account_info(),
+        };
+        CpiContext::new(self.token_program.to_account_info(), accounts)
+    }
+
+    fn treasury_transfer_ctx(&self) -> CpiContext<'_, '_, '_, 'info, Transfer<'info>> {
+        let accounts = Transfer {
+            from: self.payer_token_account.to_account_info(),
+            to: self.treasury_token_account.to_account_info(),
+            authority: self.payer.to_account_info(),
+        };
+        CpiContext::new(self.token_program.to_account_info(), accounts)
+    }
+
+    fn utility_transfer_ctx(&self) -> CpiContext<'_, '_, '_, 'info, Transfer<'info>> {
+        let accounts = Transfer {
+            from: self.payer_token_account.to_account_info(),
+            to: self.utility_vault_token_account.to_account_info(),
+            authority: self.payer.to_account_info(),
+        };
+        CpiContext::new(self.token_program.to_account_info(), accounts)
+    }
+}
+
 #[account]
 #[derive(InitSpace)]
 pub struct PeraxState {
@@ -221,6 +328,17 @@ pub struct UtilityPaymentRecorded {
     pub reference: [u8; 32],
 }
 
+#[event]
+pub struct UtilityPaymentExecuted {
+    pub payer: Pubkey,
+    pub token_mint: Pubkey,
+    pub amount: u64,
+    pub burn_amount: u64,
+    pub treasury_amount: u64,
+    pub utility_amount: u64,
+    pub reference: [u8; 32],
+}
+
 #[error_code]
 pub enum PeraxError {
     #[msg("The caller is not authorized to perform this action.")]
@@ -233,4 +351,12 @@ pub enum PeraxError {
     InvalidAmount,
     #[msg("Burn and treasury amounts cannot exceed the total payment amount.")]
     InvalidPaymentSplit,
+    #[msg("The payment split calculation overflowed.")]
+    MathOverflow,
+    #[msg("The token mint does not match the configured Pera-X mint.")]
+    InvalidTokenMint,
+    #[msg("The treasury token account does not match the configured treasury.")]
+    InvalidTreasuryAccount,
+    #[msg("The utility vault token account does not match the configured utility vault.")]
+    InvalidUtilityVault,
 }
