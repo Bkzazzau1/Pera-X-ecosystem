@@ -39,6 +39,10 @@ jobs:
         working-directory: perax-contracts
         run: cargo fmt --all
 
+      - name: Run smart contract unit tests
+        working-directory: perax-contracts
+        run: cargo test --all-targets
+
       - name: Check Pera-X contracts
         working-directory: perax-contracts
         run: cargo check --all-targets
