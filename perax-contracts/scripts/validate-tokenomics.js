@@ -139,7 +139,7 @@ function validateTokenomics(config) {
 function validateInitialLiquidity(config) {
   const liquidity = config.initialLiquidity;
   assert(liquidity, 'Missing initialLiquidity section.');
-  assert(liquidity.dex === 'Meteora', 'Initial DEX must be Meteora.');
+  assert(liquidity.dex === 'Meteora DLMM', 'Initial DEX must be Meteora DLMM.');
   assert(liquidity.pair === 'PEX/USDC', 'Initial pair must be PEX/USDC.');
   assert(liquidity.targetUsd === '4560', 'Initial liquidity target must be $4,560.');
   assert(liquidity.pexAmount === '380000000', 'Initial liquidity PEX amount must be 380,000,000 PEX.');
@@ -230,7 +230,7 @@ function main() {
   console.log(`✅ Total supply: ${config.token.totalSupply} ${config.token.symbol}`);
   console.log(`✅ Initial price: $${config.token.initialPriceUsd}`);
   console.log(`✅ Allocations: ${EXPECTED_TOTAL_PERCENTAGE}%`);
-  console.log('✅ Initial liquidity uses full 38% allocation.');
+  console.log('✅ Initial liquidity uses full 38% allocation on Meteora DLMM.');
   console.log('✅ Allocation wallet template is valid.');
 }
 
