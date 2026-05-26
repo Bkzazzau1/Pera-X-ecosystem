@@ -4,7 +4,8 @@
     "typecheck": "tsc --noEmit",
     "validate:tokenomics": "node scripts/validate-tokenomics.js",
     "plan:allocation": "node scripts/print-allocation-plan.js",
-    "plan:mint": "node scripts/plan-mint.js"
+    "plan:mint": "node scripts/plan-mint.js",
+    "plan:initialize": "node scripts/plan-core-initialize.js"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.30.1"
