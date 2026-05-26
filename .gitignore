@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Rust / Anchor build output
+target/
+.anchor/
+.DS_Store
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.secret
+*.secrets
+
+# Solana keypairs and wallet files
+*.json.key
+*.keypair.json
+id.json
+keypair.json
+wallet.json
+solana-wallet.json
+
+# Pera-X production-only configs
+perax-contracts/config/pex-allocation-wallets.json
+perax-contracts/config/*.local.json
+perax-contracts/config/*.secret.json
+perax-contracts/config/*.secrets.json
+
+# Logs and temporary files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.tmp/
+tmp/
+.cache/
+
+# OS / editor
+.vscode/settings.json
+.idea/
