@@ -7,6 +7,7 @@ fn test_state(max_payment_amount: u64) -> PeraxState {
         has_pending_authority: false,
         token_mint: Pubkey::new_unique(),
         trading_company_token_account: Pubkey::new_unique(),
+        trading_company_revenue_token_account: Pubkey::new_unique(),
         max_payment_amount,
         is_paused: false,
         bump: 255,
@@ -48,6 +49,6 @@ fn rejects_zero_references() {
 
 #[test]
 fn payment_record_space_matches_account_fields() {
-    let expected_space = 32 + 32 + 8 + 32 + 32 + 8 + 1;
+    let expected_space = 32 + 32 + 8 + 32 + 32 + 32 + 8 + 1;
     assert_eq!(PaymentRecord::SPACE, expected_space);
 }
