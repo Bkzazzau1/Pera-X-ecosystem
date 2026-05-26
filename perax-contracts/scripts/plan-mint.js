@@ -50,7 +50,7 @@ function main() {
   const env = readEnv(ENV_PATH);
 
   console.log('==============================================');
-  console.log('Pera-X (PEX) Mint Creation Plan');
+  console.log('Pera-X (PEX) Mint and Core Initialization Plan');
   console.log('==============================================');
   console.log('Mode: PLAN ONLY / NO TOKEN WILL BE CREATED');
   console.log('');
@@ -62,6 +62,7 @@ function main() {
   console.log(`Network: ${tokenomics.token.network}`);
   console.log(`Decimals: ${tokenomics.token.decimals}`);
   console.log(`Total supply: ${formatNumber(tokenomics.token.totalSupply)} ${tokenomics.token.symbol}`);
+  console.log(`Supply model: fixed supply`);
   console.log(`Initial price: $${tokenomics.token.initialPriceUsd}`);
   console.log(`Initial valuation: $${formatNumber(tokenomics.token.initialValuationUsd)}`);
   console.log('');
@@ -72,11 +73,22 @@ function main() {
   console.log(`SOLANA_CLUSTER: ${valueOrMissing(env.SOLANA_CLUSTER)}`);
   console.log(`SOLANA_RPC_URL: ${valueOrMissing(env.SOLANA_RPC_URL)}`);
   console.log(`SOLANA_KEYPAIR_PATH: ${valueOrMissing(env.SOLANA_KEYPAIR_PATH)}`);
+  console.log(`PERAX_CORE_PROGRAM_ID: ${valueOrMissing(env.PERAX_CORE_PROGRAM_ID)}`);
+  console.log(`PEX_MINT_ADDRESS: ${valueOrMissing(env.PEX_MINT_ADDRESS)}`);
   console.log(`PEX_MINT_AUTHORITY: ${valueOrMissing(env.PEX_MINT_AUTHORITY)}`);
   console.log(`PEX_FREEZE_AUTHORITY: ${valueOrMissing(env.PEX_FREEZE_AUTHORITY)}`);
+  console.log(`TRADING_COMPANY_TOKEN_ACCOUNT: ${valueOrMissing(env.TRADING_COMPANY_TOKEN_ACCOUNT)}`);
+  console.log(`TRADING_COMPANY_REVENUE_TOKEN_ACCOUNT: ${valueOrMissing(env.TRADING_COMPANY_REVENUE_TOKEN_ACCOUNT)}`);
   console.log('');
 
-  console.log('Future real mint command requirements:');
+  console.log('Trading Company wallet model:');
+  console.log('----------------------------------------------');
+  console.log('1. TRADING_COMPANY_TOKEN_ACCOUNT = locked/strategic account.');
+  console.log('2. TRADING_COMPANY_REVENUE_TOKEN_ACCOUNT = second/revenue account for PEX-for-Credits payments.');
+  console.log('3. PEX payments and burns must use the revenue token account, not the locked account.');
+  console.log('');
+
+  console.log('Future real mint and initialization requirements:');
   console.log('----------------------------------------------');
   console.log('1. Solana CLI installed and configured.');
   console.log('2. SPL Token CLI installed.');
@@ -85,12 +97,16 @@ function main() {
   console.log('5. Freeze authority decision confirmed.');
   console.log('6. Token metadata plan confirmed.');
   console.log('7. Tokenomics validation passed.');
+  console.log('8. Locked Trading Company token account created.');
+  console.log('9. Revenue Trading Company token account created.');
+  console.log('10. Core program initialized with both Trading Company token accounts.');
+  console.log('11. Mint authority revoked after fixed supply is fully minted and verified.');
   console.log('');
 
   console.log('Safety note:');
   console.log('----------------------------------------------');
-  console.log('This script intentionally does not create a mint, mint supply, or move tokens.');
-  console.log('A separate execution script should be added only after authorities and wallet addresses are approved.');
+  console.log('This script intentionally does not create a mint, mint supply, initialize the program, or move tokens.');
+  console.log('Execution scripts should be added only after authorities and wallet addresses are approved.');
 }
 
 main();
