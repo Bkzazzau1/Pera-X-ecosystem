@@ -2,7 +2,8 @@
   "scripts": {
     "test": "anchor test",
     "typecheck": "tsc --noEmit",
-    "validate:tokenomics": "node scripts/validate-tokenomics.js"
+    "validate:tokenomics": "node scripts/validate-tokenomics.js",
+    "plan:allocation": "node scripts/print-allocation-plan.js"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.30.1"
