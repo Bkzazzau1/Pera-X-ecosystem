@@ -1,14 +1,143 @@
-# Perax Ecosystem
+# Pera-X Ecosystem
 
-This workspace keeps the Web2 gateway and Web3 contracts in separate project roots.
+Pera-X is a Solana-based utility token and Web2/Web3 ecosystem project.
+
+The project separates the Web2 gateway from the Web3 smart contract layer:
 
 ```text
 perax-ecosystem/
-├── perax-gateway/
-└── perax-contracts/
+├── perax-gateway/      # Reserved for Axum backend services
+├── perax-contracts/    # Anchor workspace for Solana programs and PEX tooling
+├── docs/               # Tokenomics, deployment, and policy documents
+└── scripts/            # Workstation setup scripts
 ```
 
-`perax-gateway` is reserved for the Axum backend. `perax-contracts` is an Anchor workspace for Solana programs.
+## Core Model
+
+Pera-X uses a two-balance model:
+
+```text
+PEX = ecosystem token / asset
+Credits = internal platform spending balance
+```
+
+Users may buy Credits using PEX, card, stablecoin, or eligible-country virtual accounts. Platform services such as calls, virtual numbers, data, bills, AI tools, and other utilities spend Credits. PEX remains the ecosystem token for holding, rewards, discounts, buyback-and-burn participation, liquidity support, and ecosystem value.
+
+## Approved PEX Token Parameters
+
+| Parameter | Value |
+|---|---:|
+| Token Name | Pera-X |
+| Symbol | PEX |
+| Network | Solana |
+| Total Supply | 1,000,000,000 PEX |
+| Decimals | 6 |
+| Initial Price | $0.000012 |
+| Initial Valuation | $12,000 |
+
+## Approved Allocation Summary
+
+| Category | Allocation | Token Amount |
+|---|---:|---:|
+| Liquidity Pool | 38% | 380,000,000 PEX |
+| Community / Utility Rewards | 17% | 170,000,000 PEX |
+| Treasury | 12% | 120,000,000 PEX |
+| Ecosystem / Marketing | 12% | 120,000,000 PEX |
+| Trading Company Operations & Revenue Settlement | 7% | 70,000,000 PEX |
+| Team | 6% | 60,000,000 PEX |
+| Private / Strategic Investors | 5% | 50,000,000 PEX |
+| Advisors | 3% | 30,000,000 PEX |
+| **Total** | **100%** | **1,000,000,000 PEX** |
+
+## Initial Liquidity Guidance
+
+At the approved initial price:
+
+```text
+1 PEX = $0.000012
+```
+
+Recommended initial Meteora liquidity:
+
+```text
+250,000,000 PEX + $3,000 USDC
+```
+
+Remaining liquidity reserve:
+
+```text
+130,000,000 PEX
+```
+
+## Market-Conditional Unlocking
+
+Pera-X uses Reactive Market-Conditional Unlocking with TWAP protection.
+
+The market may be monitored every 10 minutes, but tokens only unlock when price, liquidity, volume, TWAP confirmation, cooldown, daily cap, business purpose, and manual or multisig approval conditions are satisfied.
+
+The unlocking model is designed to support liquidity, reduce unhealthy volatility, and establish stronger support levels without creating sudden supply shocks.
+
+## Important Documents
+
+| Document | Purpose |
+|---|---|
+| `docs/PEX_TOKENOMICS_AND_UNLOCKING.md` | Full approved tokenomics and unlocking principles. |
+| `docs/PEX_DEPLOYMENT_CHECKLIST.md` | Pre-deployment checklist and safety process. |
+| `perax-contracts/DEPLOYMENT_FLOW.md` | Command flow for validation, planning, and future deployment. |
+| `perax-contracts/config/pex-tokenomics.json` | Machine-readable PEX tokenomics policy. |
+| `perax-contracts/config/pex-allocation-wallets.example.json` | Safe wallet allocation template with placeholder addresses only. |
+
+## Contract Workspace
+
+`perax-contracts` is an Anchor workspace for the Solana smart contract layer.
+
+The current core program supports:
+
+1. Pera-X state initialization.
+2. Trading company token account configuration.
+3. Utility payment transfer to the trading company token account.
+4. External utility payment recording.
+5. Trading company burn execution.
+6. Pause controls.
+7. Authority transfer controls.
+
+## Safe Commands
+
+From `perax-contracts/`:
+
+```bash
+npm install
+npm run validate:tokenomics
+npm run plan:allocation
+npm run typecheck
+anchor test
+```
+
+Deployment must stop if any command fails.
+
+## Security Rules
+
+Never commit:
+
+```text
+.env
+private keys
+seed phrases
+Solana keypairs
+production wallet config
+```
+
+The production wallet config must remain local only:
+
+```text
+perax-contracts/config/pex-allocation-wallets.json
+```
+
+The committed wallet file must remain only:
+
+```text
+perax-contracts/config/pex-allocation-wallets.example.json
+```
 
 ## WSL Rust Workstation
 
@@ -34,3 +163,27 @@ bash scripts/bootstrap-ubuntu.sh
 ```
 
 Optional: copy `.wslconfig.example` to `%UserProfile%\.wslconfig`, then run `wsl --shutdown` to apply memory/CPU limits.
+
+## Current Status
+
+Completed:
+
+1. Tokenomics documentation.
+2. Market-conditional unlocking policy.
+3. Machine-readable tokenomics config.
+4. Wallet allocation template.
+5. Tokenomics validation script.
+6. Allocation plan dry-run script.
+7. Environment example.
+8. Deployment checklist.
+9. Deployment flow guide.
+10. Secret and production wallet `.gitignore` protection.
+
+Pending:
+
+1. Real wallet addresses.
+2. PEX mint creation script.
+3. Allocation transfer script.
+4. Anchor deployment script.
+5. Meteora liquidity setup process.
+6. Market-condition unlock monitor/bot service.
