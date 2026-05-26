@@ -12,6 +12,14 @@ pub mod perax_core {
             params.trading_company_token_account != Pubkey::default(),
             PeraxError::InvalidTradingCompanyAccount
         );
+        require!(
+            params.trading_company_revenue_token_account != Pubkey::default(),
+            PeraxError::InvalidTradingCompanyRevenueAccount
+        );
+        require!(
+            params.trading_company_token_account != params.trading_company_revenue_token_account,
+            PeraxError::TradingCompanyAccountsMustDiffer
+        );
 
         let state = &mut ctx.accounts.state;
         state.authority = ctx.accounts.authority.key();
@@ -19,6 +27,7 @@ pub mod perax_core {
         state.has_pending_authority = false;
         state.token_mint = params.token_mint;
         state.trading_company_token_account = params.trading_company_token_account;
+        state.trading_company_revenue_token_account = params.trading_company_revenue_token_account;
         state.max_payment_amount = params.max_payment_amount;
         state.is_paused = false;
         state.bump = ctx.bumps.state;
@@ -27,6 +36,7 @@ pub mod perax_core {
             authority: state.authority,
             token_mint: state.token_mint,
             trading_company_token_account: state.trading_company_token_account,
+            trading_company_revenue_token_account: state.trading_company_revenue_token_account,
             max_payment_amount: state.max_payment_amount,
         });
 
@@ -41,7 +51,23 @@ pub mod perax_core {
                 trading_company_token_account != Pubkey::default(),
                 PeraxError::InvalidTradingCompanyAccount
             );
+            require!(
+                trading_company_token_account != state.trading_company_revenue_token_account,
+                PeraxError::TradingCompanyAccountsMustDiffer
+            );
             state.trading_company_token_account = trading_company_token_account;
+        }
+
+        if let Some(trading_company_revenue_token_account) = params.trading_company_revenue_token_account {
+            require!(
+                trading_company_revenue_token_account != Pubkey::default(),
+                PeraxError::InvalidTradingCompanyRevenueAccount
+            );
+            require!(
+                trading_company_revenue_token_account != state.trading_company_token_account,
+                PeraxError::TradingCompanyAccountsMustDiffer
+            );
+            state.trading_company_revenue_token_account = trading_company_revenue_token_account;
         }
 
         if let Some(max_payment_amount) = params.max_payment_amount {
@@ -51,6 +77,7 @@ pub mod perax_core {
         emit!(ConfigUpdated {
             authority: state.authority,
             trading_company_token_account: state.trading_company_token_account,
+            trading_company_revenue_token_account: state.trading_company_revenue_token_account,
             max_payment_amount: state.max_payment_amount,
         });
 
@@ -138,6 +165,7 @@ pub mod perax_core {
         payment_record.amount = amount;
         payment_record.token_mint = state.token_mint;
         payment_record.trading_company_token_account = state.trading_company_token_account;
+        payment_record.trading_company_revenue_token_account = state.trading_company_revenue_token_account;
         payment_record.created_at = Clock::get()?.unix_timestamp;
         payment_record.bump = ctx.bumps.payment_record;
 
@@ -147,6 +175,7 @@ pub mod perax_core {
             payer: ctx.accounts.payer.key(),
             token_mint: state.token_mint,
             trading_company_token_account: state.trading_company_token_account,
+            trading_company_revenue_token_account: state.trading_company_revenue_token_account,
             amount,
             reference,
         });
@@ -193,6 +222,7 @@ pub mod perax_core {
             trading_company_authority: ctx.accounts.trading_company_authority.key(),
             token_mint: state.token_mint,
             trading_company_token_account: state.trading_company_token_account,
+            trading_company_revenue_token_account: state.trading_company_revenue_token_account,
             amount,
             decision_id,
         });
@@ -220,12 +250,14 @@ fn validate_reference(reference: [u8; 32]) -> Result<()> {
 pub struct InitializeParams {
     pub token_mint: Pubkey,
     pub trading_company_token_account: Pubkey,
+    pub trading_company_revenue_token_account: Pubkey,
     pub max_payment_amount: u64,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct UpdateConfigParams {
     pub trading_company_token_account: Option<Pubkey>,
+    pub trading_company_revenue_token_account: Option<Pubkey>,
     pub max_payment_amount: Option<u64>,
 }
 
@@ -278,7 +310,7 @@ pub struct PayToTradingCompany<'info> {
         seeds = [b"perax-state"],
         bump = state.bump,
         constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint,
-        constraint = trading_company_token_account.key() == state.trading_company_token_account @ PeraxError::InvalidTradingCompanyAccount
+        constraint = trading_company_revenue_token_account.key() == state.trading_company_revenue_token_account @ PeraxError::InvalidTradingCompanyRevenueAccount
     )]
     pub state: Account<'info, PeraxState>,
 
@@ -303,9 +335,9 @@ pub struct PayToTradingCompany<'info> {
 
     #[account(
         mut,
-        constraint = trading_company_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
+        constraint = trading_company_revenue_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
     )]
-    pub trading_company_token_account: Account<'info, TokenAccount>,
+    pub trading_company_revenue_token_account: Account<'info, TokenAccount>,
 
     pub token_mint: Account<'info, Mint>,
 
@@ -318,7 +350,7 @@ impl<'info> PayToTradingCompany<'info> {
     fn payment_transfer_ctx(&self) -> CpiContext<'_, '_, '_, 'info, Transfer<'info>> {
         let accounts = Transfer {
             from: self.payer_token_account.to_account_info(),
-            to: self.trading_company_token_account.to_account_info(),
+            to: self.trading_company_revenue_token_account.to_account_info(),
             authority: self.payer.to_account_info(),
         };
         CpiContext::new(self.token_program.to_account_info(), accounts)
@@ -344,7 +376,7 @@ pub struct BurnFromTradingCompany<'info> {
         bump = state.bump,
         has_one = authority @ PeraxError::Unauthorized,
         constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint,
-        constraint = trading_company_token_account.key() == state.trading_company_token_account @ PeraxError::InvalidTradingCompanyAccount
+        constraint = trading_company_revenue_token_account.key() == state.trading_company_revenue_token_account @ PeraxError::InvalidTradingCompanyRevenueAccount
     )]
     pub state: Account<'info, PeraxState>,
 
@@ -354,10 +386,10 @@ pub struct BurnFromTradingCompany<'info> {
 
     #[account(
         mut,
-        constraint = trading_company_token_account.owner == trading_company_authority.key() @ PeraxError::Unauthorized,
-        constraint = trading_company_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
+        constraint = trading_company_revenue_token_account.owner == trading_company_authority.key() @ PeraxError::Unauthorized,
+        constraint = trading_company_revenue_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
     )]
-    pub trading_company_token_account: Account<'info, TokenAccount>,
+    pub trading_company_revenue_token_account: Account<'info, TokenAccount>,
 
     #[account(mut)]
     pub token_mint: Account<'info, Mint>,
@@ -369,7 +401,7 @@ impl<'info> BurnFromTradingCompany<'info> {
     fn burn_ctx(&self) -> CpiContext<'_, '_, '_, 'info, Burn<'info>> {
         let accounts = Burn {
             mint: self.token_mint.to_account_info(),
-            from: self.trading_company_token_account.to_account_info(),
+            from: self.trading_company_revenue_token_account.to_account_info(),
             authority: self.trading_company_authority.to_account_info(),
         };
         CpiContext::new(self.token_program.to_account_info(), accounts)
@@ -384,6 +416,7 @@ pub struct PeraxState {
     pub has_pending_authority: bool,
     pub token_mint: Pubkey,
     pub trading_company_token_account: Pubkey,
+    pub trading_company_revenue_token_account: Pubkey,
     pub max_payment_amount: u64,
     pub is_paused: bool,
     pub bump: u8,
@@ -396,12 +429,13 @@ pub struct PaymentRecord {
     pub amount: u64,
     pub token_mint: Pubkey,
     pub trading_company_token_account: Pubkey,
+    pub trading_company_revenue_token_account: Pubkey,
     pub created_at: i64,
     pub bump: u8,
 }
 
 impl PaymentRecord {
-    pub const SPACE: usize = 32 + 32 + 8 + 32 + 32 + 8 + 1;
+    pub const SPACE: usize = 32 + 32 + 8 + 32 + 32 + 32 + 8 + 1;
 }
 
 #[event]
@@ -409,6 +443,7 @@ pub struct ConfigInitialized {
     pub authority: Pubkey,
     pub token_mint: Pubkey,
     pub trading_company_token_account: Pubkey,
+    pub trading_company_revenue_token_account: Pubkey,
     pub max_payment_amount: u64,
 }
 
@@ -416,6 +451,7 @@ pub struct ConfigInitialized {
 pub struct ConfigUpdated {
     pub authority: Pubkey,
     pub trading_company_token_account: Pubkey,
+    pub trading_company_revenue_token_account: Pubkey,
     pub max_payment_amount: u64,
 }
 
@@ -448,6 +484,7 @@ pub struct UtilityPaymentReceived {
     pub payer: Pubkey,
     pub token_mint: Pubkey,
     pub trading_company_token_account: Pubkey,
+    pub trading_company_revenue_token_account: Pubkey,
     pub amount: u64,
     pub reference: [u8; 32],
 }
@@ -467,6 +504,7 @@ pub struct TradingCompanyBurnExecuted {
     pub trading_company_authority: Pubkey,
     pub token_mint: Pubkey,
     pub trading_company_token_account: Pubkey,
+    pub trading_company_revenue_token_account: Pubkey,
     pub amount: u64,
     pub decision_id: [u8; 32],
 }
@@ -481,8 +519,12 @@ pub enum PeraxError {
     InvalidAmount,
     #[msg("The token mint does not match the configured Pera-X mint.")]
     InvalidTokenMint,
-    #[msg("The trading company token account does not match the configured account.")]
+    #[msg("The trading company locked token account does not match the configured account.")]
     InvalidTradingCompanyAccount,
+    #[msg("The trading company revenue token account does not match the configured account.")]
+    InvalidTradingCompanyRevenueAccount,
+    #[msg("Trading company locked and revenue token accounts must be different.")]
+    TradingCompanyAccountsMustDiffer,
     #[msg("The payment amount is above the configured maximum payment amount.")]
     PaymentAmountTooLarge,
     #[msg("The new authority is invalid.")]
