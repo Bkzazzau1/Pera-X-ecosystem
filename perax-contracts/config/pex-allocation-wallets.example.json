@@ -1,0 +1,89 @@
+{
+  "network": "solana",
+  "tokenSymbol": "PEX",
+  "note": "Replace placeholder wallet addresses before deployment. Do not commit private keys, seed phrases, or secret files.",
+  "wallets": {
+    "liquidityPool": {
+      "allocationKey": "liquidity_pool",
+      "percentage": 38,
+      "amount": "380000000",
+      "address": "REPLACE_WITH_LIQUIDITY_POOL_WALLET_ADDRESS"
+    },
+    "communityUtilityRewards": {
+      "allocationKey": "community_utility_rewards",
+      "percentage": 17,
+      "amount": "170000000",
+      "address": "REPLACE_WITH_COMMUNITY_REWARDS_WALLET_ADDRESS"
+    },
+    "treasury": {
+      "allocationKey": "treasury",
+      "percentage": 12,
+      "amount": "120000000",
+      "address": "REPLACE_WITH_TREASURY_WALLET_ADDRESS"
+    },
+    "ecosystemMarketing": {
+      "allocationKey": "ecosystem_marketing",
+      "percentage": 12,
+      "amount": "120000000",
+      "address": "REPLACE_WITH_ECOSYSTEM_MARKETING_WALLET_ADDRESS"
+    },
+    "tradingCompanyOperations": {
+      "allocationKey": "trading_company_operations",
+      "percentage": 7,
+      "amount": "70000000",
+      "address": "REPLACE_WITH_TRADING_COMPANY_OPERATIONS_WALLET_ADDRESS"
+    },
+    "team": {
+      "developmentTeam": {
+        "allocationKey": "development_team",
+        "percentage": 2,
+        "amount": "20000000",
+        "address": "REPLACE_WITH_DEVELOPMENT_TEAM_WALLET_ADDRESS"
+      },
+      "founder": {
+        "allocationKey": "founder",
+        "percentage": 2,
+        "amount": "20000000",
+        "address": "REPLACE_WITH_FOUNDER_WALLET_ADDRESS"
+      },
+      "futureTeamIncentives": {
+        "allocationKey": "future_team_incentives",
+        "percentage": 1,
+        "amount": "10000000",
+        "address": "REPLACE_WITH_FUTURE_TEAM_INCENTIVES_WALLET_ADDRESS"
+      },
+      "teamEmergencyReserve": {
+        "allocationKey": "team_emergency_reserve",
+        "percentage": 1,
+        "amount": "10000000",
+        "address": "REPLACE_WITH_TEAM_EMERGENCY_RESERVE_WALLET_ADDRESS"
+      }
+    },
+    "privateStrategicInvestors": {
+      "allocationKey": "private_strategic_investors",
+      "percentage": 5,
+      "amount": "50000000",
+      "address": "REPLACE_WITH_PRIVATE_STRATEGIC_INVESTORS_WALLET_ADDRESS"
+    },
+    "advisors": {
+      "advisorWallet1": {
+        "allocationKey": "advisor_wallet_1",
+        "percentage": 1,
+        "amount": "10000000",
+        "address": "REPLACE_WITH_ADVISOR_WALLET_1_ADDRESS"
+      },
+      "advisorWallet2": {
+        "allocationKey": "advisor_wallet_2",
+        "percentage": 1,
+        "amount": "10000000",
+        "address": "REPLACE_WITH_ADVISOR_WALLET_2_ADDRESS"
+      },
+      "advisorWallet3": {
+        "allocationKey": "advisor_wallet_3",
+        "percentage": 1,
+        "amount": "10000000",
+        "address": "REPLACE_WITH_ADVISOR_WALLET_3_ADDRESS"
+      }
+    }
+  }
+}
