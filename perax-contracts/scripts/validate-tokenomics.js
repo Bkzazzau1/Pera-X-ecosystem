@@ -141,9 +141,10 @@ function validateInitialLiquidity(config) {
   assert(liquidity, 'Missing initialLiquidity section.');
   assert(liquidity.dex === 'Meteora', 'Initial DEX must be Meteora.');
   assert(liquidity.pair === 'PEX/USDC', 'Initial pair must be PEX/USDC.');
-  assert(liquidity.targetUsd === '3000', 'Initial liquidity target must be $3,000.');
-  assert(liquidity.pexAmount === '250000000', 'Initial liquidity PEX amount must be 250,000,000 PEX.');
-  assert(liquidity.remainingLiquidityReserve === '130000000', 'Remaining liquidity reserve must be 130,000,000 PEX.');
+  assert(liquidity.targetUsd === '4560', 'Initial liquidity target must be $4,560.');
+  assert(liquidity.pexAmount === '380000000', 'Initial liquidity PEX amount must be 380,000,000 PEX.');
+  assert(liquidity.quoteAmountUsd === '4560', 'Initial quote amount must be $4,560.');
+  assert(liquidity.remainingLiquidityReserve === '0', 'Remaining liquidity reserve must be 0 PEX when full 38% is used initially.');
 }
 
 function validateUnlocking(config) {
@@ -229,6 +230,7 @@ function main() {
   console.log(`✅ Total supply: ${config.token.totalSupply} ${config.token.symbol}`);
   console.log(`✅ Initial price: $${config.token.initialPriceUsd}`);
   console.log(`✅ Allocations: ${EXPECTED_TOTAL_PERCENTAGE}%`);
+  console.log('✅ Initial liquidity uses full 38% allocation.');
   console.log('✅ Allocation wallet template is valid.');
 }
 
