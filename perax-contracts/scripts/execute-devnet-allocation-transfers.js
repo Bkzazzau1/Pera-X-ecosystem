@@ -5,6 +5,8 @@ const path = require('path');
 const EXECUTE = process.argv.includes('--execute');
 const WALLETS_PATH = path.resolve(__dirname, '../config/pex-allocation-wallets.devnet.json');
 const DEPLOYMENT_RECORD_PATH = path.resolve(__dirname, '../config/deployment-record.devnet.public.json');
+const TOKEN_DECIMALS = 6n;
+const TOKEN_SCALE = 10n ** TOKEN_DECIMALS;
 
 function readJson(filePath, label) {
   if (!fs.existsSync(filePath)) throw new Error(`${label} not found at ${filePath}`);
@@ -25,16 +27,50 @@ function flattenWalletEntries(wallets) {
   return entries;
 }
 
-function run(command, args) {
+function run(command, args, options = {}) {
   console.log(`$ ${command} ${args.join(' ')}`);
   if (!EXECUTE) return '';
-  return execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }).trim();
+  try {
+    return execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  } catch (error) {
+    const stdout = error.stdout ? String(error.stdout) : '';
+    const stderr = error.stderr ? String(error.stderr) : '';
+    const combined = `${stdout}\n${stderr}`.trim();
+    if (options.allowAccountAlreadyExists && combined.includes('Account already exists')) {
+      console.log(combined);
+      return combined;
+    }
+    if (combined) console.error(combined);
+    throw error;
+  }
 }
 
 function parseAta(output) {
   const candidates = output.split(/\s+/).filter((part) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(part));
   if (candidates.length === 0) throw new Error(`Could not parse token account from output: ${output}`);
   return candidates[candidates.length - 1];
+}
+
+function parseUiAmountToBaseUnits(value) {
+  const cleaned = String(value || '0').trim();
+  if (!cleaned) return 0n;
+  const [wholePart, fractionPart = ''] = cleaned.split('.');
+  const whole = BigInt(wholePart || '0') * TOKEN_SCALE;
+  const paddedFraction = (fractionPart + '000000').slice(0, 6);
+  return whole + BigInt(paddedFraction || '0');
+}
+
+function baseUnitsToUiAmount(baseUnits) {
+  const amount = BigInt(baseUnits);
+  const whole = amount / TOKEN_SCALE;
+  const fraction = amount % TOKEN_SCALE;
+  if (fraction === 0n) return whole.toString();
+  return `${whole.toString()}.${fraction.toString().padStart(6, '0').replace(/0+$/, '')}`;
+}
+
+function getTokenBalanceBaseUnits(tokenAccount) {
+  const output = run('spl-token', ['balance', tokenAccount]);
+  return parseUiAmountToBaseUnits(output);
 }
 
 function main() {
@@ -81,23 +117,47 @@ function main() {
     console.log('');
     console.log(`Allocation: ${entry.allocationKey}`);
     console.log(`Owner wallet: ${entry.address}`);
-    console.log(`Amount: ${entry.amount} PEX`);
+    console.log(`Expected amount: ${entry.amount} PEX`);
 
-    const ataOutput = run('spl-token', ['create-account', mint, '--owner', entry.address, '--fee-payer', keypairPath]);
+    const ataOutput = run('spl-token', ['create-account', mint, '--owner', entry.address, '--fee-payer', keypairPath], { allowAccountAlreadyExists: true });
     const destinationTokenAccount = parseAta(ataOutput);
-    run('spl-token', ['transfer', mint, entry.amount, destinationTokenAccount, '--from', sourceTokenAccount, '--owner', keypairPath, '--fee-payer', keypairPath, '--allow-unfunded-recipient']);
+    const expectedBaseUnits = BigInt(entry.amount) * TOKEN_SCALE;
+    const currentBaseUnits = getTokenBalanceBaseUnits(destinationTokenAccount);
 
+    console.log(`Destination token account: ${destinationTokenAccount}`);
+    console.log(`Current balance: ${baseUnitsToUiAmount(currentBaseUnits)} PEX`);
+
+    let transferredAmount = '0';
+    let status = 'skipped_already_funded';
+    if (currentBaseUnits < expectedBaseUnits) {
+      const missingBaseUnits = expectedBaseUnits - currentBaseUnits;
+      const missingUiAmount = baseUnitsToUiAmount(missingBaseUnits);
+      console.log(`Missing amount: ${missingUiAmount} PEX`);
+      run('spl-token', ['transfer', mint, missingUiAmount, destinationTokenAccount, '--from', sourceTokenAccount, '--owner', keypairPath, '--fee-payer', keypairPath, '--allow-unfunded-recipient']);
+      transferredAmount = missingUiAmount;
+      status = 'transferred_missing_amount';
+    } else if (currentBaseUnits > expectedBaseUnits) {
+      status = 'overfunded_manual_review_required';
+      console.log(`WARNING: destination already has more than expected. Expected ${entry.amount}, current ${baseUnitsToUiAmount(currentBaseUnits)}.`);
+    } else {
+      console.log('Expected allocation already funded. Skipping transfer.');
+    }
+
+    const finalBaseUnits = getTokenBalanceBaseUnits(destinationTokenAccount);
     results.push({
       allocationKey: entry.allocationKey,
       percentage: entry.percentage,
-      amount: entry.amount,
+      expectedAmount: entry.amount,
       ownerWallet: entry.address,
       tokenAccount: destinationTokenAccount,
+      transferredAmount,
+      finalBalance: baseUnitsToUiAmount(finalBaseUnits),
+      status,
     });
   }
 
   console.log('');
-  console.log('Allocation transfers completed.');
+  console.log('Allocation transfer run completed.');
   console.log('ALLOCATION_TRANSFER_RESULTS_JSON=' + JSON.stringify(results));
 }
 
