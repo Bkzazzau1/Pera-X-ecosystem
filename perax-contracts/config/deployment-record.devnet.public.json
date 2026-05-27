@@ -41,7 +41,7 @@
     "revenueTokenAccount": "E4JJoNkKhFq8Ev7XtJhuWrvdyNyWRzkwjsukgF9VbegA"
   },
   "program": {
-    "programId": "REPLACE_AFTER_DEVNET_DEPLOYMENT",
+    "programId": "FqEiSx5vujh2vi3yk12NaZMXhjMSaKovGUuzcKiAgshn",
     "statePda": "REPLACE_AFTER_INITIALIZATION",
     "safetyAdminWallet": "2FuGxUt1EaewriZ9QpSkqz8Lbj2M69q2F4vnr1NJHPHX",
     "oracleBotWallet": "4hx4YvYdyQMziqxqTv5gjRbLcXZFwX1kaL9vdPBYdU9D"

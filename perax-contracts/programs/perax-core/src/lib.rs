@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Burn, Mint, Token, TokenAccount, Transfer};
 
-declare_id!("11111111111111111111111111111111");
+declare_id!("FqEiSx5vujh2vi3yk12NaZMXhjMSaKovGUuzcKiAgshn");
 
 pub const PEX_DECIMALS: u64 = 1_000_000;
 pub const PEX_TOTAL_SUPPLY: u64 = 1_000_000_000 * PEX_DECIMALS;
