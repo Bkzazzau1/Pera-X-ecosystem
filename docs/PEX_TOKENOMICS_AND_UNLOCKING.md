@@ -87,11 +87,11 @@ The purpose of unlocking is not to dump tokens into the market. The purpose is t
 
 Pera-X will use a Reactive Market-Conditional Unlocking Model.
 
-The system may monitor the market every 10 minutes, but tokens will only unlock when defined health conditions are met.
+The system may monitor the market every 10 minutes, but release approval is recorded only when defined market-health conditions are met.
 
 ```text
 Monitor every 10 minutes.
-Unlock only when market conditions are healthy.
+Release approval only when market conditions are healthy.
 ```
 
 Unlocking is designed to support liquidity and establish stronger support levels, not to force the market down.
@@ -129,34 +129,34 @@ From Stage 3 upward, the margin of price movement becomes smaller as the token m
 
 ## 10. TWAP Protection
 
-PEX should use Time Weighted Average Price (TWAP) protection before any unlock. The price must stay around or above the trigger level for a reasonable period before unlocking is considered.
+PEX should use Time Weighted Average Price (TWAP) protection before any market-condition release approval. The price must stay around or above the trigger level for a reasonable period before release approval is considered.
 
 Example:
 
 ```text
 Trigger price: $0.00003
 Price must remain healthy around this level for 30–60 minutes.
-Only then can an unlock review happen.
+Only then can release approval be recorded.
 ```
 
-This prevents unlocks based on one-minute candles, artificial pumps, or low-liquidity price spikes.
+This prevents release approval based on one-minute candles, artificial pumps, or low-liquidity price spikes.
 
 ## 11. Volume and Liquidity Conditions
 
-Before any unlock, the system must check:
+Before any release approval, the system must check:
 
 1. Whether trading volume is real and healthy.
 2. Whether liquidity is deep enough.
 3. Whether the price is stable and not just a quick spike.
 4. Whether there is enough buy-side demand.
 5. Whether the market has held above the trigger level for enough time.
-6. Whether the unlock has a real business or ecosystem purpose.
+6. Whether the release has a real business or ecosystem purpose.
 
-If these conditions are not met, the unlock should not happen.
+If these conditions are not met, release approval should not happen.
 
 ## 12. 1000% Price Pump Rule
 
-If PEX increases by a very large amount, such as 1000% within 24 hours, the system should not unlock all available tokens at once.
+If PEX increases by a very large amount, such as 1000% within 24 hours, the system should not approve all available tokens at once.
 
 Instead:
 
@@ -164,18 +164,18 @@ Instead:
 Large price movement detected
 10-minute monitoring confirms movement
 TWAP and liquidity checks are applied
-Only controlled tranches may unlock
-Daily unlock limits protect the market
+Only controlled tranches may be approved
+Daily release limits protect the market
 ```
 
 ## 13. Daily Unlock Cap
 
-A daily unlock limit must protect the market from excessive supply release.
+A daily release limit must protect the market from excessive supply release.
 
 Recommended cap:
 
 ```text
-Maximum unlock per 24 hours: 1% of total supply
+Maximum release approval per 24 hours: 1% of total supply
 ```
 
 For 1,000,000,000 PEX:
@@ -184,23 +184,23 @@ For 1,000,000,000 PEX:
 1% = 10,000,000 PEX maximum per 24 hours
 ```
 
-This cap may be reduced depending on liquidity depth, market condition, and internal approval.
+This cap may be reduced depending on liquidity depth and market condition.
 
 ## 14. Cooldown Period
 
-After any unlock, there must be a cooldown period before another unlock can happen.
+After any release approval, there must be a cooldown period before another release approval can happen.
 
 Recommended cooldown:
 
 ```text
-2 to 6 hours after each unlock
+2 to 6 hours after each release approval
 ```
 
-This allows the market to absorb newly released supply and prevents repeated unlock pressure.
+This allows the market to absorb newly released supply and prevents repeated release pressure.
 
 ## 15. Controlled Tranche Unlocking
 
-Tokens should be unlocked in small, controlled tranches. Unlocking should never release a large reserve portion at once.
+Tokens should be released in small, controlled tranches. The market-condition engine should never approve a large reserve portion at once.
 
 Each tranche should be based on:
 
@@ -208,30 +208,31 @@ Each tranche should be based on:
 2. Trading volume.
 3. Liquidity depth.
 4. Buy-side demand.
-5. Previous unlock effect.
+5. Previous release effect.
 6. Business purpose.
 7. Community confidence.
 
-## 16. Manual or Multisig Approval
+## 16. Market-Condition Oracle Release Authority
 
-At the early stage, Pera-X should not rely only on a fully automatic unlock bot.
+Pera-X uses a 100% market-condition release approval model. Release approval is not controlled by manual multisig voting. The authorized market-condition oracle records release approvals only after the required market-health gates are satisfied.
 
-The system may recommend unlocks automatically, but final execution should require approval from the project authority, trading company, or multisig wallet.
+The oracle-controlled release model is designed to keep the process fast, rule-based, and consistent. Emergency pause and system maintenance remain separate safety controls, but they do not replace the market-condition release authority.
 
-Recommended process:
+Approved process:
 
 ```text
-Bot monitors market every 10 minutes
-Bot recommends unlock
-Team / trading company / multisig reviews
-Unlock is approved or rejected
+Market bot monitors market every 10 minutes
+Oracle verifies price, TWAP, liquidity, volume, buy pressure, caps, cooldown, and business purpose
+Oracle records release approval on-chain when all gates are satisfied
+ReleaseRecord PDA prevents duplicate release IDs
+Emergency pause can stop the system if market/security risk is detected
 ```
 
 ## 17. Emergency Pause Rule
 
 The unlocking system must include an emergency pause.
 
-Unlocking should stop immediately if:
+Release approvals should stop immediately if:
 
 1. Market manipulation is detected.
 2. Liquidity becomes weak.
@@ -244,7 +245,7 @@ Unlocking should stop immediately if:
 
 ## 18. Purpose-Based Unlocking
 
-Every unlock must have a clear reason.
+Every release approval must have a clear reason.
 
 Valid reasons may include:
 
@@ -259,34 +260,34 @@ Valid reasons may include:
 9. Strategic investor support.
 10. Development need.
 
-Tokens should not be unlocked without a defined purpose.
+Tokens should not be released without a defined purpose.
 
 ## 19. Public Explanation
 
 For public documentation, Pera-X should use this wording:
 
 ```text
-Pera-X uses a market-conditional unlocking model. Reserve tokens are not released on fixed dates alone. Unlocking is based on price stability, liquidity health, trading volume, ecosystem growth, and approved business needs. The system monitors market conditions regularly and may release controlled tranches only when the market is healthy enough to absorb new supply.
+Pera-X uses a market-conditional release model. Reserve tokens are not released on fixed dates alone. Release approval is based on price stability, liquidity health, trading volume, ecosystem growth, and approved business needs. The system monitors market conditions regularly and may approve controlled tranches only when the market is healthy enough to absorb new supply.
 ```
 
 Avoid wording such as:
 
 ```text
-We unlock tokens to bring the price down.
+We release tokens to bring the price down.
 ```
 
 Use:
 
 ```text
-Unlocking is designed to support liquidity, reduce unhealthy volatility, and establish stronger support levels.
+Release approval is designed to support liquidity, reduce unhealthy volatility, and establish stronger support levels.
 ```
 
 ## 20. Final Principle Summary
 
 Pera-X will use Reactive Market-Conditional Unlocking with TWAP Protection.
 
-The market will be monitored every 10 minutes, but tokens will only unlock when price, liquidity, volume, TWAP, cooldown, daily cap, and approval conditions are satisfied.
+The market will be monitored every 10 minutes, but release approval will only happen when price, liquidity, volume, TWAP, cooldown, daily cap, monthly cap, and business-purpose conditions are satisfied.
 
-Unlocking will happen in controlled tranches, not large releases.
+Release approval will happen in controlled tranches, not large releases.
 
 The goal is to protect holders, support liquidity, reduce unhealthy volatility, and build long-term confidence in the Pera-X ecosystem.
