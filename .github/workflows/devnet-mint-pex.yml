@@ -1,0 +1,105 @@
+name: Devnet Mint PEX
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type CREATE_DEVNET_PEX_MINT to create PEX mint and mint fixed supply"
+        required: true
+        type: string
+
+jobs:
+  devnet-mint:
+    name: Create devnet PEX mint and fixed supply
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: perax-contracts
+
+    env:
+      SOLANA_CLUSTER: devnet
+      SOLANA_RPC_URL: https://api.devnet.solana.com
+      SOLANA_KEYPAIR_PATH: .local/devnet-deployer.json
+      PEX_MINT_AUTHORITY: 7fvpqKVEsK4UHDR49LhPYg5kEtdbc5847MzqVCW4LiAe
+      PEX_FREEZE_AUTHORITY: NONE
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Confirm execution
+        shell: bash
+        run: |
+          if [ "${{ inputs.confirmation }}" != "CREATE_DEVNET_PEX_MINT" ]; then
+            echo "Wrong confirmation phrase. Refusing to mint."
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Solana CLI
+        shell: bash
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install SPL Token CLI
+        shell: bash
+        run: |
+          cargo install spl-token-cli --locked
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Install JavaScript dependencies
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Restore devnet deployer keypair
+        shell: bash
+        run: |
+          if [ -z '${{ secrets.DEVNET_DEPLOYER_KEYPAIR_JSON }}' ]; then
+            echo "Missing DEVNET_DEPLOYER_KEYPAIR_JSON secret"
+            exit 1
+          fi
+
+          mkdir -p .local
+          printf '%s' '${{ secrets.DEVNET_DEPLOYER_KEYPAIR_JSON }}' > .local/devnet-deployer.json
+          chmod 600 .local/devnet-deployer.json
+
+      - name: Configure Solana devnet
+        shell: bash
+        run: |
+          solana config set --url "$SOLANA_RPC_URL" --keypair "$SOLANA_KEYPAIR_PATH"
+          echo "Deployer address:"
+          solana address
+          echo "Balance:"
+          solana balance
+
+      - name: Validate before mint
+        shell: bash
+        run: |
+          npm run validate:tokenomics
+          npm run plan:mint
+          node scripts/check-devnet-readiness.js
+
+      - name: Create PEX mint and mint fixed supply
+        shell: bash
+        run: |
+          node scripts/execute-fixed-supply-mint.js --execute | tee devnet-mint-output.txt
+
+      - name: Upload mint output
+        uses: actions/upload-artifact@v4
+        with:
+          name: devnet-mint-output
+          path: perax-contracts/devnet-mint-output.txt
