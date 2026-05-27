@@ -191,7 +191,21 @@ pub mod perax_core {
             .ok_or(PeraxError::ReleaseCapExceeded)?;
         state.last_release_timestamp = params.snapshot.observed_at;
 
+        let release_record = &mut ctx.accounts.release_record;
+        release_record.release_id = params.release_id;
+        release_record.oracle_feed = ctx.accounts.oracle_feed.key();
+        release_record.release_type = params.release_type;
+        release_record.requested_amount = params.requested_amount;
+        release_record.observed_price = params.snapshot.observed_price;
+        release_record.twap_minutes = params.snapshot.twap_minutes;
+        release_record.liquidity_usd = params.snapshot.liquidity_usd;
+        release_record.net_buy_volume_bps = params.snapshot.net_buy_volume_bps;
+        release_record.observed_at = params.snapshot.observed_at;
+        release_record.recorded_at = Clock::get()?.unix_timestamp;
+        release_record.bump = ctx.bumps.release_record;
+
         emit!(MarketConditionalReleaseApproved {
+            release_record: release_record.key(),
             oracle_feed: ctx.accounts.oracle_feed.key(),
             release_type: params.release_type,
             requested_amount: params.requested_amount,
@@ -446,10 +460,21 @@ pub struct SafetyAdminAction<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(params: MarketConditionalReleaseParams)]
 pub struct RecordMarketConditionalRelease<'info> {
     #[account(mut, seeds = [b"perax-state"], bump = state.bump, has_one = oracle_feed @ PeraxError::Unauthorized)]
     pub state: Account<'info, PeraxState>,
+    #[account(
+        init,
+        payer = oracle_feed,
+        space = 8 + ReleaseRecord::SPACE,
+        seeds = [b"release", params.release_id.as_ref()],
+        bump
+    )]
+    pub release_record: Account<'info, ReleaseRecord>,
+    #[account(mut)]
     pub oracle_feed: Signer<'info>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -562,6 +587,25 @@ impl PaymentRecord {
     pub const SPACE: usize = 32 + 32 + 8 + 32 + 32 + 32 + 8 + 1;
 }
 
+#[account]
+pub struct ReleaseRecord {
+    pub release_id: [u8; 32],
+    pub oracle_feed: Pubkey,
+    pub release_type: ReleaseType,
+    pub requested_amount: u64,
+    pub observed_price: u64,
+    pub twap_minutes: u64,
+    pub liquidity_usd: u64,
+    pub net_buy_volume_bps: u16,
+    pub observed_at: i64,
+    pub recorded_at: i64,
+    pub bump: u8,
+}
+
+impl ReleaseRecord {
+    pub const SPACE: usize = 32 + 32 + 1 + 8 + 8 + 8 + 8 + 2 + 8 + 8 + 1;
+}
+
 #[event]
 pub struct ConfigInitialized {
     pub authority: Pubkey,
@@ -609,6 +653,7 @@ pub struct EmergencyPauseStatusChanged {
 
 #[event]
 pub struct MarketConditionalReleaseApproved {
+    pub release_record: Pubkey,
     pub oracle_feed: Pubkey,
     pub release_type: ReleaseType,
     pub requested_amount: u64,
