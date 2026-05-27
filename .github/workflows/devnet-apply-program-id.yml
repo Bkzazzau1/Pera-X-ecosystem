@@ -1,0 +1,79 @@
+name: Devnet Apply Program ID
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type APPLY_DEVNET_PROGRAM_ID to update lib.rs, Anchor.toml, and deployment record"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  apply-program-id:
+    name: Apply devnet perax_core program ID
+    runs-on: ubuntu-latest
+
+    env:
+      PERAX_CORE_PROGRAM_ID: FqEiSx5vujh2vi3yk12NaZMXhjMSaKovGUuzcKiAgshn
+      PLACEHOLDER_PROGRAM_ID: "11111111111111111111111111111111"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Confirm execution
+        shell: bash
+        run: |
+          if [ "${{ inputs.confirmation }}" != "APPLY_DEVNET_PROGRAM_ID" ]; then
+            echo "Wrong confirmation phrase. Refusing to update program ID."
+            exit 1
+          fi
+
+      - name: Apply program ID to Anchor files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd perax-contracts
+
+          sed -i "s/${PLACEHOLDER_PROGRAM_ID}/${PERAX_CORE_PROGRAM_ID}/g" programs/perax-core/src/lib.rs
+          sed -i "s/${PLACEHOLDER_PROGRAM_ID}/${PERAX_CORE_PROGRAM_ID}/g" Anchor.toml
+          sed -i 's/cluster = "Localnet"/cluster = "Devnet"/g' Anchor.toml
+          sed -i 's|wallet = "~/.config/solana/id.json"|wallet = ".local/devnet-deployer.json"|g' Anchor.toml
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          program_id = 'FqEiSx5vujh2vi3yk12NaZMXhjMSaKovGUuzcKiAgshn'
+          path = Path('config/deployment-record.devnet.public.json')
+          data = json.loads(path.read_text())
+          data['program']['programId'] = program_id
+          data['status']['coreProgramDeployed'] = False
+          data['status']['coreProgramInitialized'] = False
+          path.write_text(json.dumps(data, indent=2) + '\n')
+          PY
+
+      - name: Verify program ID readiness
+        shell: bash
+        run: |
+          cd perax-contracts
+          node scripts/check-anchor-deploy-readiness.js
+
+      - name: Commit program ID update
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add perax-contracts/programs/perax-core/src/lib.rs perax-contracts/Anchor.toml perax-contracts/config/deployment-record.devnet.public.json
+          git commit -m "program: apply devnet perax_core program id"
+          git push
