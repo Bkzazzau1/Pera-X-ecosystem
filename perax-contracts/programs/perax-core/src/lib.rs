@@ -10,7 +10,7 @@ pub const GROWTH_PRICE_MULTIPLIER: u64 = 3;
 pub const MIN_GROWTH_TWAP_MINUTES: u64 = 60;
 pub const INITIAL_LIQUIDITY_USD: u64 = 4_560;
 pub const MIN_GROWTH_LIQUIDITY_USD: u64 = INITIAL_LIQUIDITY_USD * 5;
-pub const MIN_NET_BUY_VOLUME_BPS: u16 = 6_500;
+pub const MIN_NET_BUY_VOLUME_BPS: u16 = 5_000;
 pub const DAILY_RELEASE_CAP: u64 = 10_000_000 * PEX_DECIMALS;
 pub const MONTHLY_RELEASE_CAP: u64 = 50_000_000 * PEX_DECIMALS;
 pub const RELEASE_COOLDOWN_SECONDS: i64 = 86_400;
@@ -832,7 +832,7 @@ pub struct UtilityPaymentReceived {
     pub token_mint: Pubkey,
     pub trading_company_token_account: Pubkey,
     pub trading_company_revenue_token_account: Pubkey,
-    pub amount: u64,
+    pub amount,
     pub reference: [u8; 32],
 }
 
