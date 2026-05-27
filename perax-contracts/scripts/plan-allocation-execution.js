@@ -3,6 +3,7 @@ const path = require('path');
 
 const TOKENOMICS_PATH = path.resolve(__dirname, '../config/pex-tokenomics.json');
 const WALLETS_TEMPLATE_PATH = path.resolve(__dirname, '../config/pex-allocation-wallets.example.json');
+const DEVNET_WALLETS_PATH = path.resolve(__dirname, '../config/pex-allocation-wallets.devnet.json');
 const WALLETS_PATH = path.resolve(__dirname, '../config/pex-allocation-wallets.json');
 const ENV_PATH = path.resolve(__dirname, '../.env');
 
@@ -25,6 +26,33 @@ function readEnv(filePath) {
   }
 
   return env;
+}
+
+function getWalletSource() {
+  if (fs.existsSync(WALLETS_PATH)) {
+    return {
+      label: 'production wallet config',
+      path: WALLETS_PATH,
+      data: readJson(WALLETS_PATH, 'Production allocation wallet config'),
+      isTemplate: false,
+    };
+  }
+
+  if (fs.existsSync(DEVNET_WALLETS_PATH)) {
+    return {
+      label: 'devnet wallet config',
+      path: DEVNET_WALLETS_PATH,
+      data: readJson(DEVNET_WALLETS_PATH, 'Devnet allocation wallet config'),
+      isTemplate: false,
+    };
+  }
+
+  return {
+    label: 'example wallet template',
+    path: WALLETS_TEMPLATE_PATH,
+    data: readJson(WALLETS_TEMPLATE_PATH, 'Allocation wallet template'),
+    isTemplate: true,
+  };
 }
 
 function flattenWalletEntries(wallets) {
@@ -57,10 +85,8 @@ function valueOrMissing(value) {
 function main() {
   const tokenomics = readJson(TOKENOMICS_PATH, 'PEX tokenomics config');
   const env = readEnv(ENV_PATH);
-  const walletFile = fs.existsSync(WALLETS_PATH) ? WALLETS_PATH : WALLETS_TEMPLATE_PATH;
-  const walletSource = readJson(walletFile, 'PEX allocation wallet config');
-  const walletEntries = flattenWalletEntries(walletSource.wallets);
-  const usingTemplate = walletFile === WALLETS_TEMPLATE_PATH;
+  const walletSource = getWalletSource();
+  const walletEntries = flattenWalletEntries(walletSource.data.wallets);
   const totalSupply = BigInt(tokenomics.token.totalSupply);
   const allocationTotal = walletEntries.reduce((sum, entry) => sum + BigInt(entry.amount), 0n);
   const placeholderWallets = walletEntries.filter((entry) => valueOrMissing(entry.address) === 'MISSING');
@@ -75,7 +101,8 @@ function main() {
   console.log('----------------------------------------------');
   console.log(`PEX mint: ${valueOrMissing(env.PEX_MINT_ADDRESS)}`);
   console.log(`Mint authority/source account: ${valueOrMissing(env.PEX_MINT_AUTHORITY)}`);
-  console.log(`Wallet config source: ${usingTemplate ? 'example template' : 'local production wallet config'}`);
+  console.log(`Wallet config source: ${walletSource.label}`);
+  console.log(`Wallet config file: ${walletSource.path}`);
   console.log('');
 
   console.log('Allocation summary:');
@@ -98,23 +125,25 @@ function main() {
 
   console.log('Special liquidity action:');
   console.log('----------------------------------------------');
+  console.log(`Liquidity policy: ${tokenomics.initialLiquidity.policy}`);
   console.log(`Liquidity venue: ${tokenomics.initialLiquidity.dex}`);
   console.log(`Pair: ${tokenomics.initialLiquidity.pair}`);
   console.log(`PEX side: ${formatNumber(tokenomics.initialLiquidity.pexAmount)} PEX`);
   console.log(`USDC side: $${formatNumber(tokenomics.initialLiquidity.quoteAmountUsd)}`);
+  console.log(`Remaining liquidity reserve: ${formatNumber(tokenomics.initialLiquidity.remainingLiquidityReserve)} PEX`);
   console.log('The liquidity allocation must be used to create Meteora DLMM liquidity, not transferred as ordinary operating funds.');
   console.log('');
 
   const blockers = [];
   if (valueOrMissing(env.PEX_MINT_ADDRESS) === 'MISSING') blockers.push('PEX_MINT_ADDRESS missing');
-  if (usingTemplate) blockers.push('using example wallet template');
+  if (walletSource.isTemplate) blockers.push('using example wallet template');
   if (placeholderWallets.length > 0) blockers.push(`${placeholderWallets.length} placeholder wallet addresses remain`);
   if (allocationTotal !== totalSupply) blockers.push('allocation total does not match fixed supply');
 
   console.log('Readiness:');
   console.log('----------------------------------------------');
   if (blockers.length === 0) {
-    console.log('Status: READY for manual approval before real allocation transfer script.');
+    console.log('Status: READY for devnet deployment planning. Real token transfers remain manual/secure deployment actions.');
   } else {
     console.log('Status: NOT READY for real allocation transfers.');
     blockers.forEach((blocker) => console.log(`- ${blocker}`));
