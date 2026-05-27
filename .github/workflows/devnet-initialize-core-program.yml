@@ -1,0 +1,100 @@
+name: Devnet Initialize Core Program
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type INITIALIZE_DEVNET_PERAX_CORE to initialize the deployed perax_core program"
+        required: true
+        type: string
+
+jobs:
+  initialize-core:
+    name: Initialize perax_core on devnet
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: perax-contracts
+
+    env:
+      SOLANA_CLUSTER: devnet
+      SOLANA_RPC_URL: https://api.devnet.solana.com
+      SOLANA_KEYPAIR_PATH: .local/devnet-deployer.json
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Confirm execution
+        shell: bash
+        run: |
+          if [ "${{ inputs.confirmation }}" != "INITIALIZE_DEVNET_PERAX_CORE" ]; then
+            echo "Wrong confirmation phrase. Refusing to initialize."
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          package-manager-cache: false
+
+      - name: Install JavaScript dependencies
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Restore devnet deployer keypair
+        shell: bash
+        env:
+          DEVNET_DEPLOYER_KEYPAIR_JSON: ${{ secrets.DEVNET_DEPLOYER_KEYPAIR_JSON }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DEVNET_DEPLOYER_KEYPAIR_JSON" ]; then
+            echo "Missing DEVNET_DEPLOYER_KEYPAIR_JSON secret"
+            exit 1
+          fi
+
+          mkdir -p .local
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          raw = os.environ.get('DEVNET_DEPLOYER_KEYPAIR_JSON', '').strip()
+          try:
+              data = json.loads(raw)
+          except json.JSONDecodeError as exc:
+              print(f'DEVNET_DEPLOYER_KEYPAIR_JSON is not valid JSON array: {exc}')
+              sys.exit(1)
+          if not isinstance(data, list) or not all(isinstance(x, int) for x in data) or len(data) != 64:
+              print('DEVNET_DEPLOYER_KEYPAIR_JSON must be a 64-integer Solana keypair JSON array.')
+              sys.exit(1)
+          Path('.local/devnet-deployer.json').write_text(json.dumps(data), encoding='utf-8')
+          PY
+          chmod 600 .local/devnet-deployer.json
+
+      - name: Run readiness checks
+        shell: bash
+        run: |
+          npm run validate:tokenomics
+          node scripts/check-devnet-readiness.js
+          node scripts/check-anchor-deploy-readiness.js
+          npm run plan:initialize
+
+      - name: Initialize perax_core
+        shell: bash
+        run: |
+          node scripts/initialize-core-program.js --execute | tee devnet-core-program-initialize-output.txt
+
+      - name: Upload initialize output
+        uses: actions/upload-artifact@v4
+        with:
+          name: devnet-core-program-initialize-output
+          path: perax-contracts/devnet-core-program-initialize-output.txt
