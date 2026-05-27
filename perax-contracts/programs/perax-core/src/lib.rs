@@ -23,18 +23,9 @@ pub mod perax_core {
     use super::*;
 
     pub fn initialize(ctx: Context<Initialize>, params: InitializeParams) -> Result<()> {
-        require!(
-            params.trading_company_token_account != Pubkey::default(),
-            PeraxError::InvalidTradingCompanyAccount
-        );
-        require!(
-            params.trading_company_revenue_token_account != Pubkey::default(),
-            PeraxError::InvalidTradingCompanyRevenueAccount
-        );
-        require!(
-            params.trading_company_token_account != params.trading_company_revenue_token_account,
-            PeraxError::TradingCompanyAccountsMustDiffer
-        );
+        require!(params.trading_company_token_account != Pubkey::default(), PeraxError::InvalidTradingCompanyAccount);
+        require!(params.trading_company_revenue_token_account != Pubkey::default(), PeraxError::InvalidTradingCompanyRevenueAccount);
+        require!(params.trading_company_token_account != params.trading_company_revenue_token_account, PeraxError::TradingCompanyAccountsMustDiffer);
         require!(params.safety_admin != Pubkey::default(), PeraxError::InvalidSafetyAdmin);
         require!(params.oracle_feed != Pubkey::default(), PeraxError::InvalidOracleFeed);
         require!(params.launch_price > 0, PeraxError::InvalidMarketParameter);
@@ -85,26 +76,14 @@ pub mod perax_core {
         let state = &mut ctx.accounts.state;
 
         if let Some(trading_company_token_account) = params.trading_company_token_account {
-            require!(
-                trading_company_token_account != Pubkey::default(),
-                PeraxError::InvalidTradingCompanyAccount
-            );
-            require!(
-                trading_company_token_account != state.trading_company_revenue_token_account,
-                PeraxError::TradingCompanyAccountsMustDiffer
-            );
+            require!(trading_company_token_account != Pubkey::default(), PeraxError::InvalidTradingCompanyAccount);
+            require!(trading_company_token_account != state.trading_company_revenue_token_account, PeraxError::TradingCompanyAccountsMustDiffer);
             state.trading_company_token_account = trading_company_token_account;
         }
 
         if let Some(trading_company_revenue_token_account) = params.trading_company_revenue_token_account {
-            require!(
-                trading_company_revenue_token_account != Pubkey::default(),
-                PeraxError::InvalidTradingCompanyRevenueAccount
-            );
-            require!(
-                trading_company_revenue_token_account != state.trading_company_token_account,
-                PeraxError::TradingCompanyAccountsMustDiffer
-            );
+            require!(trading_company_revenue_token_account != Pubkey::default(), PeraxError::InvalidTradingCompanyRevenueAccount);
+            require!(trading_company_revenue_token_account != state.trading_company_token_account, PeraxError::TradingCompanyAccountsMustDiffer);
             state.trading_company_revenue_token_account = trading_company_revenue_token_account;
         }
 
@@ -122,10 +101,7 @@ pub mod perax_core {
         Ok(())
     }
 
-    pub fn update_market_engine_config(
-        ctx: Context<UpdateConfig>,
-        params: UpdateMarketEngineConfigParams,
-    ) -> Result<()> {
+    pub fn update_market_engine_config(ctx: Context<UpdateConfig>, params: UpdateMarketEngineConfigParams) -> Result<()> {
         let state = &mut ctx.accounts.state;
 
         if let Some(safety_admin) = params.safety_admin {
@@ -175,11 +151,7 @@ pub mod perax_core {
         let state = &mut ctx.accounts.state;
         state.is_paused = is_paused;
 
-        emit!(PauseStatusChanged {
-            authority: state.authority,
-            is_paused,
-        });
-
+        emit!(PauseStatusChanged { authority: state.authority, is_paused });
         Ok(())
     }
 
@@ -195,10 +167,7 @@ pub mod perax_core {
         Ok(())
     }
 
-    pub fn record_market_conditional_release(
-        ctx: Context<RecordMarketConditionalRelease>,
-        params: MarketConditionalReleaseParams,
-    ) -> Result<()> {
+    pub fn record_market_conditional_release(ctx: Context<RecordMarketConditionalRelease>, params: MarketConditionalReleaseParams) -> Result<()> {
         let state = &mut ctx.accounts.state;
         require!(!state.is_paused, PeraxError::ProgramPaused);
         require!(!state.emergency_pause, PeraxError::EmergencyPaused);
@@ -241,62 +210,38 @@ pub mod perax_core {
 
     pub fn nominate_authority(ctx: Context<UpdateConfig>, new_authority: Pubkey) -> Result<()> {
         require!(new_authority != Pubkey::default(), PeraxError::InvalidAuthority);
-
         let state = &mut ctx.accounts.state;
         require!(new_authority != state.authority, PeraxError::InvalidAuthority);
-
         state.pending_authority = new_authority;
         state.has_pending_authority = true;
-
-        emit!(AuthorityTransferNominated {
-            current_authority: state.authority,
-            pending_authority: state.pending_authority,
-        });
-
+        emit!(AuthorityTransferNominated { current_authority: state.authority, pending_authority: state.pending_authority });
         Ok(())
     }
 
     pub fn cancel_authority_transfer(ctx: Context<UpdateConfig>) -> Result<()> {
         let state = &mut ctx.accounts.state;
         require!(state.has_pending_authority, PeraxError::NoPendingAuthority);
-
         let cancelled_authority = state.pending_authority;
         state.pending_authority = Pubkey::default();
         state.has_pending_authority = false;
-
-        emit!(AuthorityTransferCancelled {
-            authority: state.authority,
-            cancelled_authority,
-        });
-
+        emit!(AuthorityTransferCancelled { authority: state.authority, cancelled_authority });
         Ok(())
     }
 
     pub fn accept_authority(ctx: Context<AcceptAuthority>) -> Result<()> {
         let state = &mut ctx.accounts.state;
         let new_authority = ctx.accounts.pending_authority.key();
-
         require!(state.has_pending_authority, PeraxError::NoPendingAuthority);
         require!(state.pending_authority == new_authority, PeraxError::Unauthorized);
-
         let previous_authority = state.authority;
         state.authority = new_authority;
         state.pending_authority = Pubkey::default();
         state.has_pending_authority = false;
-
-        emit!(AuthorityTransferAccepted {
-            previous_authority,
-            new_authority,
-        });
-
+        emit!(AuthorityTransferAccepted { previous_authority, new_authority });
         Ok(())
     }
 
-    pub fn pay_to_trading_company(
-        ctx: Context<PayToTradingCompany>,
-        amount: u64,
-        reference: [u8; 32],
-    ) -> Result<()> {
+    pub fn pay_to_trading_company(ctx: Context<PayToTradingCompany>, amount: u64, reference: [u8; 32]) -> Result<()> {
         let state = &ctx.accounts.state;
         require!(!state.is_paused, PeraxError::ProgramPaused);
         validate_payment_amount(state, amount)?;
@@ -326,33 +271,16 @@ pub mod perax_core {
         Ok(())
     }
 
-    pub fn record_external_utility_payment(
-        ctx: Context<RecordExternalUtilityPayment>,
-        amount: u64,
-        reference: [u8; 32],
-        payment_source: [u8; 16],
-    ) -> Result<()> {
+    pub fn record_external_utility_payment(ctx: Context<RecordExternalUtilityPayment>, amount: u64, reference: [u8; 32], payment_source: [u8; 16]) -> Result<()> {
         let state = &ctx.accounts.state;
         require!(!state.is_paused, PeraxError::ProgramPaused);
         validate_payment_amount(state, amount)?;
         validate_reference(reference)?;
-
-        emit!(ExternalUtilityPaymentRecorded {
-            authority: ctx.accounts.authority.key(),
-            token_mint: state.token_mint,
-            amount,
-            reference,
-            payment_source,
-        });
-
+        emit!(ExternalUtilityPaymentRecorded { authority: ctx.accounts.authority.key(), token_mint: state.token_mint, amount, reference, payment_source });
         Ok(())
     }
 
-    pub fn burn_from_trading_company(
-        ctx: Context<BurnFromTradingCompany>,
-        amount: u64,
-        decision_id: [u8; 32],
-    ) -> Result<()> {
+    pub fn burn_from_trading_company(ctx: Context<BurnFromTradingCompany>, amount: u64, decision_id: [u8; 32]) -> Result<()> {
         let state = &ctx.accounts.state;
         require!(!state.is_paused, PeraxError::ProgramPaused);
         require!(amount > 0, PeraxError::InvalidAmount);
@@ -376,11 +304,9 @@ pub mod perax_core {
 
 fn validate_payment_amount(state: &PeraxState, amount: u64) -> Result<()> {
     require!(amount > 0, PeraxError::InvalidAmount);
-
     if state.max_payment_amount > 0 {
         require!(amount <= state.max_payment_amount, PeraxError::PaymentAmountTooLarge);
     }
-
     Ok(())
 }
 
@@ -399,57 +325,26 @@ fn validate_oracle_snapshot(state: &PeraxState, snapshot: &MarketConditionSnapsh
 
 fn validate_growth_release(state: &PeraxState, params: &MarketConditionalReleaseParams) -> Result<()> {
     let snapshot = &params.snapshot;
-    let growth_price_trigger = state
-        .launch_price
-        .checked_mul(GROWTH_PRICE_MULTIPLIER)
-        .ok_or(PeraxError::InvalidMarketParameter)?;
-
+    let growth_price_trigger = state.launch_price.checked_mul(GROWTH_PRICE_MULTIPLIER).ok_or(PeraxError::InvalidMarketParameter)?;
     require!(snapshot.observed_price >= growth_price_trigger, PeraxError::GrowthPriceGateNotMet);
     require!(snapshot.twap_minutes >= MIN_GROWTH_TWAP_MINUTES, PeraxError::TwapGateNotMet);
     require!(snapshot.liquidity_usd >= MIN_GROWTH_LIQUIDITY_USD, PeraxError::LiquidityGateNotMet);
     require!(snapshot.net_buy_volume_bps >= MIN_NET_BUY_VOLUME_BPS, PeraxError::BuyPressureGateNotMet);
-    require!(
-        snapshot.observed_at >= state.last_release_timestamp + RELEASE_COOLDOWN_SECONDS || state.last_release_timestamp == 0,
-        PeraxError::ReleaseCooldownActive
-    );
-    require!(
-        state.daily_unlocked_accumulator.saturating_add(params.requested_amount) <= state.daily_release_cap,
-        PeraxError::DailyReleaseCapExceeded
-    );
-    require!(
-        state.monthly_unlocked_accumulator.saturating_add(params.requested_amount) <= state.monthly_release_cap,
-        PeraxError::MonthlyReleaseCapExceeded
-    );
-
+    require!(snapshot.observed_at >= state.last_release_timestamp + RELEASE_COOLDOWN_SECONDS || state.last_release_timestamp == 0, PeraxError::ReleaseCooldownActive);
+    require!(state.daily_unlocked_accumulator.saturating_add(params.requested_amount) <= state.daily_release_cap, PeraxError::DailyReleaseCapExceeded);
+    require!(state.monthly_unlocked_accumulator.saturating_add(params.requested_amount) <= state.monthly_release_cap, PeraxError::MonthlyReleaseCapExceeded);
     Ok(())
 }
 
 fn validate_emergency_release(state: &PeraxState, params: &MarketConditionalReleaseParams) -> Result<()> {
     let snapshot = &params.snapshot;
-    require!(
-        snapshot.downside_move_bps >= EMERGENCY_DOWNSIDE_TRIGGER_BPS,
-        PeraxError::EmergencyDownsideGateNotMet
-    );
-    require!(
-        snapshot.liquidity_drain_bps >= EMERGENCY_LIQUIDITY_DRAIN_TRIGGER_BPS,
-        PeraxError::EmergencyLiquidityGateNotMet
-    );
+    require!(snapshot.downside_move_bps >= EMERGENCY_DOWNSIDE_TRIGGER_BPS, PeraxError::EmergencyDownsideGateNotMet);
+    require!(snapshot.liquidity_drain_bps >= EMERGENCY_LIQUIDITY_DRAIN_TRIGGER_BPS, PeraxError::EmergencyLiquidityGateNotMet);
     require!(snapshot.emergency_reserve_available_amount > 0, PeraxError::InvalidMarketParameter);
-
-    let hourly_cap = amount_bps(
-        snapshot.emergency_reserve_available_amount,
-        state.emergency_hourly_release_bps,
-    )?;
+    let hourly_cap = amount_bps(snapshot.emergency_reserve_available_amount, state.emergency_hourly_release_bps)?;
     require!(params.requested_amount <= hourly_cap, PeraxError::EmergencyHourlyCapExceeded);
-    require!(
-        state.daily_unlocked_accumulator.saturating_add(params.requested_amount) <= state.daily_release_cap,
-        PeraxError::DailyReleaseCapExceeded
-    );
-    require!(
-        state.monthly_unlocked_accumulator.saturating_add(params.requested_amount) <= state.monthly_release_cap,
-        PeraxError::MonthlyReleaseCapExceeded
-    );
-
+    require!(state.daily_unlocked_accumulator.saturating_add(params.requested_amount) <= state.daily_release_cap, PeraxError::DailyReleaseCapExceeded);
+    require!(state.monthly_unlocked_accumulator.saturating_add(params.requested_amount) <= state.monthly_release_cap, PeraxError::MonthlyReleaseCapExceeded);
     Ok(())
 }
 
@@ -458,7 +353,6 @@ fn reset_release_windows_if_needed(state: &mut PeraxState, observed_at: i64) {
         state.daily_window_start = observed_at;
         state.daily_unlocked_accumulator = 0;
     }
-
     if state.monthly_window_start == 0 || observed_at >= state.monthly_window_start + 2_592_000 {
         state.monthly_window_start = observed_at;
         state.monthly_unlocked_accumulator = 0;
@@ -466,11 +360,7 @@ fn reset_release_windows_if_needed(state: &mut PeraxState, observed_at: i64) {
 }
 
 fn amount_bps(amount: u64, bps: u16) -> Result<u64> {
-    let result = (amount as u128)
-        .checked_mul(bps as u128)
-        .ok_or(PeraxError::InvalidMarketParameter)?
-        .checked_div(10_000)
-        .ok_or(PeraxError::InvalidMarketParameter)?;
+    let result = (amount as u128).checked_mul(bps as u128).ok_or(PeraxError::InvalidMarketParameter)?.checked_div(10_000).ok_or(PeraxError::InvalidMarketParameter)?;
     u64::try_from(result).map_err(|_| PeraxError::InvalidMarketParameter.into())
 }
 
@@ -534,112 +424,56 @@ pub struct MarketConditionalReleaseParams {
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
-    #[account(
-        init,
-        payer = authority,
-        space = 8 + PeraxState::INIT_SPACE,
-        seeds = [b"perax-state"],
-        bump
-    )]
+    #[account(init, payer = authority, space = 8 + PeraxState::INIT_SPACE, seeds = [b"perax-state"], bump)]
     pub state: Account<'info, PeraxState>,
-
     #[account(mut)]
     pub authority: Signer<'info>,
-
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct UpdateConfig<'info> {
-    #[account(
-        mut,
-        seeds = [b"perax-state"],
-        bump = state.bump,
-        has_one = authority @ PeraxError::Unauthorized
-    )]
+    #[account(mut, seeds = [b"perax-state"], bump = state.bump, has_one = authority @ PeraxError::Unauthorized)]
     pub state: Account<'info, PeraxState>,
-
     pub authority: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct SafetyAdminAction<'info> {
-    #[account(
-        mut,
-        seeds = [b"perax-state"],
-        bump = state.bump,
-        has_one = safety_admin @ PeraxError::Unauthorized
-    )]
+    #[account(mut, seeds = [b"perax-state"], bump = state.bump, has_one = safety_admin @ PeraxError::Unauthorized)]
     pub state: Account<'info, PeraxState>,
-
     pub safety_admin: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct RecordMarketConditionalRelease<'info> {
-    #[account(
-        mut,
-        seeds = [b"perax-state"],
-        bump = state.bump,
-        has_one = oracle_feed @ PeraxError::Unauthorized
-    )]
+    #[account(mut, seeds = [b"perax-state"], bump = state.bump, has_one = oracle_feed @ PeraxError::Unauthorized)]
     pub state: Account<'info, PeraxState>,
-
     pub oracle_feed: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct AcceptAuthority<'info> {
-    #[account(
-        mut,
-        seeds = [b"perax-state"],
-        bump = state.bump
-    )]
+    #[account(mut, seeds = [b"perax-state"], bump = state.bump)]
     pub state: Account<'info, PeraxState>,
-
     pub pending_authority: Signer<'info>,
 }
 
 #[derive(Accounts)]
 #[instruction(amount: u64, reference: [u8; 32])]
 pub struct PayToTradingCompany<'info> {
-    #[account(
-        seeds = [b"perax-state"],
-        bump = state.bump,
-        constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint,
-        constraint = trading_company_revenue_token_account.key() == state.trading_company_revenue_token_account @ PeraxError::InvalidTradingCompanyRevenueAccount
-    )]
+    #[account(seeds = [b"perax-state"], bump = state.bump, constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint, constraint = trading_company_revenue_token_account.key() == state.trading_company_revenue_token_account @ PeraxError::InvalidTradingCompanyRevenueAccount)]
     pub state: Account<'info, PeraxState>,
-
-    #[account(
-        init,
-        payer = payer,
-        space = 8 + PaymentRecord::SPACE,
-        seeds = [b"payment", reference.as_ref()],
-        bump
-    )]
+    #[account(init, payer = payer, space = 8 + PaymentRecord::SPACE, seeds = [b"payment", reference.as_ref()], bump)]
     pub payment_record: Account<'info, PaymentRecord>,
-
     #[account(mut)]
     pub payer: Signer<'info>,
-
-    #[account(
-        mut,
-        constraint = payer_token_account.owner == payer.key() @ PeraxError::Unauthorized,
-        constraint = payer_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
-    )]
+    #[account(mut, constraint = payer_token_account.owner == payer.key() @ PeraxError::Unauthorized, constraint = payer_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint)]
     pub payer_token_account: Account<'info, TokenAccount>,
-
-    #[account(
-        mut,
-        constraint = trading_company_revenue_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
-    )]
+    #[account(mut, constraint = trading_company_revenue_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint)]
     pub trading_company_revenue_token_account: Account<'info, TokenAccount>,
-
     pub token_mint: Account<'info, Mint>,
-
     pub token_program: Program<'info, Token>,
-
     pub system_program: Program<'info, System>,
 }
 
@@ -656,41 +490,21 @@ impl<'info> PayToTradingCompany<'info> {
 
 #[derive(Accounts)]
 pub struct RecordExternalUtilityPayment<'info> {
-    #[account(
-        seeds = [b"perax-state"],
-        bump = state.bump,
-        has_one = authority @ PeraxError::Unauthorized
-    )]
+    #[account(seeds = [b"perax-state"], bump = state.bump, has_one = authority @ PeraxError::Unauthorized)]
     pub state: Account<'info, PeraxState>,
-
     pub authority: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct BurnFromTradingCompany<'info> {
-    #[account(
-        seeds = [b"perax-state"],
-        bump = state.bump,
-        has_one = authority @ PeraxError::Unauthorized,
-        constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint,
-        constraint = trading_company_revenue_token_account.key() == state.trading_company_revenue_token_account @ PeraxError::InvalidTradingCompanyRevenueAccount
-    )]
+    #[account(seeds = [b"perax-state"], bump = state.bump, has_one = authority @ PeraxError::Unauthorized, constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint, constraint = trading_company_revenue_token_account.key() == state.trading_company_revenue_token_account @ PeraxError::InvalidTradingCompanyRevenueAccount)]
     pub state: Account<'info, PeraxState>,
-
     pub authority: Signer<'info>,
-
     pub trading_company_authority: Signer<'info>,
-
-    #[account(
-        mut,
-        constraint = trading_company_revenue_token_account.owner == trading_company_authority.key() @ PeraxError::Unauthorized,
-        constraint = trading_company_revenue_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
-    )]
+    #[account(mut, constraint = trading_company_revenue_token_account.owner == trading_company_authority.key() @ PeraxError::Unauthorized, constraint = trading_company_revenue_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint)]
     pub trading_company_revenue_token_account: Account<'info, TokenAccount>,
-
     #[account(mut)]
     pub token_mint: Account<'info, Mint>,
-
     pub token_program: Program<'info, Token>,
 }
 
@@ -832,7 +646,7 @@ pub struct UtilityPaymentReceived {
     pub token_mint: Pubkey,
     pub trading_company_token_account: Pubkey,
     pub trading_company_revenue_token_account: Pubkey,
-    pub amount,
+    pub amount: u64,
     pub reference: [u8; 32],
 }
 
