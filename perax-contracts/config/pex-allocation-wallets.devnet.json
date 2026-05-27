@@ -1,0 +1,90 @@
+{
+  "network": "solana",
+  "cluster": "devnet",
+  "tokenSymbol": "PEX",
+  "note": "Devnet public wallet configuration only. Do not store private keys, seed phrases, or keypair files here.",
+  "wallets": {
+    "liquidityPool": {
+      "allocationKey": "liquidity_pool",
+      "percentage": 38,
+      "amount": "380000000",
+      "address": "EMm39nFMuP3ARFpxcXSvK2iSLw1Zv2HECgcgPCB65zBW"
+    },
+    "communityUtilityRewards": {
+      "allocationKey": "community_utility_rewards",
+      "percentage": 17,
+      "amount": "170000000",
+      "address": "6zW8puiuu3gRbSUiPUBcoRCrEyjmafyVybxNwd3d6H9z"
+    },
+    "treasury": {
+      "allocationKey": "treasury",
+      "percentage": 12,
+      "amount": "120000000",
+      "address": "H33CY6zvJ2rZgm86AQRq8L2oWNDED5HSWd5cKqhWpxBM"
+    },
+    "ecosystemMarketing": {
+      "allocationKey": "ecosystem_marketing",
+      "percentage": 12,
+      "amount": "120000000",
+      "address": "ATiBdHEgWwz3tE6Aw3NbFHQiuwCb9zeLERTQ5KZSBH8L"
+    },
+    "tradingCompanyOperations": {
+      "allocationKey": "trading_company_operations",
+      "percentage": 7,
+      "amount": "70000000",
+      "address": "A9kRqJ2hcPu5EWXoK4Ti8HUG5h4n75qEpwpAjhqFNt2f"
+    },
+    "team": {
+      "developmentTeam": {
+        "allocationKey": "development_team",
+        "percentage": 2,
+        "amount": "20000000",
+        "address": "DVPxd8bYuuwnEaicZteqFM63yVx73wTPRsAwEWAGVaDi"
+      },
+      "founder": {
+        "allocationKey": "founder",
+        "percentage": 2,
+        "amount": "20000000",
+        "address": "5obhRR3AF4KMWmc6pE3DSvctv6wUgFKH3aRLfjaHVLYJ"
+      },
+      "futureTeamIncentives": {
+        "allocationKey": "future_team_incentives",
+        "percentage": 1,
+        "amount": "10000000",
+        "address": "8qS42K4jMP2HkAc3LwgwH4EmpmgBedWcqt9TQCWoc2VU"
+      },
+      "teamEmergencyReserve": {
+        "allocationKey": "team_emergency_reserve",
+        "percentage": 1,
+        "amount": "10000000",
+        "address": "7KMJeTA64aZ4stFTdfwPrD3jAknoW2RmpzX57j3VcKmA"
+      }
+    },
+    "privateStrategicInvestors": {
+      "allocationKey": "private_strategic_investors",
+      "percentage": 5,
+      "amount": "50000000",
+      "address": "HLxSnSPnVFnN6kf4UuBQKiLpPyysEBWQ2D3EMHG7zkBJ"
+    },
+    "advisors": {
+      "advisorWallet1": {
+        "allocationKey": "advisor_wallet_1",
+        "percentage": 1,
+        "amount": "10000000",
+        "address": "ECqq6VxMDUWm7k6P5zNVwLXrKYLW6FJbYDkrttiDkwxb"
+      },
+      "advisorWallet2": {
+        "allocationKey": "advisor_wallet_2",
+        "percentage": 1,
+        "amount": "10000000",
+        "address": "FjT2LwaxFxT6pXdZDrFSv1zzQZZwjHLhgoBpfvCbapCR"
+      },
+      "advisorWallet3": {
+        "allocationKey": "advisor_wallet_3",
+        "percentage": 1,
+        "amount": "10000000",
+        "address": "H6qnUNp3ps5CrowbpUekUUMF6QnCZppVKWPQ96DCc7Ly"
+      }
+    }
+  }
+}
