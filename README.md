@@ -60,14 +60,16 @@ At the approved initial price:
 Recommended initial Meteora liquidity:
 
 ```text
-250,000,000 PEX + $3,000 USDC
+380,000,000 PEX + $4,560 USDC
 ```
 
 Remaining liquidity reserve:
 
 ```text
-130,000,000 PEX
+0 PEX
 ```
+
+This uses the full 38% liquidity allocation at the approved launch price of $0.000012.
 
 ## Market-Conditional Unlocking
 
