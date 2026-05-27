@@ -87,10 +87,12 @@ function main() {
   requireEnv(env, ['SOLANA_RPC_URL', 'SOLANA_KEYPAIR_PATH']);
   run('solana', ['config', 'set', '--url', env.SOLANA_RPC_URL, '--keypair', env.SOLANA_KEYPAIR_PATH]);
 
-  const lockedOutput = run('spl-token', ['create-account', mint, '--owner', lockedWallet]);
+  const commonArgs = ['--fee-payer', env.SOLANA_KEYPAIR_PATH];
+
+  const lockedOutput = run('spl-token', ['create-account', mint, '--owner', lockedWallet, ...commonArgs]);
   const lockedTokenAccount = parseAddress(lockedOutput, 'locked Trading Company token account');
 
-  const revenueOutput = run('spl-token', ['create-account', mint, '--owner', revenueWallet]);
+  const revenueOutput = run('spl-token', ['create-account', mint, '--owner', revenueWallet, ...commonArgs]);
   const revenueTokenAccount = parseAddress(revenueOutput, 'revenue Trading Company token account');
 
   console.log('');
