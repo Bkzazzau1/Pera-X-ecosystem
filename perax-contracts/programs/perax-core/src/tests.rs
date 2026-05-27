@@ -139,7 +139,7 @@ fn growth_release_rejects_when_twap_is_under_60_minutes() {
 }
 
 #[test]
-fn growth_release_rejects_when_liquidity_is_below_5x_initial() {
+fn growth_release_rejects_when_liquidity_is_below_3x_initial() {
     let state = test_state(0);
     let mut params = growth_release_params(1_000_000 * PEX_DECIMALS, 1_000_000);
     params.snapshot.liquidity_usd = MIN_GROWTH_LIQUIDITY_USD - 1;
@@ -148,7 +148,7 @@ fn growth_release_rejects_when_liquidity_is_below_5x_initial() {
 }
 
 #[test]
-fn growth_release_rejects_when_buy_pressure_is_below_65_percent() {
+fn growth_release_rejects_when_buy_pressure_is_below_50_percent() {
     let state = test_state(0);
     let mut params = growth_release_params(1_000_000 * PEX_DECIMALS, 1_000_000);
     params.snapshot.net_buy_volume_bps = MIN_NET_BUY_VOLUME_BPS - 1;
