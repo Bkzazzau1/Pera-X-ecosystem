@@ -46,9 +46,16 @@
     "upgradeAuthority": "7fvpqKVEsK4UHDR49LhPYg5kEtdbc5847MzqVCW4LiAe",
     "lastDeployedSlot": 465342244,
     "dataLengthBytes": 348520,
-    "statePda": "REPLACE_AFTER_INITIALIZATION",
+    "statePda": "8LNUe8ud9Lrtt1HmuS132YoGs5tBNEeWeviNJwWDkHWT",
+    "stateBump": 255,
+    "initializeSignature": "2BUnZ5JS79WT15awi6tcUKWzqFgBUzR71ZjZZ2DZUeSvYoq3NMkfniobQSPkwTrVW89TUeBqTJbAX3YkCi2oSd94",
+    "authority": "7fvpqKVEsK4UHDR49LhPYg5kEtdbc5847MzqVCW4LiAe",
     "safetyAdminWallet": "2FuGxUt1EaewriZ9QpSkqz8Lbj2M69q2F4vnr1NJHPHX",
-    "oracleBotWallet": "4hx4YvYdyQMziqxqTv5gjRbLcXZFwX1kaL9vdPBYdU9D"
+    "oracleBotWallet": "4hx4YvYdyQMziqxqTv5gjRbLcXZFwX1kaL9vdPBYdU9D",
+    "launchPriceScaled": "1200",
+    "dailyReleaseCapBaseUnits": "10000000000000",
+    "monthlyReleaseCapBaseUnits": "150000000000000",
+    "emergencyHourlyReleaseBps": 50
   },
   "status": {
     "devnetMintCreated": true,
@@ -56,7 +63,7 @@
     "allocationWalletsConfigured": true,
     "tradingCompanyTokenAccountsCreated": true,
     "coreProgramDeployed": true,
-    "coreProgramInitialized": false,
+    "coreProgramInitialized": true,
     "mintAuthorityRevoked": false
   },
   "securityNote": "Public devnet deployment record only. No private keys, seed phrases, or keypair files are stored here. Do not revoke mint authority until allocation, liquidity, and verification steps are complete."
