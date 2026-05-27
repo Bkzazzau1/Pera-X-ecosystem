@@ -1,0 +1,105 @@
+name: Devnet Create Trading Company Token Accounts
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type CREATE_DEVNET_TRADING_COMPANY_TOKEN_ACCOUNTS to create the two PEX token accounts"
+        required: true
+        type: string
+
+jobs:
+  create-token-accounts:
+    name: Create Trading Company PEX token accounts
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: perax-contracts
+
+    env:
+      SOLANA_CLUSTER: devnet
+      SOLANA_RPC_URL: https://api.devnet.solana.com
+      SOLANA_KEYPAIR_PATH: .local/devnet-deployer.json
+      PEX_MINT_ADDRESS: DnkAW3B1ckzW6eimgSBNPK3XTt83wMiZRETy8iF3gdsn
+      TRADING_COMPANY_LOCKED_WALLET: A9kRqJ2hcPu5EWXoK4Ti8HUG5h4n75qEpwpAjhqFNt2f
+      TRADING_COMPANY_REVENUE_WALLET: DaCFT5EZ6heLj2kSQjoAmz5gN7hHo3RdS5teuB2qupUX
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Confirm execution
+        shell: bash
+        run: |
+          if [ "${{ inputs.confirmation }}" != "CREATE_DEVNET_TRADING_COMPANY_TOKEN_ACCOUNTS" ]; then
+            echo "Wrong confirmation phrase. Refusing to create token accounts."
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux packages required for SPL Token CLI
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libudev-dev libusb-1.0-0-dev
+
+      - name: Install Solana CLI
+        shell: bash
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install SPL Token CLI
+        shell: bash
+        run: |
+          cargo install spl-token-cli --locked
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Install JavaScript dependencies
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Restore devnet deployer keypair
+        shell: bash
+        run: |
+          if [ -z '${{ secrets.DEVNET_DEPLOYER_KEYPAIR_JSON }}' ]; then
+            echo "Missing DEVNET_DEPLOYER_KEYPAIR_JSON secret"
+            exit 1
+          fi
+
+          mkdir -p .local
+          printf '%s' '${{ secrets.DEVNET_DEPLOYER_KEYPAIR_JSON }}' > .local/devnet-deployer.json
+          chmod 600 .local/devnet-deployer.json
+
+      - name: Configure Solana devnet
+        shell: bash
+        run: |
+          solana config set --url "$SOLANA_RPC_URL" --keypair "$SOLANA_KEYPAIR_PATH"
+          echo "Deployer address:"
+          solana address
+          echo "Balance:"
+          solana balance
+
+      - name: Create Trading Company PEX token accounts
+        shell: bash
+        run: |
+          node scripts/create-trading-company-token-accounts.js --execute | tee devnet-trading-company-token-accounts-output.txt
+
+      - name: Upload output
+        uses: actions/upload-artifact@v4
+        with:
+          name: devnet-trading-company-token-accounts-output
+          path: perax-contracts/devnet-trading-company-token-accounts-output.txt
