@@ -139,12 +139,26 @@ function validateTokenomics(config) {
 function validateInitialLiquidity(config) {
   const liquidity = config.initialLiquidity;
   assert(liquidity, 'Missing initialLiquidity section.');
+  assert(liquidity.policy === 'OPTION_B_FULL_38_PERCENT_LIQUIDITY_ALLOCATION', 'Liquidity policy must be Option B full 38% allocation.');
   assert(liquidity.dex === 'Meteora DLMM', 'Initial DEX must be Meteora DLMM.');
   assert(liquidity.pair === 'PEX/USDC', 'Initial pair must be PEX/USDC.');
   assert(liquidity.targetUsd === '4560', 'Initial liquidity target must be $4,560.');
   assert(liquidity.pexAmount === '380000000', 'Initial liquidity PEX amount must be 380,000,000 PEX.');
   assert(liquidity.quoteAmountUsd === '4560', 'Initial quote amount must be $4,560.');
   assert(liquidity.remainingLiquidityReserve === '0', 'Remaining liquidity reserve must be 0 PEX when full 38% is used initially.');
+}
+
+function validateMarketConditionalReleasePolicy(config) {
+  const policy = config.marketConditionalReleasePolicy;
+  assert(policy, 'Missing marketConditionalReleasePolicy section.');
+  assert(policy.minimumLiquidityMultipleOfInitial === 3, 'Minimum liquidity gate must be 3x initial liquidity.');
+  assert(policy.minimumLiquidityUsd === '13680', 'Minimum liquidity gate must be $13,680.');
+  assert(policy.minimumNetBuyPressureBps === 5000, 'Minimum net buy pressure must be 5,000 bps.');
+  assert(policy.minimumNetBuyPressurePercentage === 50, 'Minimum net buy pressure must be 50%.');
+  assert(policy.dailyReleaseCapPercentageOfTotalSupply === 1, 'Daily release cap must be 1% of total supply.');
+  assert(policy.dailyReleaseCapAmount === '10000000', 'Daily release cap amount must be 10,000,000 PEX.');
+  assert(policy.monthlyReleaseCapPercentageOfTotalSupply === 15, 'Monthly release cap must be 15% of total supply.');
+  assert(policy.monthlyReleaseCapAmount === '150000000', 'Monthly release cap amount must be 150,000,000 PEX.');
 }
 
 function validateUnlocking(config) {
@@ -161,10 +175,17 @@ function validateUnlocking(config) {
   assert(unlocking.cooldownHoursMax === 6, 'Maximum cooldown must be 6 hours.');
   assert(unlocking.maxDailyUnlockPercentageOfTotalSupply === 1, 'Daily unlock cap must be 1% of total supply.');
   assert(unlocking.maxDailyUnlockAmount === '10000000', 'Daily unlock cap amount must be 10,000,000 PEX.');
-  assert(unlocking.requiresManualOrMultisigApproval === true, 'Manual or multisig approval must be enabled.');
+  assert(unlocking.maxMonthlyUnlockPercentageOfTotalSupply === 15, 'Monthly unlock cap must be 15% of total supply.');
+  assert(unlocking.maxMonthlyUnlockAmount === '150000000', 'Monthly unlock cap amount must be 150,000,000 PEX.');
+  assert(unlocking.requiresManualOrMultisigApproval === false, 'Manual or multisig approval must be disabled for market-conditional release.');
+  assert(unlocking.releaseAuthority === 'market_condition_oracle_only', 'Release authority must be market_condition_oracle_only.');
+  assert(unlocking.safetyAuthority === 'emergency_pause_and_system_maintenance_only', 'Safety authority must be emergency_pause_and_system_maintenance_only.');
   assert(unlocking.emergencyPauseEnabled === true, 'Emergency pause must be enabled.');
   assert(Array.isArray(unlocking.stages) && unlocking.stages.length >= 3, 'At least 3 unlocking stages are required.');
   assert(Array.isArray(unlocking.healthChecks) && unlocking.healthChecks.length > 0, 'Unlocking health checks are required.');
+  assert(unlocking.healthChecks.includes('liquidity_depth_3x_initial'), 'Health checks must include liquidity_depth_3x_initial.');
+  assert(unlocking.healthChecks.includes('minimum_50_percent_buy_side_demand'), 'Health checks must include minimum_50_percent_buy_side_demand.');
+  assert(unlocking.healthChecks.includes('monthly_15_percent_cap_available'), 'Health checks must include monthly_15_percent_cap_available.');
 }
 
 function validateWalletTemplate(config) {
@@ -223,6 +244,7 @@ function main() {
 
   validateTokenomics(config);
   validateInitialLiquidity(config);
+  validateMarketConditionalReleasePolicy(config);
   validateUnlocking(config);
   validateWalletTemplate(config);
 
@@ -231,6 +253,7 @@ function main() {
   console.log(`✅ Initial price: $${config.token.initialPriceUsd}`);
   console.log(`✅ Allocations: ${EXPECTED_TOTAL_PERCENTAGE}%`);
   console.log('✅ Initial liquidity uses full 38% allocation on Meteora DLMM.');
+  console.log('✅ Market-conditional release policy is valid.');
   console.log('✅ Allocation wallet template is valid.');
 }
 
