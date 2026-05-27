@@ -57,24 +57,24 @@ Users may acquire Credits using PEX, card, stablecoin, or eligible-country virtu
 
 ## 6. Initial Liquidity Guidance
 
-At the initial price of $0.000012, an initial $3,000 liquidity position would require:
+At the approved launch price of $0.000012, the full 38% liquidity allocation equals:
 
 ```text
-$3,000 / $0.000012 = 250,000,000 PEX
+380,000,000 PEX * $0.000012 = $4,560
 ```
 
-Suggested initial liquidity structure:
+Approved initial Meteora liquidity structure:
 
 ```text
-250,000,000 PEX + $3,000 USDC
+380,000,000 PEX + $4,560 USDC
 ```
 
-This uses part of the 38% liquidity allocation:
+This uses the full 38% liquidity allocation:
 
 ```text
 Total Liquidity Allocation: 380,000,000 PEX
-Initial Liquidity Usage: 250,000,000 PEX
-Remaining Liquidity Reserve: 130,000,000 PEX
+Initial Liquidity Usage: 380,000,000 PEX
+Remaining Liquidity Reserve: 0 PEX
 ```
 
 ## 7. Unlocking Philosophy
