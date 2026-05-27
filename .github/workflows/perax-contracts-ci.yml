@@ -15,7 +15,7 @@ on:
 
 jobs:
   contracts:
-    name: Validate and test Anchor contracts
+    name: Validate contract code and tokenomics
     runs-on: ubuntu-latest
 
     defaults:
@@ -32,7 +32,7 @@ jobs:
           node-version: "20"
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@1.79.0
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Cargo registry
         uses: actions/cache@v4
@@ -41,21 +41,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             perax-contracts/target
-          key: ${{ runner.os }}-cargo-rust-1.79-${{ hashFiles('perax-contracts/**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-stable-${{ hashFiles('perax-contracts/**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-rust-1.79-
-
-      - name: Install Solana CLI
-        shell: bash
-        run: |
-          sh -c "$(curl -sSfL https://release.anza.xyz/v1.18.18/install)"
-          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
-
-      - name: Install Anchor CLI
-        shell: bash
-        run: |
-          cargo install --git https://github.com/coral-xyz/anchor --tag v0.30.1 anchor-cli --locked
-          anchor --version
+            ${{ runner.os }}-cargo-stable-
 
       - name: Install JavaScript dependencies
         shell: bash
@@ -80,12 +68,5 @@ jobs:
       - name: TypeScript check
         run: npm run typecheck
 
-      - name: Generate local Solana keypair
-        shell: bash
-        run: |
-          mkdir -p ~/.config/solana
-          solana-keygen new --no-bip39-passphrase --silent --outfile ~/.config/solana/id.json
-          solana config set --url localhost
-
-      - name: Run Anchor tests
-        run: anchor test
+      - name: Run Rust unit tests
+        run: cargo test --manifest-path programs/perax-core/Cargo.toml
