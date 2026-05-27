@@ -46,6 +46,12 @@ function run(command, args, options = {}) {
 }
 
 function parseAta(output) {
+  const accountExistsMatch = output.match(/Account already exists:\s*([1-9A-HJ-NP-Za-km-z]{32,44})/);
+  if (accountExistsMatch) return accountExistsMatch[1];
+
+  const creatingAccountMatch = output.match(/Creating account\s+([1-9A-HJ-NP-Za-km-z]{32,44})/);
+  if (creatingAccountMatch) return creatingAccountMatch[1];
+
   const candidates = output.split(/\s+/).filter((part) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(part));
   if (candidates.length === 0) throw new Error(`Could not parse token account from output: ${output}`);
   return candidates[candidates.length - 1];
@@ -69,7 +75,7 @@ function baseUnitsToUiAmount(baseUnits) {
 }
 
 function getTokenBalanceBaseUnits(tokenAccount) {
-  const output = run('spl-token', ['balance', tokenAccount]);
+  const output = run('spl-token', ['balance', '--address', tokenAccount]);
   return parseUiAmountToBaseUnits(output);
 }
 
