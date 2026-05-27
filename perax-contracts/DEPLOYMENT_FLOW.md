@@ -6,16 +6,7 @@ The current scripts are intentionally safe. They validate and print plans only. 
 
 ## 1. Required Safety Rule
 
-Never commit the following files:
-
-```text
-.env
-*.keypair.json
-id.json
-keypair.json
-wallet.json
-perax-contracts/config/pex-allocation-wallets.json
-```
+Never commit local environment files, private deployment material, Solana wallet/keypair files, or production-only allocation configs.
 
 The committed wallet file must remain only:
 
@@ -75,13 +66,7 @@ If it says `DRY RUN / TEMPLATE ONLY`, no real wallet addresses are loaded.
 
 ## 5. Prepare Local Environment
 
-Copy:
-
-```bash
-cp .env.example .env
-```
-
-Then update `.env` locally only.
+Copy the local environment example file and update it locally only.
 
 Required values include:
 
@@ -97,25 +82,13 @@ TRADING_COMPANY_TOKEN_ACCOUNT
 MAX_PAYMENT_AMOUNT
 ```
 
-Do not commit `.env`.
+Do not commit local environment files.
 
 ## 6. Prepare Local Production Wallet Config
 
-Copy:
+Copy the example allocation wallet template to a local production wallet config, then replace all placeholder wallet addresses with real Solana public wallet addresses.
 
-```bash
-cp config/pex-allocation-wallets.example.json config/pex-allocation-wallets.json
-```
-
-Then replace all placeholder wallet addresses with real Solana public wallet addresses.
-
-Do not commit:
-
-```text
-config/pex-allocation-wallets.json
-```
-
-It is ignored by Git.
+Do not commit the production wallet config. It is ignored by Git.
 
 ## 7. Run Checks Again
 
@@ -159,14 +132,16 @@ Approved initial price:
 Recommended initial Meteora liquidity:
 
 ```text
-250,000,000 PEX + $3,000 USDC
+380,000,000 PEX + $4,560 USDC
 ```
 
 Remaining liquidity reserve:
 
 ```text
-130,000,000 PEX
+0 PEX
 ```
+
+This uses the full 38% liquidity allocation at the approved launch price of $0.000012.
 
 ## 10. Unlocking Operations
 
