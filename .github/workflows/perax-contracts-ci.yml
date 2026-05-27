@@ -30,6 +30,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          package-manager-cache: false
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -64,6 +65,8 @@ jobs:
           npm run plan:initialize
           node scripts/plan-fixed-supply-finalization.js
           node scripts/plan-allocation-execution.js
+          node scripts/check-devnet-readiness.js
+          node scripts/check-anchor-deploy-readiness.js
 
       - name: TypeScript check
         run: npm run typecheck
