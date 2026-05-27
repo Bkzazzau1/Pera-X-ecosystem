@@ -1,0 +1,68 @@
+name: Devnet Tooling Readiness
+
+on:
+  workflow_dispatch:
+
+jobs:
+  readiness:
+    name: Verify devnet tooling and repository readiness
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: perax-contracts
+
+    env:
+      SOLANA_CLUSTER: devnet
+      SOLANA_RPC_URL: https://api.devnet.solana.com
+      SOLANA_KEYPAIR_PATH: .local/devnet-deployer.json
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Solana CLI
+        shell: bash
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install SPL Token CLI
+        shell: bash
+        run: |
+          cargo install spl-token-cli --locked
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Install JavaScript dependencies
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Verify tools
+        shell: bash
+        run: |
+          solana --version
+          spl-token --version
+          node --version
+          npm --version
+          cargo --version
+
+      - name: Run Pera-X readiness checks
+        shell: bash
+        run: |
+          npm run validate:tokenomics
+          npm run plan:mint
+          node scripts/check-devnet-readiness.js
+          npm run plan:allocation
+          node scripts/plan-allocation-execution.js
