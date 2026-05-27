@@ -37,8 +37,8 @@
   "tradingCompany": {
     "lockedStrategicWallet": "A9kRqJ2hcPu5EWXoK4Ti8HUG5h4n75qEpwpAjhqFNt2f",
     "revenueWallet": "DaCFT5EZ6heLj2kSQjoAmz5gN7hHo3RdS5teuB2qupUX",
-    "lockedStrategicTokenAccount": "REPLACE_AFTER_CREATION",
-    "revenueTokenAccount": "REPLACE_AFTER_CREATION"
+    "lockedStrategicTokenAccount": "Wcx1HaNWZQmtfn1yfS3FWXv7AKSXV8ftciezTX3ufs8",
+    "revenueTokenAccount": "E4JJoNkKhFq8Ev7XtJhuWrvdyNyWRzkwjsukgF9VbegA"
   },
   "program": {
     "programId": "REPLACE_AFTER_DEVNET_DEPLOYMENT",
@@ -50,7 +50,7 @@
     "devnetMintCreated": true,
     "fixedSupplyMinted": true,
     "allocationWalletsConfigured": true,
-    "tradingCompanyTokenAccountsCreated": false,
+    "tradingCompanyTokenAccountsCreated": true,
     "coreProgramDeployed": false,
     "coreProgramInitialized": false,
     "mintAuthorityRevoked": false
