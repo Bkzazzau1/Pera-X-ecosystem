@@ -113,6 +113,12 @@ fn payment_record_space_matches_account_fields() {
 }
 
 #[test]
+fn release_record_space_matches_account_fields() {
+    let expected_space = 32 + 32 + 1 + 8 + 8 + 8 + 8 + 2 + 8 + 8 + 1;
+    assert_eq!(ReleaseRecord::SPACE, expected_space);
+}
+
+#[test]
 fn growth_release_passes_when_all_market_gates_are_met() {
     let state = test_state(0);
     let params = growth_release_params(1_000_000 * PEX_DECIMALS, 1_000_000);
