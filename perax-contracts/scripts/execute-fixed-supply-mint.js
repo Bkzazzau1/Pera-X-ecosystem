@@ -19,6 +19,13 @@ function readEnv(filePath) {
   return env;
 }
 
+function loadRuntimeEnv() {
+  return {
+    ...readEnv(ENV_PATH),
+    ...process.env,
+  };
+}
+
 function readJson(filePath, label) {
   if (!fs.existsSync(filePath)) throw new Error(`${label} not found at ${filePath}`);
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -42,7 +49,7 @@ function requireEnv(env, keys) {
 }
 
 function main() {
-  const env = readEnv(ENV_PATH);
+  const env = loadRuntimeEnv();
   const tokenomics = readJson(TOKENOMICS_PATH, 'PEX tokenomics config');
 
   console.log('==============================================');
