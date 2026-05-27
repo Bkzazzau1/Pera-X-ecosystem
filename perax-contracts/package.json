@@ -5,10 +5,12 @@
     "validate:tokenomics": "node scripts/validate-tokenomics.js",
     "plan:allocation": "node scripts/print-allocation-plan.js",
     "plan:mint": "node scripts/plan-mint.js",
-    "plan:initialize": "node scripts/plan-core-initialize.js"
+    "plan:initialize": "node scripts/plan-core-initialize.js",
+    "initialize:core:devnet": "node scripts/initialize-core-program.js --execute"
   },
   "dependencies": {
-    "@coral-xyz/anchor": "^0.30.1"
+    "@coral-xyz/anchor": "^0.30.1",
+    "@solana/web3.js": "^1.95.3"
   },
   "devDependencies": {
     "@types/chai": "^4.3.16",
