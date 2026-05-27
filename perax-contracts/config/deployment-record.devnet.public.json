@@ -1,0 +1,59 @@
+{
+  "project": "Pera-X",
+  "token": {
+    "name": "Pera-X",
+    "symbol": "PEX",
+    "network": "solana",
+    "cluster": "devnet",
+    "decimals": 6,
+    "fixedSupply": "1000000000",
+    "mintAddress": "DnkAW3B1ckzW6eimgSBNPK3XTt83wMiZRETy8iF3gdsn",
+    "sourceTokenAccount": "J4jVAAQbCqXwgZh8HkTkoawSib16vFy76KTtR7dChu9R",
+    "mintAuthority": "7fvpqKVEsK4UHDR49LhPYg5kEtdbc5847MzqVCW4LiAe",
+    "freezeAuthority": "NONE",
+    "mintAuthorityRevoked": false
+  },
+  "initialLiquidity": {
+    "policy": "OPTION_B_FULL_38_PERCENT_LIQUIDITY_ALLOCATION",
+    "dex": "Meteora DLMM",
+    "pair": "PEX/USDC",
+    "pexAmount": "380000000",
+    "quoteAmountUsd": "4560",
+    "remainingLiquidityReserve": "0"
+  },
+  "marketConditionalReleasePolicy": {
+    "releaseAuthority": "market_condition_oracle_only",
+    "humanApprovalWhenConditionsPass": false,
+    "safetyAuthority": "emergency_pause_and_system_maintenance_only",
+    "minimumLiquidityMultipleOfInitial": 3,
+    "minimumLiquidityUsd": "13680",
+    "minimumNetBuyPressureBps": 5000,
+    "minimumNetBuyPressurePercentage": 50,
+    "dailyReleaseCapAmount": "10000000",
+    "dailyReleaseCapPercentage": 1,
+    "monthlyReleaseCapAmount": "150000000",
+    "monthlyReleaseCapPercentage": 15
+  },
+  "tradingCompany": {
+    "lockedStrategicWallet": "A9kRqJ2hcPu5EWXoK4Ti8HUG5h4n75qEpwpAjhqFNt2f",
+    "revenueWallet": "DaCFT5EZ6heLj2kSQjoAmz5gN7hHo3RdS5teuB2qupUX",
+    "lockedStrategicTokenAccount": "REPLACE_AFTER_CREATION",
+    "revenueTokenAccount": "REPLACE_AFTER_CREATION"
+  },
+  "program": {
+    "programId": "REPLACE_AFTER_DEVNET_DEPLOYMENT",
+    "statePda": "REPLACE_AFTER_INITIALIZATION",
+    "safetyAdminWallet": "2FuGxUt1EaewriZ9QpSkqz8Lbj2M69q2F4vnr1NJHPHX",
+    "oracleBotWallet": "4hx4YvYdyQMziqxqTv5gjRbLcXZFwX1kaL9vdPBYdU9D"
+  },
+  "status": {
+    "devnetMintCreated": true,
+    "fixedSupplyMinted": true,
+    "allocationWalletsConfigured": true,
+    "tradingCompanyTokenAccountsCreated": false,
+    "coreProgramDeployed": false,
+    "coreProgramInitialized": false,
+    "mintAuthorityRevoked": false
+  },
+  "securityNote": "Public devnet deployment record only. No private keys, seed phrases, or keypair files are stored here. Do not revoke mint authority until allocation, liquidity, and verification steps are complete."
+}
