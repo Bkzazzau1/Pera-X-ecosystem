@@ -3,6 +3,7 @@ const path = require('path');
 
 const TOKENOMICS_PATH = path.resolve(__dirname, '../config/pex-tokenomics.json');
 const WALLETS_TEMPLATE_PATH = path.resolve(__dirname, '../config/pex-allocation-wallets.example.json');
+const DEVNET_WALLETS_PATH = path.resolve(__dirname, '../config/pex-allocation-wallets.devnet.json');
 const PRODUCTION_WALLETS_PATH = path.resolve(__dirname, '../config/pex-allocation-wallets.json');
 
 function readJson(filePath, label) {
@@ -23,6 +24,15 @@ function getWalletSource() {
       label: 'production wallet config',
       path: PRODUCTION_WALLETS_PATH,
       data: readJson(PRODUCTION_WALLETS_PATH, 'Production allocation wallet config'),
+      isTemplate: false,
+    };
+  }
+
+  if (fs.existsSync(DEVNET_WALLETS_PATH)) {
+    return {
+      label: 'devnet wallet config',
+      path: DEVNET_WALLETS_PATH,
+      data: readJson(DEVNET_WALLETS_PATH, 'Devnet allocation wallet config'),
       isTemplate: false,
     };
   }
@@ -80,8 +90,8 @@ function main() {
     console.log('Mode: DRY RUN / TEMPLATE ONLY');
     console.log('No real wallet addresses are loaded. No transfer should be executed from this template.');
   } else {
-    console.log('Mode: PRODUCTION WALLET CONFIG LOADED');
-    console.log('Review all addresses carefully before executing any transfer.');
+    console.log('Mode: PUBLIC WALLET CONFIG LOADED');
+    console.log('Review all public addresses carefully before any deployment action.');
   }
 
   console.log('');
@@ -98,6 +108,7 @@ function main() {
 
   console.log('Initial liquidity guidance:');
   console.log('----------------------------------------------');
+  console.log(`Policy: ${tokenomics.initialLiquidity.policy}`);
   console.log(`DEX: ${tokenomics.initialLiquidity.dex}`);
   console.log(`Pair: ${tokenomics.initialLiquidity.pair}`);
   console.log(`PEX side: ${formatNumber(tokenomics.initialLiquidity.pexAmount)} PEX`);
@@ -105,14 +116,18 @@ function main() {
   console.log(`Remaining liquidity reserve: ${formatNumber(tokenomics.initialLiquidity.remainingLiquidityReserve)} PEX`);
   console.log('');
 
-  console.log('Unlocking policy summary:');
+  console.log('Market-conditional release policy summary:');
   console.log('----------------------------------------------');
-  console.log(`Model: ${tokenomics.unlocking.model}`);
+  console.log(`Release authority: ${tokenomics.unlocking.releaseAuthority}`);
+  console.log(`Safety authority: ${tokenomics.unlocking.safetyAuthority}`);
+  console.log(`Human approval after market conditions pass: ${tokenomics.unlocking.requiresManualOrMultisigApproval}`);
   console.log(`Monitoring interval: ${tokenomics.unlocking.monitoringIntervalMinutes} minutes`);
   console.log(`TWAP confirmation: ${tokenomics.unlocking.twapConfirmationMinutesMin}-${tokenomics.unlocking.twapConfirmationMinutesMax} minutes`);
   console.log(`Cooldown: ${tokenomics.unlocking.cooldownHoursMin}-${tokenomics.unlocking.cooldownHoursMax} hours`);
+  console.log(`Liquidity gate: ${tokenomics.marketConditionalReleasePolicy.minimumLiquidityMultipleOfInitial}x initial liquidity ($${formatNumber(tokenomics.marketConditionalReleasePolicy.minimumLiquidityUsd)})`);
+  console.log(`Buy pressure gate: ${tokenomics.marketConditionalReleasePolicy.minimumNetBuyPressurePercentage}%`);
   console.log(`Daily unlock cap: ${tokenomics.unlocking.maxDailyUnlockAmount} PEX (${tokenomics.unlocking.maxDailyUnlockPercentageOfTotalSupply}% of total supply)`);
-  console.log(`Manual/multisig approval required: ${tokenomics.unlocking.requiresManualOrMultisigApproval}`);
+  console.log(`Monthly unlock cap: ${tokenomics.unlocking.maxMonthlyUnlockAmount} PEX (${tokenomics.unlocking.maxMonthlyUnlockPercentageOfTotalSupply}% of total supply)`);
   console.log(`Emergency pause enabled: ${tokenomics.unlocking.emergencyPauseEnabled}`);
   console.log('');
 
