@@ -1,0 +1,42 @@
+{
+  "project": "Pera-X",
+  "token": {
+    "name": "Pera-X",
+    "symbol": "PEX",
+    "network": "solana",
+    "cluster": "devnet-or-mainnet-beta",
+    "decimals": 6,
+    "fixedSupply": "1000000000",
+    "mintAddress": "REPLACE_AFTER_MINT_CREATION",
+    "mintAuthorityStatus": "REPLACE_AFTER_REVOCATION_CONFIRMATION",
+    "freezeAuthorityStatus": "REPLACE_WITH_FREEZE_AUTHORITY_STATUS"
+  },
+  "program": {
+    "name": "perax_core",
+    "programId": "REPLACE_AFTER_DEPLOYMENT",
+    "statePda": "REPLACE_AFTER_INITIALIZATION",
+    "authority": "REPLACE_WITH_AUTHORITY_PUBLIC_KEY"
+  },
+  "tradingCompanyAccounts": {
+    "lockedStrategicTokenAccount": "REPLACE_WITH_TRADING_COMPANY_LOCKED_TOKEN_ACCOUNT",
+    "revenueSecondTokenAccount": "REPLACE_WITH_TRADING_COMPANY_REVENUE_TOKEN_ACCOUNT",
+    "rule": "PEX-for-Credits payments and burns use the revenueSecondTokenAccount, not the lockedStrategicTokenAccount."
+  },
+  "liquidity": {
+    "venue": "Meteora DLMM",
+    "pair": "PEX/USDC",
+    "pexAmount": "380000000",
+    "quoteAmountUsd": "4560",
+    "poolAddress": "REPLACE_AFTER_DLMM_POOL_CREATION"
+  },
+  "deploymentChecks": {
+    "tokenomicsValidated": false,
+    "allocationPlanReviewed": false,
+    "fixedSupplyMinted": false,
+    "mintAuthorityRevoked": false,
+    "coreProgramInitialized": false,
+    "tradingCompanyAccountsVerifiedDifferent": false,
+    "meteoraDlmmPoolCreated": false
+  },
+  "notes": "This file is a public deployment record template only. Do not store seed phrases, private keys, local keypair paths, or secret credentials here."
+}
