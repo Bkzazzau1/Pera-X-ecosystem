@@ -1,0 +1,157 @@
+name: Devnet Deploy Core Program
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type DEPLOY_DEVNET_PERAX_CORE to build and deploy the perax_core program to devnet"
+        required: true
+        type: string
+
+jobs:
+  deploy-core:
+    name: Build and deploy perax_core to devnet
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: perax-contracts
+
+    env:
+      SOLANA_CLUSTER: devnet
+      SOLANA_RPC_URL: https://api.devnet.solana.com
+      SOLANA_KEYPAIR_PATH: .local/devnet-deployer.json
+      PERAX_CORE_PROGRAM_ID: FqEiSx5vujh2vi3yk12NaZMXhjMSaKovGUuzcKiAgshn
+      PERAX_CORE_PROGRAM_KEYPAIR_PATH: target/deploy/perax_core-keypair.json
+      PERAX_CORE_PROGRAM_SO_PATH: target/deploy/perax_core.so
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Confirm execution
+        shell: bash
+        run: |
+          if [ "${{ inputs.confirmation }}" != "DEPLOY_DEVNET_PERAX_CORE" ]; then
+            echo "Wrong confirmation phrase. Refusing to deploy."
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          package-manager-cache: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux packages
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libudev-dev libusb-1.0-0-dev
+
+      - name: Install Solana CLI
+        shell: bash
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install JavaScript dependencies
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Restore deployer and program keypairs
+        shell: bash
+        env:
+          DEVNET_DEPLOYER_KEYPAIR_JSON: ${{ secrets.DEVNET_DEPLOYER_KEYPAIR_JSON }}
+          PERAX_CORE_PROGRAM_KEYPAIR_JSON: ${{ secrets.PERAX_CORE_PROGRAM_KEYPAIR_JSON }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DEVNET_DEPLOYER_KEYPAIR_JSON" ]; then
+            echo "Missing DEVNET_DEPLOYER_KEYPAIR_JSON secret"
+            exit 1
+          fi
+          if [ -z "$PERAX_CORE_PROGRAM_KEYPAIR_JSON" ]; then
+            echo "Missing PERAX_CORE_PROGRAM_KEYPAIR_JSON secret"
+            exit 1
+          fi
+
+          mkdir -p .local target/deploy
+
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          pairs = [
+              ('DEVNET_DEPLOYER_KEYPAIR_JSON', Path('.local/devnet-deployer.json')),
+              ('PERAX_CORE_PROGRAM_KEYPAIR_JSON', Path('target/deploy/perax_core-keypair.json')),
+          ]
+
+          for env_name, out_path in pairs:
+              raw = os.environ.get(env_name, '').strip()
+              try:
+                  data = json.loads(raw)
+              except json.JSONDecodeError as exc:
+                  print(f'{env_name} is not valid JSON array: {exc}')
+                  sys.exit(1)
+              if not isinstance(data, list) or not all(isinstance(x, int) for x in data):
+                  print(f'{env_name} must be a JSON array of integers.')
+                  sys.exit(1)
+              if len(data) != 64:
+                  print(f'{env_name} length is {len(data)}. Expected 64 for Solana keypair file.')
+                  sys.exit(1)
+              out_path.write_text(json.dumps(data), encoding='utf-8')
+          PY
+
+          chmod 600 .local/devnet-deployer.json target/deploy/perax_core-keypair.json
+
+      - name: Configure Solana devnet and verify keypairs
+        shell: bash
+        run: |
+          solana config set --url "$SOLANA_RPC_URL" --keypair "$SOLANA_KEYPAIR_PATH"
+          echo "Deployer address:"
+          solana address
+          echo "Deployer balance:"
+          solana balance
+          echo "Program keypair public key:"
+          solana-keygen pubkey "$PERAX_CORE_PROGRAM_KEYPAIR_PATH"
+          if [ "$(solana-keygen pubkey "$PERAX_CORE_PROGRAM_KEYPAIR_PATH")" != "$PERAX_CORE_PROGRAM_ID" ]; then
+            echo "Program keypair public key does not match PERAX_CORE_PROGRAM_ID"
+            exit 1
+          fi
+
+      - name: Verify repository readiness
+        shell: bash
+        run: |
+          npm run validate:tokenomics
+          node scripts/check-devnet-readiness.js
+          node scripts/check-anchor-deploy-readiness.js
+
+      - name: Build SBF program
+        shell: bash
+        run: |
+          cargo build-sbf --manifest-path programs/perax-core/Cargo.toml --sbf-out-dir target/deploy
+          test -f "$PERAX_CORE_PROGRAM_SO_PATH"
+          ls -lh target/deploy
+
+      - name: Deploy perax_core to devnet
+        shell: bash
+        run: |
+          solana program deploy --program-id "$PERAX_CORE_PROGRAM_KEYPAIR_PATH" "$PERAX_CORE_PROGRAM_SO_PATH" | tee devnet-core-program-deploy-output.txt
+          echo "Program show:" | tee -a devnet-core-program-deploy-output.txt
+          solana program show "$PERAX_CORE_PROGRAM_ID" | tee -a devnet-core-program-deploy-output.txt
+
+      - name: Upload deploy output
+        uses: actions/upload-artifact@v4
+        with:
+          name: devnet-core-program-deploy-output
+          path: perax-contracts/devnet-core-program-deploy-output.txt
