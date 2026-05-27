@@ -19,7 +19,10 @@
     "pair": "PEX/USDC",
     "pexAmount": "380000000",
     "quoteAmountUsd": "4560",
-    "remainingLiquidityReserve": "0"
+    "remainingLiquidityReserve": "0",
+    "ownerWallet": "EMm39nFMuP3ARFpxcXSvK2iSLw1Zv2HECgcgPCB65zBW",
+    "tokenAccount": "BcQBGVVJzoteo28vr8pdZ732H4sekRtLxhKC8vGtXWU1",
+    "finalBalance": "380000000"
   },
   "marketConditionalReleasePolicy": {
     "releaseAuthority": "market_condition_oracle_only",
@@ -38,8 +41,116 @@
     "lockedStrategicWallet": "A9kRqJ2hcPu5EWXoK4Ti8HUG5h4n75qEpwpAjhqFNt2f",
     "revenueWallet": "DaCFT5EZ6heLj2kSQjoAmz5gN7hHo3RdS5teuB2qupUX",
     "lockedStrategicTokenAccount": "Wcx1HaNWZQmtfn1yfS3FWXv7AKSXV8ftciezTX3ufs8",
-    "revenueTokenAccount": "E4JJoNkKhFq8Ev7XtJhuWrvdyNyWRzkwjsukgF9VbegA"
+    "revenueTokenAccount": "E4JJoNkKhFq8Ev7XtJhuWrvdyNyWRzkwjsukgF9VbegA",
+    "operationsAllocationAmount": "70000000",
+    "operationsAllocationFinalBalance": "70000000"
   },
+  "allocations": [
+    {
+      "allocationKey": "liquidity_pool",
+      "percentage": 38,
+      "expectedAmount": "380000000",
+      "ownerWallet": "EMm39nFMuP3ARFpxcXSvK2iSLw1Zv2HECgcgPCB65zBW",
+      "tokenAccount": "BcQBGVVJzoteo28vr8pdZ732H4sekRtLxhKC8vGtXWU1",
+      "finalBalance": "380000000"
+    },
+    {
+      "allocationKey": "community_utility_rewards",
+      "percentage": 17,
+      "expectedAmount": "170000000",
+      "ownerWallet": "6zW8puiuu3gRbSUiPUBcoRCrEyjmafyVybxNwd3d6H9z",
+      "tokenAccount": "CQFUCS5Ysxpg6unnpdFwS4eJWQUZSpzbGb3U1zKv5qcw",
+      "finalBalance": "170000000"
+    },
+    {
+      "allocationKey": "treasury",
+      "percentage": 12,
+      "expectedAmount": "120000000",
+      "ownerWallet": "H33CY6zvJ2rZgm86AQRq8L2oWNDED5HSWd5cKqhWpxBM",
+      "tokenAccount": "7KW5ikaDNFTK5JNtBzZPz9n5Ch7EUfDD1BKwwdT43Us3",
+      "finalBalance": "120000000"
+    },
+    {
+      "allocationKey": "ecosystem_marketing",
+      "percentage": 12,
+      "expectedAmount": "120000000",
+      "ownerWallet": "ATiBdHEgWwz3tE6Aw3NbFHQiuwCb9zeLERTQ5KZSBH8L",
+      "tokenAccount": "8Nr5QEa5R2FU3TrtZ8sPsji4sqqX1AaBrfNU2LeMumTU",
+      "finalBalance": "120000000"
+    },
+    {
+      "allocationKey": "trading_company_operations",
+      "percentage": 7,
+      "expectedAmount": "70000000",
+      "ownerWallet": "A9kRqJ2hcPu5EWXoK4Ti8HUG5h4n75qEpwpAjhqFNt2f",
+      "tokenAccount": "Wcx1HaNWZQmtfn1yfS3FWXv7AKSXV8ftciezTX3ufs8",
+      "finalBalance": "70000000"
+    },
+    {
+      "allocationKey": "development_team",
+      "percentage": 2,
+      "expectedAmount": "20000000",
+      "ownerWallet": "DVPxd8bYuuwnEaicZteqFM63yVx73wTPRsAwEWAGVaDi",
+      "tokenAccount": "Fds7fVmERSYM6svry7g3Xq4AXrhxugwsJtLHNxqcEtsB",
+      "finalBalance": "20000000"
+    },
+    {
+      "allocationKey": "founder",
+      "percentage": 2,
+      "expectedAmount": "20000000",
+      "ownerWallet": "5obhRR3AF4KMWmc6pE3DSvctv6wUgFKH3aRLfjaHVLYJ",
+      "tokenAccount": "8uvnXdLCEK77BKeb5JPKvFNYfbZnaGtN93NkNvE7gr5M",
+      "finalBalance": "20000000"
+    },
+    {
+      "allocationKey": "future_team_incentives",
+      "percentage": 1,
+      "expectedAmount": "10000000",
+      "ownerWallet": "8qS42K4jMP2HkAc3LwgwH4EmpmgBedWcqt9TQCWoc2VU",
+      "tokenAccount": "7R7JLTc11VnkodNd6g7nVPUWBWFs9eoecQfgG3mdscpz",
+      "finalBalance": "10000000"
+    },
+    {
+      "allocationKey": "team_emergency_reserve",
+      "percentage": 1,
+      "expectedAmount": "10000000",
+      "ownerWallet": "7KMJeTA64aZ4stFTdfwPrD3jAknoW2RmpzX57j3VcKmA",
+      "tokenAccount": "CRYR6vD9GxRuhZgn4uHRF6bmksjpGqs8odcfNEgodmEA",
+      "finalBalance": "10000000"
+    },
+    {
+      "allocationKey": "private_strategic_investors",
+      "percentage": 5,
+      "expectedAmount": "50000000",
+      "ownerWallet": "HLxSnSPnVFnN6kf4UuBQKiLpPyysEBWQ2D3EMHG7zkBJ",
+      "tokenAccount": "8EkgKn9p342RuhsvM6BGXGSndSuv5WpCQ4wSu6W2QQEY",
+      "finalBalance": "50000000"
+    },
+    {
+      "allocationKey": "advisor_wallet_1",
+      "percentage": 1,
+      "expectedAmount": "10000000",
+      "ownerWallet": "ECqq6VxMDUWm7k6P5zNVwLXrKYLW6FJbYDkrttiDkwxb",
+      "tokenAccount": "72takmis8YTxbag5BGtJLZ4PKMdjSJ3oyyb27yHMF9bP",
+      "finalBalance": "10000000"
+    },
+    {
+      "allocationKey": "advisor_wallet_2",
+      "percentage": 1,
+      "expectedAmount": "10000000",
+      "ownerWallet": "FjT2LwaxFxT6pXdZDrFSv1zzQZZwjHLhgoBpfvCbapCR",
+      "tokenAccount": "GoNzBWCFFsiecp3JAQcgWKGh5eSxwXGRh7dCzPHRjMQV",
+      "finalBalance": "10000000"
+    },
+    {
+      "allocationKey": "advisor_wallet_3",
+      "percentage": 1,
+      "expectedAmount": "10000000",
+      "ownerWallet": "H6qnUNp3ps5CrowbpUekUUMF6QnCZppVKWPQ96DCc7Ly",
+      "tokenAccount": "99RTC1v8woRjA9JAT7v4Hv5NdTjBDNNCDzEvcMJzwrwZ",
+      "finalBalance": "10000000"
+    }
+  ],
   "program": {
     "programId": "FqEiSx5vujh2vi3yk12NaZMXhjMSaKovGUuzcKiAgshn",
     "programDataAddress": "WcgxFFDm1L1t4ZE6HV8vokz9jF7WvYTkbgUp5yJ67bD",
@@ -64,6 +175,8 @@
     "tradingCompanyTokenAccountsCreated": true,
     "coreProgramDeployed": true,
     "coreProgramInitialized": true,
+    "allocationTransfersExecuted": true,
+    "meteoraDlmmLiquidityCreated": false,
     "mintAuthorityRevoked": false
   },
   "securityNote": "Public devnet deployment record only. No private keys, seed phrases, or keypair files are stored here. Do not revoke mint authority until allocation, liquidity, and verification steps are complete."
