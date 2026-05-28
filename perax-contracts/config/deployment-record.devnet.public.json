@@ -9,9 +9,12 @@
     "fixedSupply": "1000000000",
     "mintAddress": "DnkAW3B1ckzW6eimgSBNPK3XTt83wMiZRETy8iF3gdsn",
     "sourceTokenAccount": "J4jVAAQbCqXwgZh8HkTkoawSib16vFy76KTtR7dChu9R",
-    "mintAuthority": "7fvpqKVEsK4UHDR49LhPYg5kEtdbc5847MzqVCW4LiAe",
+    "mintAuthority": "DISABLED",
     "freezeAuthority": "NONE",
-    "mintAuthorityRevoked": false
+    "mintAuthorityRevoked": true,
+    "mintAuthorityRevocationSignature": "3U9sfJN16XXYPzrwt7UbWDyVxn3zZndXWRxZDYPy8gDQEfL8ynA9qg1VywQfZx2kzi1QfaSKrsCUxg3iRRim7eiv",
+    "supplyRawBaseUnits": "1000000000000000",
+    "supplyUiAmount": "1000000000"
   },
   "initialLiquidity": {
     "policy": "OPTION_B_FULL_38_PERCENT_LIQUIDITY_ALLOCATION",
@@ -161,7 +164,9 @@
     "mintSupply": "1000000000",
     "sourceTokenAccountBalance": "0",
     "allocationTotal": "1000000000",
-    "allAllocationBalancesCorrect": true
+    "allAllocationBalancesCorrect": true,
+    "mintAuthorityDisabled": true,
+    "freezeAuthorityDisabled": true
   },
   "program": {
     "programId": "FqEiSx5vujh2vi3yk12NaZMXhjMSaKovGUuzcKiAgshn",
@@ -191,7 +196,7 @@
     "allocationStateVerified": true,
     "mockQuoteCreated": true,
     "meteoraDlmmLiquidityCreated": false,
-    "mintAuthorityRevoked": false
+    "mintAuthorityRevoked": true
   },
-  "securityNote": "Public devnet deployment record only. No private keys, seed phrases, or keypair files are stored here. Do not revoke mint authority until allocation, liquidity, and verification steps are complete."
+  "securityNote": "Public devnet deployment record only. No private keys, seed phrases, or keypair files are stored here. Devnet PEX mint authority and freeze authority are disabled."
 }
