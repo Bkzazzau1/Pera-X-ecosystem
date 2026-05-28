@@ -151,6 +151,13 @@
       "finalBalance": "10000000"
     }
   ],
+  "verification": {
+    "allocationStateVerified": true,
+    "mintSupply": "1000000000",
+    "sourceTokenAccountBalance": "0",
+    "allocationTotal": "1000000000",
+    "allAllocationBalancesCorrect": true
+  },
   "program": {
     "programId": "FqEiSx5vujh2vi3yk12NaZMXhjMSaKovGUuzcKiAgshn",
     "programDataAddress": "WcgxFFDm1L1t4ZE6HV8vokz9jF7WvYTkbgUp5yJ67bD",
@@ -176,6 +183,7 @@
     "coreProgramDeployed": true,
     "coreProgramInitialized": true,
     "allocationTransfersExecuted": true,
+    "allocationStateVerified": true,
     "meteoraDlmmLiquidityCreated": false,
     "mintAuthorityRevoked": false
   },
