@@ -107,17 +107,19 @@ jobs:
           echo "$CREATE_TOKEN_OUTPUT" | tee -a devnet-mock-usdc-output.txt
           MOCK_USDC_MINT=$(echo "$CREATE_TOKEN_OUTPUT" | grep -Eo '[1-9A-HJ-NP-Za-km-z]{32,44}' | tail -n 1)
 
-          CREATE_ACCOUNT_OUTPUT=$(spl-token create-account "$MOCK_USDC_MINT" --owner "$LP_OWNER_WALLET" --fee-payer "$SOLANA_KEYPAIR_PATH")
+          CREATE_ACCOUNT_OUTPUT=$(spl-token create-account "$MOCK_USDC_MINT")
           echo "$CREATE_ACCOUNT_OUTPUT" | tee -a devnet-mock-usdc-output.txt
           LP_MOCK_USDC_TOKEN_ACCOUNT=$(echo "$CREATE_ACCOUNT_OUTPUT" | grep -Eo '[1-9A-HJ-NP-Za-km-z]{32,44}' | tail -n 1)
 
           spl-token mint "$MOCK_USDC_MINT" "$MOCK_USDC_AMOUNT" "$LP_MOCK_USDC_TOKEN_ACCOUNT" | tee -a devnet-mock-usdc-output.txt
+          spl-token authorize "$LP_MOCK_USDC_TOKEN_ACCOUNT" owner "$LP_OWNER_WALLET" | tee -a devnet-mock-usdc-output.txt
 
           echo "" | tee -a devnet-mock-usdc-output.txt
           echo "MOCK_USDC_MINT=$MOCK_USDC_MINT" | tee -a devnet-mock-usdc-output.txt
           echo "LP_MOCK_USDC_TOKEN_ACCOUNT=$LP_MOCK_USDC_TOKEN_ACCOUNT" | tee -a devnet-mock-usdc-output.txt
           echo "LP_OWNER_WALLET=$LP_OWNER_WALLET" | tee -a devnet-mock-usdc-output.txt
           echo "MOCK_USDC_AMOUNT=$MOCK_USDC_AMOUNT" | tee -a devnet-mock-usdc-output.txt
+          echo "NOTE=Token account was created by deployer, funded, then ownership was assigned to LP owner wallet." | tee -a devnet-mock-usdc-output.txt
 
       - name: Upload mock USDC output
         uses: actions/upload-artifact@v4
