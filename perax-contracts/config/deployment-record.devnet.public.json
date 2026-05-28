@@ -22,7 +22,12 @@
     "remainingLiquidityReserve": "0",
     "ownerWallet": "EMm39nFMuP3ARFpxcXSvK2iSLw1Zv2HECgcgPCB65zBW",
     "tokenAccount": "BcQBGVVJzoteo28vr8pdZ732H4sekRtLxhKC8vGtXWU1",
-    "finalBalance": "380000000"
+    "finalBalance": "380000000",
+    "mockQuoteMint": "FABf7w6NDdR3EgNrFkQpsbQLFMJTpJLuhMjmPbwj1Une",
+    "mockQuoteTokenAccount": "6B8wZx3eqHUJhS9DbE7BTLLbve2nucBFnXmVedjDNw8o",
+    "mockQuoteAmount": "4560",
+    "mockQuoteDecimals": 6,
+    "mockQuoteReady": true
   },
   "marketConditionalReleasePolicy": {
     "releaseAuthority": "market_condition_oracle_only",
@@ -184,6 +189,7 @@
     "coreProgramInitialized": true,
     "allocationTransfersExecuted": true,
     "allocationStateVerified": true,
+    "mockQuoteCreated": true,
     "meteoraDlmmLiquidityCreated": false,
     "mintAuthorityRevoked": false
   },
