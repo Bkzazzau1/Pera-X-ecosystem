@@ -1,0 +1,144 @@
+name: Devnet Revoke Mint Authority
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type REVOKE_DEVNET_PEX_MINT_AUTHORITY to permanently disable devnet PEX minting"
+        required: true
+        type: string
+
+jobs:
+  revoke-mint-authority:
+    name: Revoke devnet PEX mint authority
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: perax-contracts
+
+    env:
+      SOLANA_CLUSTER: devnet
+      SOLANA_RPC_URL: https://api.devnet.solana.com
+      SOLANA_KEYPAIR_PATH: .local/devnet-deployer.json
+      PEX_MINT_ADDRESS: DnkAW3B1ckzW6eimgSBNPK3XTt83wMiZRETy8iF3gdsn
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Confirm execution
+        shell: bash
+        run: |
+          if [ "${{ inputs.confirmation }}" != "REVOKE_DEVNET_PEX_MINT_AUTHORITY" ]; then
+            echo "Wrong confirmation phrase. Refusing to revoke mint authority."
+            exit 1
+          fi
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux packages required for SPL Token CLI
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libudev-dev libusb-1.0-0-dev
+
+      - name: Install Solana CLI
+        shell: bash
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install SPL Token CLI
+        shell: bash
+        run: |
+          cargo install spl-token-cli --locked
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Restore devnet deployer keypair
+        shell: bash
+        env:
+          DEVNET_DEPLOYER_KEYPAIR_JSON: ${{ secrets.DEVNET_DEPLOYER_KEYPAIR_JSON }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DEVNET_DEPLOYER_KEYPAIR_JSON" ]; then
+            echo "Missing DEVNET_DEPLOYER_KEYPAIR_JSON secret"
+            exit 1
+          fi
+
+          mkdir -p .local
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          raw = os.environ.get('DEVNET_DEPLOYER_KEYPAIR_JSON', '').strip()
+          try:
+              data = json.loads(raw)
+          except json.JSONDecodeError as exc:
+              print(f'DEVNET_DEPLOYER_KEYPAIR_JSON is not valid JSON array: {exc}')
+              sys.exit(1)
+          if not isinstance(data, list) or not all(isinstance(x, int) for x in data) or len(data) != 64:
+              print('DEVNET_DEPLOYER_KEYPAIR_JSON must be a 64-integer Solana keypair JSON array.')
+              sys.exit(1)
+          Path('.local/devnet-deployer.json').write_text(json.dumps(data), encoding='utf-8')
+          PY
+          chmod 600 .local/devnet-deployer.json
+
+      - name: Pre-revocation checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          record = json.loads(Path('config/deployment-record.devnet.public.json').read_text())
+          status = record.get('status', {})
+          token = record.get('token', {})
+          liquidity = record.get('initialLiquidity', {})
+
+          blockers = []
+          if not status.get('allocationStateVerified'):
+              blockers.append('allocationStateVerified is not true')
+          if not status.get('mockQuoteCreated'):
+              blockers.append('mockQuoteCreated is not true')
+          if token.get('mintAuthorityRevoked'):
+              blockers.append('deployment record already marks mint authority revoked')
+          if token.get('mintAddress') != 'DnkAW3B1ckzW6eimgSBNPK3XTt83wMiZRETy8iF3gdsn':
+              blockers.append('mint address mismatch')
+          if liquidity.get('finalBalance') != liquidity.get('pexAmount'):
+              blockers.append('liquidity PEX balance is not verified against planned amount')
+
+          if blockers:
+              print('Refusing to revoke mint authority:')
+              for blocker in blockers:
+                  print(f'- {blocker}')
+              raise SystemExit(1)
+
+          print('Pre-revocation checks passed.')
+          PY
+
+      - name: Revoke mint authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          solana config set --url "$SOLANA_RPC_URL" --keypair "$SOLANA_KEYPAIR_PATH"
+          echo "==============================================" | tee devnet-revoke-mint-authority-output.txt
+          echo "Pera-X Devnet Mint Authority Revocation" | tee -a devnet-revoke-mint-authority-output.txt
+          echo "==============================================" | tee -a devnet-revoke-mint-authority-output.txt
+          echo "PEX mint: $PEX_MINT_ADDRESS" | tee -a devnet-revoke-mint-authority-output.txt
+          echo "" | tee -a devnet-revoke-mint-authority-output.txt
+
+          spl-token authorize "$PEX_MINT_ADDRESS" mint --disable | tee -a devnet-revoke-mint-authority-output.txt
+          echo "" | tee -a devnet-revoke-mint-authority-output.txt
+          echo "Mint information after revocation:" | tee -a devnet-revoke-mint-authority-output.txt
+          spl-token display "$PEX_MINT_ADDRESS" | tee -a devnet-revoke-mint-authority-output.txt
+
+      - name: Upload revocation output
+        uses: actions/upload-artifact@v4
+        with:
+          name: devnet-revoke-mint-authority-output
+          path: perax-contracts/devnet-revoke-mint-authority-output.txt
