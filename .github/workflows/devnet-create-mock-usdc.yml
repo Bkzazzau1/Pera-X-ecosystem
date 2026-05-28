@@ -24,6 +24,7 @@ jobs:
       LP_OWNER_WALLET: EMm39nFMuP3ARFpxcXSvK2iSLw1Zv2HECgcgPCB65zBW
       MOCK_USDC_AMOUNT: "4560"
       MOCK_USDC_DECIMALS: "6"
+      MOCK_USDC_TOKEN_ACCOUNT_KEYPAIR_PATH: .local/mock-usdc-token-account.json
 
     steps:
       - name: Checkout repository
@@ -111,23 +112,21 @@ jobs:
             exit 1
           fi
 
-          CREATE_ACCOUNT_OUTPUT=$(spl-token create-account "$MOCK_USDC_MINT")
+          solana-keygen new --outfile "$MOCK_USDC_TOKEN_ACCOUNT_KEYPAIR_PATH" --no-bip39-passphrase --force >/dev/null
+          LP_MOCK_USDC_TOKEN_ACCOUNT=$(solana-keygen pubkey "$MOCK_USDC_TOKEN_ACCOUNT_KEYPAIR_PATH")
+          echo "Generated quote token account: $LP_MOCK_USDC_TOKEN_ACCOUNT" | tee -a devnet-mock-usdc-output.txt
+
+          CREATE_ACCOUNT_OUTPUT=$(spl-token create-account "$MOCK_USDC_MINT" "$MOCK_USDC_TOKEN_ACCOUNT_KEYPAIR_PATH" --owner "$LP_OWNER_WALLET" --fee-payer "$SOLANA_KEYPAIR_PATH")
           echo "$CREATE_ACCOUNT_OUTPUT" | tee -a devnet-mock-usdc-output.txt
-          LP_MOCK_USDC_TOKEN_ACCOUNT=$(echo "$CREATE_ACCOUNT_OUTPUT" | awk '/Creating account/ {print $3; exit}')
-          if [ -z "$LP_MOCK_USDC_TOKEN_ACCOUNT" ]; then
-            echo "Could not parse LP_MOCK_USDC_TOKEN_ACCOUNT from create-account output"
-            exit 1
-          fi
 
           spl-token mint "$MOCK_USDC_MINT" "$MOCK_USDC_AMOUNT" "$LP_MOCK_USDC_TOKEN_ACCOUNT" | tee -a devnet-mock-usdc-output.txt
-          spl-token authorize "$LP_MOCK_USDC_TOKEN_ACCOUNT" owner "$LP_OWNER_WALLET" | tee -a devnet-mock-usdc-output.txt
 
           echo "" | tee -a devnet-mock-usdc-output.txt
           echo "MOCK_USDC_MINT=$MOCK_USDC_MINT" | tee -a devnet-mock-usdc-output.txt
           echo "LP_MOCK_USDC_TOKEN_ACCOUNT=$LP_MOCK_USDC_TOKEN_ACCOUNT" | tee -a devnet-mock-usdc-output.txt
           echo "LP_OWNER_WALLET=$LP_OWNER_WALLET" | tee -a devnet-mock-usdc-output.txt
           echo "MOCK_USDC_AMOUNT=$MOCK_USDC_AMOUNT" | tee -a devnet-mock-usdc-output.txt
-          echo "NOTE=Token account was created by deployer, funded, then ownership was assigned to LP owner wallet." | tee -a devnet-mock-usdc-output.txt
+          echo "NOTE=Auxiliary token account was created directly with LP owner wallet as token owner." | tee -a devnet-mock-usdc-output.txt
 
       - name: Upload mock USDC output
         uses: actions/upload-artifact@v4
