@@ -1,0 +1,126 @@
+name: Devnet Create Mock USDC
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type CREATE_DEVNET_MOCK_USDC to create mock quote token for LP wallet"
+        required: true
+        type: string
+
+jobs:
+  create-mock-usdc:
+    name: Create mock USDC quote token on devnet
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: perax-contracts
+
+    env:
+      SOLANA_CLUSTER: devnet
+      SOLANA_RPC_URL: https://api.devnet.solana.com
+      SOLANA_KEYPAIR_PATH: .local/devnet-deployer.json
+      LP_OWNER_WALLET: EMm39nFMuP3ARFpxcXSvK2iSLw1Zv2HECgcgPCB65zBW
+      MOCK_USDC_AMOUNT: "4560"
+      MOCK_USDC_DECIMALS: "6"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Confirm execution
+        shell: bash
+        run: |
+          if [ "${{ inputs.confirmation }}" != "CREATE_DEVNET_MOCK_USDC" ]; then
+            echo "Wrong confirmation phrase. Refusing to create mock quote token."
+            exit 1
+          fi
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux packages required for SPL Token CLI
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libudev-dev libusb-1.0-0-dev
+
+      - name: Install Solana CLI
+        shell: bash
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install SPL Token CLI
+        shell: bash
+        run: |
+          cargo install spl-token-cli --locked
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Restore devnet deployer keypair
+        shell: bash
+        env:
+          DEVNET_DEPLOYER_KEYPAIR_JSON: ${{ secrets.DEVNET_DEPLOYER_KEYPAIR_JSON }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DEVNET_DEPLOYER_KEYPAIR_JSON" ]; then
+            echo "Missing DEVNET_DEPLOYER_KEYPAIR_JSON secret"
+            exit 1
+          fi
+
+          mkdir -p .local
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          raw = os.environ.get('DEVNET_DEPLOYER_KEYPAIR_JSON', '').strip()
+          try:
+              data = json.loads(raw)
+          except json.JSONDecodeError as exc:
+              print(f'DEVNET_DEPLOYER_KEYPAIR_JSON is not valid JSON array: {exc}')
+              sys.exit(1)
+          if not isinstance(data, list) or not all(isinstance(x, int) for x in data) or len(data) != 64:
+              print('DEVNET_DEPLOYER_KEYPAIR_JSON must be a 64-integer Solana keypair JSON array.')
+              sys.exit(1)
+          Path('.local/devnet-deployer.json').write_text(json.dumps(data), encoding='utf-8')
+          PY
+          chmod 600 .local/devnet-deployer.json
+
+      - name: Create mock USDC and mint test amount
+        shell: bash
+        run: |
+          set -euo pipefail
+          solana config set --url "$SOLANA_RPC_URL" --keypair "$SOLANA_KEYPAIR_PATH"
+
+          echo "==============================================" | tee devnet-mock-usdc-output.txt
+          echo "Pera-X Devnet Mock USDC Creation" | tee -a devnet-mock-usdc-output.txt
+          echo "==============================================" | tee -a devnet-mock-usdc-output.txt
+          echo "LP owner wallet: $LP_OWNER_WALLET" | tee -a devnet-mock-usdc-output.txt
+          echo "Decimals: $MOCK_USDC_DECIMALS" | tee -a devnet-mock-usdc-output.txt
+          echo "Amount: $MOCK_USDC_AMOUNT" | tee -a devnet-mock-usdc-output.txt
+          echo "" | tee -a devnet-mock-usdc-output.txt
+
+          CREATE_TOKEN_OUTPUT=$(spl-token create-token --decimals "$MOCK_USDC_DECIMALS")
+          echo "$CREATE_TOKEN_OUTPUT" | tee -a devnet-mock-usdc-output.txt
+          MOCK_USDC_MINT=$(echo "$CREATE_TOKEN_OUTPUT" | grep -Eo '[1-9A-HJ-NP-Za-km-z]{32,44}' | tail -n 1)
+
+          CREATE_ACCOUNT_OUTPUT=$(spl-token create-account "$MOCK_USDC_MINT" --owner "$LP_OWNER_WALLET" --fee-payer "$SOLANA_KEYPAIR_PATH")
+          echo "$CREATE_ACCOUNT_OUTPUT" | tee -a devnet-mock-usdc-output.txt
+          LP_MOCK_USDC_TOKEN_ACCOUNT=$(echo "$CREATE_ACCOUNT_OUTPUT" | grep -Eo '[1-9A-HJ-NP-Za-km-z]{32,44}' | tail -n 1)
+
+          spl-token mint "$MOCK_USDC_MINT" "$MOCK_USDC_AMOUNT" "$LP_MOCK_USDC_TOKEN_ACCOUNT" | tee -a devnet-mock-usdc-output.txt
+
+          echo "" | tee -a devnet-mock-usdc-output.txt
+          echo "MOCK_USDC_MINT=$MOCK_USDC_MINT" | tee -a devnet-mock-usdc-output.txt
+          echo "LP_MOCK_USDC_TOKEN_ACCOUNT=$LP_MOCK_USDC_TOKEN_ACCOUNT" | tee -a devnet-mock-usdc-output.txt
+          echo "LP_OWNER_WALLET=$LP_OWNER_WALLET" | tee -a devnet-mock-usdc-output.txt
+          echo "MOCK_USDC_AMOUNT=$MOCK_USDC_AMOUNT" | tee -a devnet-mock-usdc-output.txt
+
+      - name: Upload mock USDC output
+        uses: actions/upload-artifact@v4
+        with:
+          name: devnet-mock-usdc-output
+          path: perax-contracts/devnet-mock-usdc-output.txt
