@@ -105,11 +105,19 @@ jobs:
 
           CREATE_TOKEN_OUTPUT=$(spl-token create-token --decimals "$MOCK_USDC_DECIMALS")
           echo "$CREATE_TOKEN_OUTPUT" | tee -a devnet-mock-usdc-output.txt
-          MOCK_USDC_MINT=$(echo "$CREATE_TOKEN_OUTPUT" | grep -Eo '[1-9A-HJ-NP-Za-km-z]{32,44}' | tail -n 1)
+          MOCK_USDC_MINT=$(echo "$CREATE_TOKEN_OUTPUT" | awk '/^Address:/ {print $2; exit}')
+          if [ -z "$MOCK_USDC_MINT" ]; then
+            echo "Could not parse MOCK_USDC_MINT from create-token output"
+            exit 1
+          fi
 
           CREATE_ACCOUNT_OUTPUT=$(spl-token create-account "$MOCK_USDC_MINT")
           echo "$CREATE_ACCOUNT_OUTPUT" | tee -a devnet-mock-usdc-output.txt
-          LP_MOCK_USDC_TOKEN_ACCOUNT=$(echo "$CREATE_ACCOUNT_OUTPUT" | grep -Eo '[1-9A-HJ-NP-Za-km-z]{32,44}' | tail -n 1)
+          LP_MOCK_USDC_TOKEN_ACCOUNT=$(echo "$CREATE_ACCOUNT_OUTPUT" | awk '/Creating account/ {print $3; exit}')
+          if [ -z "$LP_MOCK_USDC_TOKEN_ACCOUNT" ]; then
+            echo "Could not parse LP_MOCK_USDC_TOKEN_ACCOUNT from create-account output"
+            exit 1
+          fi
 
           spl-token mint "$MOCK_USDC_MINT" "$MOCK_USDC_AMOUNT" "$LP_MOCK_USDC_TOKEN_ACCOUNT" | tee -a devnet-mock-usdc-output.txt
           spl-token authorize "$LP_MOCK_USDC_TOKEN_ACCOUNT" owner "$LP_OWNER_WALLET" | tee -a devnet-mock-usdc-output.txt
