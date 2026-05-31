@@ -406,63 +406,164 @@ pub mod perax_core {
         ctx: Context<ExecuteMarketConditionBurn>,
         params: MarketConditionBurnParams,
     ) -> Result<()> {
-        {
-            let state = &mut ctx.accounts.state;
-            require!(!state.is_paused, PeraxError::ProgramPaused);
-            require!(!state.emergency_pause, PeraxError::EmergencyPaused);
-            require!(params.amount > 0, PeraxError::InvalidAmount);
-            require!(
-                params.eligible_revenue_amount > 0,
-                PeraxError::InvalidAmount
-            );
-            require!(params.observed_at > 0, PeraxError::InvalidMarketParameter);
-            validate_reference(params.decision_id)?;
-
-            reset_burn_window_if_needed(state, params.observed_at);
-            validate_market_condition_burn(state, &params, ctx.accounts.token_mint.supply)?;
-        }
-
-        token::burn(ctx.accounts.market_burn_ctx(), params.amount)?;
-
-        let state = &mut ctx.accounts.state;
-        state.daily_burn_accumulator = state
-            .daily_burn_accumulator
-            .checked_add(params.amount)
-            .ok_or(PeraxError::DailyBurnCapExceeded)?;
-
-        let executed_at = Clock::get()?.unix_timestamp;
-        let burn_record = &mut ctx.accounts.burn_record;
-        burn_record.decision_id = params.decision_id;
-        burn_record.authority = ctx.accounts.authority.key();
-        burn_record.trading_company_authority = ctx.accounts.trading_company_authority.key();
-        burn_record.token_mint = state.token_mint;
-        burn_record.trading_company_revenue_token_account =
-            state.trading_company_revenue_token_account;
-        burn_record.amount = params.amount;
-        burn_record.eligible_revenue_amount = params.eligible_revenue_amount;
-        burn_record.burn_rate_bps = params.burn_rate_bps;
-        burn_record.market_health_score = params.market_health_score;
-        burn_record.observed_at = params.observed_at;
-        burn_record.executed_at = executed_at;
-        burn_record.bump = ctx.bumps.burn_record;
-
-        emit!(MarketConditionBurnExecuted {
-            burn_record: burn_record.key(),
-            authority: ctx.accounts.authority.key(),
-            trading_company_authority: ctx.accounts.trading_company_authority.key(),
-            token_mint: state.token_mint,
-            trading_company_revenue_token_account: state.trading_company_revenue_token_account,
+        let burn_params = ConditionalBuybackBurnParams {
             amount: params.amount,
             eligible_revenue_amount: params.eligible_revenue_amount,
             burn_rate_bps: params.burn_rate_bps,
             market_health_score: params.market_health_score,
-            decision_id: params.decision_id,
             observed_at: params.observed_at,
-            executed_at,
-        });
+            decision_id: params.decision_id,
+            burn_source: BurnFulfillmentSource::OpenMarketPurchase,
+        };
+        let burn_ctx = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Burn {
+                mint: ctx.accounts.token_mint.to_account_info(),
+                from: ctx
+                    .accounts
+                    .trading_company_revenue_token_account
+                    .to_account_info(),
+                authority: ctx.accounts.trading_company_authority.to_account_info(),
+            },
+        );
 
-        Ok(())
+        execute_validated_burn(
+            &mut ctx.accounts.state,
+            ctx.accounts.authority.key(),
+            ctx.accounts.trading_company_authority.key(),
+            ctx.accounts.trading_company_revenue_token_account.key(),
+            &mut ctx.accounts.burn_record,
+            burn_ctx,
+            burn_params,
+            ctx.accounts.token_mint.supply,
+            ctx.bumps.burn_record,
+        )
     }
+
+    pub fn execute_conditional_buyback_burn(
+        ctx: Context<ExecuteConditionalBuybackBurn>,
+        params: ConditionalBuybackBurnParams,
+    ) -> Result<()> {
+        let state = &ctx.accounts.state;
+
+        match params.burn_source {
+            BurnFulfillmentSource::OpenMarketPurchase => {
+                require!(
+                    ctx.accounts.source_token_account.key()
+                        == state.trading_company_revenue_token_account,
+                    PeraxError::InvalidBurnSourceAccount
+                );
+            }
+            BurnFulfillmentSource::TradingTreasury => {
+                require!(
+                    ctx.accounts.source_token_account.key() == state.trading_company_token_account,
+                    PeraxError::InvalidBurnSourceAccount
+                );
+            }
+        }
+        let burn_ctx = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Burn {
+                mint: ctx.accounts.token_mint.to_account_info(),
+                from: ctx.accounts.source_token_account.to_account_info(),
+                authority: ctx.accounts.source_authority.to_account_info(),
+            },
+        );
+
+        execute_validated_burn(
+            &mut ctx.accounts.state,
+            ctx.accounts.authority.key(),
+            ctx.accounts.source_authority.key(),
+            ctx.accounts.source_token_account.key(),
+            &mut ctx.accounts.burn_record,
+            burn_ctx,
+            params,
+            ctx.accounts.token_mint.supply,
+            ctx.bumps.burn_record,
+        )
+    }
+}
+
+fn execute_validated_burn<'info>(
+    state: &mut Account<'info, PeraxState>,
+    authority: Pubkey,
+    source_authority: Pubkey,
+    source_token_account: Pubkey,
+    burn_record: &mut Account<'info, BurnExecutionRecord>,
+    burn_ctx: CpiContext<'_, '_, '_, 'info, Burn<'info>>,
+    params: ConditionalBuybackBurnParams,
+    current_mint_supply: u64,
+    bump: u8,
+) -> Result<()> {
+    require!(!state.is_paused, PeraxError::ProgramPaused);
+    require!(!state.emergency_pause, PeraxError::EmergencyPaused);
+    require!(params.amount > 0, PeraxError::InvalidAmount);
+    require!(
+        params.eligible_revenue_amount > 0,
+        PeraxError::InvalidAmount
+    );
+    require!(params.observed_at > 0, PeraxError::InvalidMarketParameter);
+    validate_reference(params.decision_id)?;
+
+    reset_burn_window_if_needed(state, params.observed_at);
+    validate_market_condition_burn(state, &params, current_mint_supply)?;
+
+    token::burn(burn_ctx, params.amount)?;
+
+    state.daily_burn_accumulator = state
+        .daily_burn_accumulator
+        .checked_add(params.amount)
+        .ok_or(PeraxError::DailyBurnCapExceeded)?;
+
+    let executed_at = Clock::get()?.unix_timestamp;
+
+    burn_record.decision_id = params.decision_id;
+    burn_record.authority = authority;
+    burn_record.trading_company_authority = source_authority;
+    burn_record.token_mint = state.token_mint;
+    burn_record.trading_company_revenue_token_account = state.trading_company_revenue_token_account;
+    burn_record.source_token_account = source_token_account;
+    burn_record.burn_source = params.burn_source;
+    burn_record.amount = params.amount;
+    burn_record.eligible_revenue_amount = params.eligible_revenue_amount;
+    burn_record.burn_rate_bps = params.burn_rate_bps;
+    burn_record.market_health_score = params.market_health_score;
+    burn_record.observed_at = params.observed_at;
+    burn_record.executed_at = executed_at;
+    burn_record.bump = bump;
+
+    emit!(ConditionalBuybackBurnExecuted {
+        burn_record: burn_record.key(),
+        authority,
+        source_authority,
+        token_mint: state.token_mint,
+        source_token_account,
+        burn_source: params.burn_source,
+        amount: params.amount,
+        eligible_revenue_amount: params.eligible_revenue_amount,
+        burn_rate_bps: params.burn_rate_bps,
+        market_health_score: params.market_health_score,
+        decision_id: params.decision_id,
+        observed_at: params.observed_at,
+        executed_at,
+    });
+
+    emit!(MarketConditionBurnExecuted {
+        burn_record: burn_record.key(),
+        authority,
+        trading_company_authority: source_authority,
+        token_mint: state.token_mint,
+        trading_company_revenue_token_account: state.trading_company_revenue_token_account,
+        amount: params.amount,
+        eligible_revenue_amount: params.eligible_revenue_amount,
+        burn_rate_bps: params.burn_rate_bps,
+        market_health_score: params.market_health_score,
+        decision_id: params.decision_id,
+        observed_at: params.observed_at,
+        executed_at,
+    });
+
+    Ok(())
 }
 
 fn validate_payment_amount(state: &PeraxState, amount: u64) -> Result<()> {
@@ -607,7 +708,7 @@ fn reset_burn_window_if_needed(state: &mut PeraxState, observed_at: i64) {
 
 fn validate_market_condition_burn(
     state: &PeraxState,
-    params: &MarketConditionBurnParams,
+    params: &ConditionalBuybackBurnParams,
     current_mint_supply: u64,
 ) -> Result<()> {
     let conservation_threshold = amount_bps(PEX_TOTAL_SUPPLY, CONSERVATION_SUPPLY_THRESHOLD_BPS)?;
@@ -656,7 +757,6 @@ fn amount_bps(amount: u64, bps: u16) -> Result<u64> {
 }
 
 fn burn_rate_bps_for_market_health(score: u8) -> Result<u16> {
-    require!(score <= 100, PeraxError::InvalidMarketHealthScore);
     let rate = match score {
         0..=20 => MAX_BURN_RATE_BPS,
         21..=30 => 2_500,
@@ -708,6 +808,12 @@ pub enum ReleaseType {
     Emergency,
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BurnFulfillmentSource {
+    OpenMarketPurchase,
+    TradingTreasury,
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct MarketConditionSnapshot {
     pub observed_price: u64,
@@ -736,6 +842,17 @@ pub struct MarketConditionBurnParams {
     pub market_health_score: u8,
     pub observed_at: i64,
     pub decision_id: [u8; 32],
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct ConditionalBuybackBurnParams {
+    pub amount: u64,
+    pub eligible_revenue_amount: u64,
+    pub burn_rate_bps: u16,
+    pub market_health_score: u8,
+    pub observed_at: i64,
+    pub decision_id: [u8; 32],
+    pub burn_source: BurnFulfillmentSource,
 }
 
 #[derive(Accounts)]
@@ -870,6 +987,58 @@ impl<'info> ExecuteMarketConditionBurn<'info> {
     }
 }
 
+#[derive(Accounts)]
+#[instruction(params: ConditionalBuybackBurnParams)]
+pub struct ExecuteConditionalBuybackBurn<'info> {
+    #[account(
+        mut,
+        seeds = [b"perax-state"],
+        bump = state.bump,
+        has_one = authority @ PeraxError::Unauthorized,
+        constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint
+    )]
+    pub state: Account<'info, PeraxState>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub source_authority: Signer<'info>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + BurnExecutionRecord::SPACE,
+        seeds = [b"burn", params.decision_id.as_ref()],
+        bump
+    )]
+    pub burn_record: Account<'info, BurnExecutionRecord>,
+
+    #[account(
+        mut,
+        constraint = source_token_account.owner == source_authority.key() @ PeraxError::Unauthorized,
+        constraint = source_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
+    )]
+    pub source_token_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub token_mint: Account<'info, Mint>,
+
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+impl<'info> ExecuteConditionalBuybackBurn<'info> {
+    fn conditional_burn_ctx(&self) -> CpiContext<'_, '_, '_, 'info, Burn<'info>> {
+        let accounts = Burn {
+            mint: self.token_mint.to_account_info(),
+            from: self.source_token_account.to_account_info(),
+            authority: self.source_authority.to_account_info(),
+        };
+
+        CpiContext::new(self.token_program.to_account_info(), accounts)
+    }
+}
+
 #[account]
 #[derive(InitSpace)]
 pub struct PeraxState {
@@ -941,6 +1110,8 @@ pub struct BurnExecutionRecord {
     pub trading_company_authority: Pubkey,
     pub token_mint: Pubkey,
     pub trading_company_revenue_token_account: Pubkey,
+    pub source_token_account: Pubkey,
+    pub burn_source: BurnFulfillmentSource,
     pub amount: u64,
     pub eligible_revenue_amount: u64,
     pub burn_rate_bps: u16,
@@ -951,7 +1122,7 @@ pub struct BurnExecutionRecord {
 }
 
 impl BurnExecutionRecord {
-    pub const SPACE: usize = 32 + 32 + 32 + 32 + 32 + 8 + 8 + 2 + 1 + 8 + 8 + 1;
+    pub const SPACE: usize = 32 + 32 + 32 + 32 + 32 + 32 + 1 + 8 + 8 + 2 + 1 + 8 + 8 + 1;
 }
 
 #[event]
@@ -1079,6 +1250,23 @@ pub struct MarketConditionBurnExecuted {
     pub executed_at: i64,
 }
 
+#[event]
+pub struct ConditionalBuybackBurnExecuted {
+    pub burn_record: Pubkey,
+    pub authority: Pubkey,
+    pub source_authority: Pubkey,
+    pub token_mint: Pubkey,
+    pub source_token_account: Pubkey,
+    pub burn_source: BurnFulfillmentSource,
+    pub amount: u64,
+    pub eligible_revenue_amount: u64,
+    pub burn_rate_bps: u16,
+    pub market_health_score: u8,
+    pub decision_id: [u8; 32],
+    pub observed_at: i64,
+    pub executed_at: i64,
+}
+
 #[error_code]
 pub enum PeraxError {
     #[msg("The caller is not authorized to perform this action.")]
@@ -1133,7 +1321,9 @@ pub enum PeraxError {
     EmergencyLiquidityGateNotMet,
     #[msg("Emergency hourly release cap exceeded.")]
     EmergencyHourlyCapExceeded,
-    #[msg("Legacy burn is disabled. Use execute_market_condition_burn instead.")]
+    #[msg(
+        "Legacy burn is disabled. Use execute_market_condition_burn or execute_conditional_buyback_burn instead."
+    )]
     UseMarketConditionBurn,
     #[msg("Burn rate is outside the approved market-condition policy.")]
     InvalidBurnRate,
@@ -1143,6 +1333,8 @@ pub enum PeraxError {
     DailyBurnCapExceeded,
     #[msg("Market health score must be between 0 and 100.")]
     InvalidMarketHealthScore,
+    #[msg("The selected burn source account is not approved for this burn source.")]
+    InvalidBurnSourceAccount,
 }
 
 #[cfg(test)]

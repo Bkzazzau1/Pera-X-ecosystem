@@ -82,17 +82,18 @@ fn market_burn_params(
     eligible_revenue_amount: u64,
     burn_rate_bps: u16,
     market_health_score: u8,
-) -> MarketConditionBurnParams {
+) -> ConditionalBuybackBurnParams {
     let mut decision_id = [0u8; 32];
     decision_id[31] = 3;
 
-    MarketConditionBurnParams {
+    ConditionalBuybackBurnParams {
         amount: amount_bps(eligible_revenue_amount, burn_rate_bps).unwrap(),
         eligible_revenue_amount,
         burn_rate_bps,
         market_health_score,
         observed_at: 1_000_000,
         decision_id,
+        burn_source: BurnFulfillmentSource::OpenMarketPurchase,
     }
 }
 
