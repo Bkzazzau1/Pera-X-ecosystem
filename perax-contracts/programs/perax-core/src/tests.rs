@@ -21,13 +21,18 @@ fn test_state(max_payment_amount: u64) -> PeraxState {
         daily_release_cap: DAILY_RELEASE_CAP,
         monthly_release_cap: MONTHLY_RELEASE_CAP,
         emergency_hourly_release_bps: EMERGENCY_HOURLY_RESERVE_RELEASE_BPS,
+        daily_burn_accumulator: 0,
+        daily_burn_window_start: 0,
         is_paused: false,
         emergency_pause: false,
         bump: 255,
     }
 }
 
-fn growth_release_params(requested_amount: u64, observed_at: i64) -> MarketConditionalReleaseParams {
+fn growth_release_params(
+    requested_amount: u64,
+    observed_at: i64,
+) -> MarketConditionalReleaseParams {
     let mut release_id = [0u8; 32];
     release_id[31] = 1;
 
@@ -70,6 +75,24 @@ fn emergency_release_params(
             emergency_reserve_available_amount: reserve_amount,
             observed_at,
         },
+    }
+}
+
+fn market_burn_params(
+    eligible_revenue_amount: u64,
+    burn_rate_bps: u16,
+    market_health_score: u8,
+) -> MarketConditionBurnParams {
+    let mut decision_id = [0u8; 32];
+    decision_id[31] = 3;
+
+    MarketConditionBurnParams {
+        amount: amount_bps(eligible_revenue_amount, burn_rate_bps).unwrap(),
+        eligible_revenue_amount,
+        burn_rate_bps,
+        market_health_score,
+        observed_at: 1_000_000,
+        decision_id,
     }
 }
 
@@ -166,7 +189,10 @@ fn growth_release_rejects_when_buy_pressure_is_below_50_percent() {
 fn growth_release_rejects_during_24_hour_cooldown() {
     let mut state = test_state(0);
     state.last_release_timestamp = 1_000_000;
-    let params = growth_release_params(1_000_000 * PEX_DECIMALS, 1_000_000 + RELEASE_COOLDOWN_SECONDS - 1);
+    let params = growth_release_params(
+        1_000_000 * PEX_DECIMALS,
+        1_000_000 + RELEASE_COOLDOWN_SECONDS - 1,
+    );
 
     assert!(validate_growth_release(&state, &params).is_err());
 }
@@ -183,7 +209,8 @@ fn growth_release_rejects_above_daily_cap() {
 fn emergency_release_passes_when_stress_gates_and_hourly_cap_are_met() {
     let state = test_state(0);
     let reserve_amount = 10_000_000 * PEX_DECIMALS;
-    let requested_amount = amount_bps(reserve_amount, EMERGENCY_HOURLY_RESERVE_RELEASE_BPS).unwrap();
+    let requested_amount =
+        amount_bps(reserve_amount, EMERGENCY_HOURLY_RESERVE_RELEASE_BPS).unwrap();
     let params = emergency_release_params(requested_amount, reserve_amount, 1_000_000);
 
     assert!(validate_emergency_release(&state, &params).is_ok());
@@ -193,7 +220,8 @@ fn emergency_release_passes_when_stress_gates_and_hourly_cap_are_met() {
 fn emergency_release_rejects_when_downside_trigger_is_not_met() {
     let state = test_state(0);
     let reserve_amount = 10_000_000 * PEX_DECIMALS;
-    let requested_amount = amount_bps(reserve_amount, EMERGENCY_HOURLY_RESERVE_RELEASE_BPS).unwrap();
+    let requested_amount =
+        amount_bps(reserve_amount, EMERGENCY_HOURLY_RESERVE_RELEASE_BPS).unwrap();
     let mut params = emergency_release_params(requested_amount, reserve_amount, 1_000_000);
     params.snapshot.downside_move_bps = EMERGENCY_DOWNSIDE_TRIGGER_BPS - 1;
 
@@ -204,7 +232,8 @@ fn emergency_release_rejects_when_downside_trigger_is_not_met() {
 fn emergency_release_rejects_above_hourly_cap() {
     let state = test_state(0);
     let reserve_amount = 10_000_000 * PEX_DECIMALS;
-    let requested_amount = amount_bps(reserve_amount, EMERGENCY_HOURLY_RESERVE_RELEASE_BPS).unwrap() + 1;
+    let requested_amount =
+        amount_bps(reserve_amount, EMERGENCY_HOURLY_RESERVE_RELEASE_BPS).unwrap() + 1;
     let params = emergency_release_params(requested_amount, reserve_amount, 1_000_000);
 
     assert!(validate_emergency_release(&state, &params).is_err());
@@ -222,4 +251,41 @@ fn release_windows_reset_after_day_and_month_boundaries() {
 
     assert_eq!(state.daily_unlocked_accumulator, 0);
     assert_eq!(state.monthly_unlocked_accumulator, 0);
+}
+
+#[test]
+fn market_burn_uses_market_health_rate_before_conservation() {
+    let state = test_state(0);
+    let params = market_burn_params(1_000_000 * PEX_DECIMALS, DEFAULT_BURN_RATE_BPS, 50);
+
+    assert!(validate_market_condition_burn(&state, &params, PEX_TOTAL_SUPPLY).is_ok());
+}
+
+#[test]
+fn market_burn_uses_conservation_rate_at_threshold() {
+    let state = test_state(0);
+    let conservation_threshold =
+        amount_bps(PEX_TOTAL_SUPPLY, CONSERVATION_SUPPLY_THRESHOLD_BPS).unwrap();
+    let params = market_burn_params(1_000_000 * PEX_DECIMALS, CONSERVATION_BURN_RATE_BPS, 50);
+
+    assert!(validate_market_condition_burn(&state, &params, conservation_threshold).is_ok());
+}
+
+#[test]
+fn market_burn_rejects_market_health_rate_during_conservation() {
+    let state = test_state(0);
+    let conservation_threshold =
+        amount_bps(PEX_TOTAL_SUPPLY, CONSERVATION_SUPPLY_THRESHOLD_BPS).unwrap();
+    let params = market_burn_params(1_000_000 * PEX_DECIMALS, DEFAULT_BURN_RATE_BPS, 50);
+
+    assert!(validate_market_condition_burn(&state, &params, conservation_threshold).is_err());
+}
+
+#[test]
+fn market_burn_enforces_daily_cap() {
+    let mut state = test_state(0);
+    state.daily_burn_accumulator = amount_bps(PEX_TOTAL_SUPPLY, EARLY_DAILY_BURN_CAP_BPS).unwrap();
+    let params = market_burn_params(10, DEFAULT_BURN_RATE_BPS, 50);
+
+    assert!(validate_market_condition_burn(&state, &params, PEX_TOTAL_SUPPLY).is_err());
 }

@@ -21,20 +21,45 @@ pub const EMERGENCY_HOURLY_RESERVE_RELEASE_BPS: u16 = 50;
 pub const MIN_BURN_RATE_BPS: u16 = 200;
 pub const DEFAULT_BURN_RATE_BPS: u16 = 1_000;
 pub const MAX_BURN_RATE_BPS: u16 = 3_000;
+pub const EARLY_DAILY_BURN_CAP_BPS: u16 = 500;
+pub const CONSERVATION_SUPPLY_THRESHOLD_BPS: u16 = 8_500;
+pub const CONSERVATION_BURN_RATE_BPS: u16 = 50;
+pub const CONSERVATION_DAILY_BURN_CAP_BPS: u16 = 50;
 
 #[program]
 pub mod perax_core {
     use super::*;
 
     pub fn initialize(ctx: Context<Initialize>, params: InitializeParams) -> Result<()> {
-        require!(params.trading_company_token_account != Pubkey::default(), PeraxError::InvalidTradingCompanyAccount);
-        require!(params.trading_company_revenue_token_account != Pubkey::default(), PeraxError::InvalidTradingCompanyRevenueAccount);
-        require!(params.trading_company_token_account != params.trading_company_revenue_token_account, PeraxError::TradingCompanyAccountsMustDiffer);
-        require!(params.safety_admin != Pubkey::default(), PeraxError::InvalidSafetyAdmin);
-        require!(params.oracle_feed != Pubkey::default(), PeraxError::InvalidOracleFeed);
+        require!(
+            params.trading_company_token_account != Pubkey::default(),
+            PeraxError::InvalidTradingCompanyAccount
+        );
+        require!(
+            params.trading_company_revenue_token_account != Pubkey::default(),
+            PeraxError::InvalidTradingCompanyRevenueAccount
+        );
+        require!(
+            params.trading_company_token_account != params.trading_company_revenue_token_account,
+            PeraxError::TradingCompanyAccountsMustDiffer
+        );
+        require!(
+            params.safety_admin != Pubkey::default(),
+            PeraxError::InvalidSafetyAdmin
+        );
+        require!(
+            params.oracle_feed != Pubkey::default(),
+            PeraxError::InvalidOracleFeed
+        );
         require!(params.launch_price > 0, PeraxError::InvalidMarketParameter);
-        require!(params.daily_release_cap > 0, PeraxError::InvalidMarketParameter);
-        require!(params.monthly_release_cap >= params.daily_release_cap, PeraxError::InvalidMarketParameter);
+        require!(
+            params.daily_release_cap > 0,
+            PeraxError::InvalidMarketParameter
+        );
+        require!(
+            params.monthly_release_cap >= params.daily_release_cap,
+            PeraxError::InvalidMarketParameter
+        );
 
         let state = &mut ctx.accounts.state;
         state.authority = ctx.accounts.authority.key();
@@ -56,6 +81,8 @@ pub mod perax_core {
         state.daily_release_cap = params.daily_release_cap;
         state.monthly_release_cap = params.monthly_release_cap;
         state.emergency_hourly_release_bps = params.emergency_hourly_release_bps;
+        state.daily_burn_accumulator = 0;
+        state.daily_burn_window_start = 0;
         state.is_paused = false;
         state.emergency_pause = false;
         state.bump = ctx.bumps.state;
@@ -80,14 +107,28 @@ pub mod perax_core {
         let state = &mut ctx.accounts.state;
 
         if let Some(trading_company_token_account) = params.trading_company_token_account {
-            require!(trading_company_token_account != Pubkey::default(), PeraxError::InvalidTradingCompanyAccount);
-            require!(trading_company_token_account != state.trading_company_revenue_token_account, PeraxError::TradingCompanyAccountsMustDiffer);
+            require!(
+                trading_company_token_account != Pubkey::default(),
+                PeraxError::InvalidTradingCompanyAccount
+            );
+            require!(
+                trading_company_token_account != state.trading_company_revenue_token_account,
+                PeraxError::TradingCompanyAccountsMustDiffer
+            );
             state.trading_company_token_account = trading_company_token_account;
         }
 
-        if let Some(trading_company_revenue_token_account) = params.trading_company_revenue_token_account {
-            require!(trading_company_revenue_token_account != Pubkey::default(), PeraxError::InvalidTradingCompanyRevenueAccount);
-            require!(trading_company_revenue_token_account != state.trading_company_token_account, PeraxError::TradingCompanyAccountsMustDiffer);
+        if let Some(trading_company_revenue_token_account) =
+            params.trading_company_revenue_token_account
+        {
+            require!(
+                trading_company_revenue_token_account != Pubkey::default(),
+                PeraxError::InvalidTradingCompanyRevenueAccount
+            );
+            require!(
+                trading_company_revenue_token_account != state.trading_company_token_account,
+                PeraxError::TradingCompanyAccountsMustDiffer
+            );
             state.trading_company_revenue_token_account = trading_company_revenue_token_account;
         }
 
@@ -105,21 +146,33 @@ pub mod perax_core {
         Ok(())
     }
 
-    pub fn update_market_engine_config(ctx: Context<UpdateConfig>, params: UpdateMarketEngineConfigParams) -> Result<()> {
+    pub fn update_market_engine_config(
+        ctx: Context<UpdateConfig>,
+        params: UpdateMarketEngineConfigParams,
+    ) -> Result<()> {
         let state = &mut ctx.accounts.state;
 
         if let Some(safety_admin) = params.safety_admin {
-            require!(safety_admin != Pubkey::default(), PeraxError::InvalidSafetyAdmin);
+            require!(
+                safety_admin != Pubkey::default(),
+                PeraxError::InvalidSafetyAdmin
+            );
             state.safety_admin = safety_admin;
         }
 
         if let Some(oracle_feed) = params.oracle_feed {
-            require!(oracle_feed != Pubkey::default(), PeraxError::InvalidOracleFeed);
+            require!(
+                oracle_feed != Pubkey::default(),
+                PeraxError::InvalidOracleFeed
+            );
             state.oracle_feed = oracle_feed;
         }
 
         if let Some(current_stepped_floor) = params.current_stepped_floor {
-            require!(current_stepped_floor > 0, PeraxError::InvalidMarketParameter);
+            require!(
+                current_stepped_floor > 0,
+                PeraxError::InvalidMarketParameter
+            );
             state.current_stepped_floor = current_stepped_floor;
         }
 
@@ -129,12 +182,18 @@ pub mod perax_core {
         }
 
         if let Some(monthly_release_cap) = params.monthly_release_cap {
-            require!(monthly_release_cap >= state.daily_release_cap, PeraxError::InvalidMarketParameter);
+            require!(
+                monthly_release_cap >= state.daily_release_cap,
+                PeraxError::InvalidMarketParameter
+            );
             state.monthly_release_cap = monthly_release_cap;
         }
 
         if let Some(emergency_hourly_release_bps) = params.emergency_hourly_release_bps {
-            require!(emergency_hourly_release_bps <= 10_000, PeraxError::InvalidMarketParameter);
+            require!(
+                emergency_hourly_release_bps <= 10_000,
+                PeraxError::InvalidMarketParameter
+            );
             state.emergency_hourly_release_bps = emergency_hourly_release_bps;
         }
 
@@ -154,7 +213,10 @@ pub mod perax_core {
     pub fn set_pause(ctx: Context<UpdateConfig>, is_paused: bool) -> Result<()> {
         let state = &mut ctx.accounts.state;
         state.is_paused = is_paused;
-        emit!(PauseStatusChanged { authority: state.authority, is_paused });
+        emit!(PauseStatusChanged {
+            authority: state.authority,
+            is_paused
+        });
         Ok(())
     }
 
@@ -168,7 +230,10 @@ pub mod perax_core {
         Ok(())
     }
 
-    pub fn record_market_conditional_release(ctx: Context<RecordMarketConditionalRelease>, params: MarketConditionalReleaseParams) -> Result<()> {
+    pub fn record_market_conditional_release(
+        ctx: Context<RecordMarketConditionalRelease>,
+        params: MarketConditionalReleaseParams,
+    ) -> Result<()> {
         let state = &mut ctx.accounts.state;
         require!(!state.is_paused, PeraxError::ProgramPaused);
         require!(!state.emergency_pause, PeraxError::EmergencyPaused);
@@ -224,12 +289,21 @@ pub mod perax_core {
     }
 
     pub fn nominate_authority(ctx: Context<UpdateConfig>, new_authority: Pubkey) -> Result<()> {
-        require!(new_authority != Pubkey::default(), PeraxError::InvalidAuthority);
+        require!(
+            new_authority != Pubkey::default(),
+            PeraxError::InvalidAuthority
+        );
         let state = &mut ctx.accounts.state;
-        require!(new_authority != state.authority, PeraxError::InvalidAuthority);
+        require!(
+            new_authority != state.authority,
+            PeraxError::InvalidAuthority
+        );
         state.pending_authority = new_authority;
         state.has_pending_authority = true;
-        emit!(AuthorityTransferNominated { current_authority: state.authority, pending_authority: state.pending_authority });
+        emit!(AuthorityTransferNominated {
+            current_authority: state.authority,
+            pending_authority: state.pending_authority
+        });
         Ok(())
     }
 
@@ -239,7 +313,10 @@ pub mod perax_core {
         let cancelled_authority = state.pending_authority;
         state.pending_authority = Pubkey::default();
         state.has_pending_authority = false;
-        emit!(AuthorityTransferCancelled { authority: state.authority, cancelled_authority });
+        emit!(AuthorityTransferCancelled {
+            authority: state.authority,
+            cancelled_authority
+        });
         Ok(())
     }
 
@@ -247,16 +324,26 @@ pub mod perax_core {
         let state = &mut ctx.accounts.state;
         let new_authority = ctx.accounts.pending_authority.key();
         require!(state.has_pending_authority, PeraxError::NoPendingAuthority);
-        require!(state.pending_authority == new_authority, PeraxError::Unauthorized);
+        require!(
+            state.pending_authority == new_authority,
+            PeraxError::Unauthorized
+        );
         let previous_authority = state.authority;
         state.authority = new_authority;
         state.pending_authority = Pubkey::default();
         state.has_pending_authority = false;
-        emit!(AuthorityTransferAccepted { previous_authority, new_authority });
+        emit!(AuthorityTransferAccepted {
+            previous_authority,
+            new_authority
+        });
         Ok(())
     }
 
-    pub fn pay_to_trading_company(ctx: Context<PayToTradingCompany>, amount: u64, reference: [u8; 32]) -> Result<()> {
+    pub fn pay_to_trading_company(
+        ctx: Context<PayToTradingCompany>,
+        amount: u64,
+        reference: [u8; 32],
+    ) -> Result<()> {
         let state = &ctx.accounts.state;
         require!(!state.is_paused, PeraxError::ProgramPaused);
         validate_payment_amount(state, amount)?;
@@ -268,7 +355,8 @@ pub mod perax_core {
         payment_record.amount = amount;
         payment_record.token_mint = state.token_mint;
         payment_record.trading_company_token_account = state.trading_company_token_account;
-        payment_record.trading_company_revenue_token_account = state.trading_company_revenue_token_account;
+        payment_record.trading_company_revenue_token_account =
+            state.trading_company_revenue_token_account;
         payment_record.created_at = Clock::get()?.unix_timestamp;
         payment_record.bump = ctx.bumps.payment_record;
 
@@ -286,35 +374,61 @@ pub mod perax_core {
         Ok(())
     }
 
-    pub fn record_external_utility_payment(ctx: Context<RecordExternalUtilityPayment>, amount: u64, reference: [u8; 32], payment_source: [u8; 16]) -> Result<()> {
+    pub fn record_external_utility_payment(
+        ctx: Context<RecordExternalUtilityPayment>,
+        amount: u64,
+        reference: [u8; 32],
+        payment_source: [u8; 16],
+    ) -> Result<()> {
         let state = &ctx.accounts.state;
         require!(!state.is_paused, PeraxError::ProgramPaused);
         validate_payment_amount(state, amount)?;
         validate_reference(reference)?;
-        emit!(ExternalUtilityPaymentRecorded { authority: ctx.accounts.authority.key(), token_mint: state.token_mint, amount, reference, payment_source });
+        emit!(ExternalUtilityPaymentRecorded {
+            authority: ctx.accounts.authority.key(),
+            token_mint: state.token_mint,
+            amount,
+            reference,
+            payment_source
+        });
         Ok(())
     }
 
-    pub fn burn_from_trading_company(_ctx: Context<BurnFromTradingCompany>, _amount: u64, _decision_id: [u8; 32]) -> Result<()> {
+    pub fn burn_from_trading_company(
+        _ctx: Context<BurnFromTradingCompany>,
+        _amount: u64,
+        _decision_id: [u8; 32],
+    ) -> Result<()> {
         err!(PeraxError::UseMarketConditionBurn)
     }
 
-    pub fn execute_market_condition_burn(ctx: Context<ExecuteMarketConditionBurn>, params: MarketConditionBurnParams) -> Result<()> {
-        let state = &ctx.accounts.state;
-        require!(!state.is_paused, PeraxError::ProgramPaused);
-        require!(!state.emergency_pause, PeraxError::EmergencyPaused);
-        require!(params.amount > 0, PeraxError::InvalidAmount);
-        require!(params.eligible_revenue_amount > 0, PeraxError::InvalidAmount);
-        require!(params.observed_at > 0, PeraxError::InvalidMarketParameter);
-        validate_reference(params.decision_id)?;
+    pub fn execute_market_condition_burn(
+        ctx: Context<ExecuteMarketConditionBurn>,
+        params: MarketConditionBurnParams,
+    ) -> Result<()> {
+        {
+            let state = &mut ctx.accounts.state;
+            require!(!state.is_paused, PeraxError::ProgramPaused);
+            require!(!state.emergency_pause, PeraxError::EmergencyPaused);
+            require!(params.amount > 0, PeraxError::InvalidAmount);
+            require!(
+                params.eligible_revenue_amount > 0,
+                PeraxError::InvalidAmount
+            );
+            require!(params.observed_at > 0, PeraxError::InvalidMarketParameter);
+            validate_reference(params.decision_id)?;
 
-        let expected_burn_rate_bps = burn_rate_bps_for_market_health(params.market_health_score)?;
-        require!(params.burn_rate_bps == expected_burn_rate_bps, PeraxError::InvalidBurnRate);
-
-        let expected_amount = amount_bps(params.eligible_revenue_amount, params.burn_rate_bps)?;
-        require!(params.amount == expected_amount, PeraxError::BurnAmountMismatch);
+            reset_burn_window_if_needed(state, params.observed_at);
+            validate_market_condition_burn(state, &params, ctx.accounts.token_mint.supply)?;
+        }
 
         token::burn(ctx.accounts.market_burn_ctx(), params.amount)?;
+
+        let state = &mut ctx.accounts.state;
+        state.daily_burn_accumulator = state
+            .daily_burn_accumulator
+            .checked_add(params.amount)
+            .ok_or(PeraxError::DailyBurnCapExceeded)?;
 
         let executed_at = Clock::get()?.unix_timestamp;
         let burn_record = &mut ctx.accounts.burn_record;
@@ -322,7 +436,8 @@ pub mod perax_core {
         burn_record.authority = ctx.accounts.authority.key();
         burn_record.trading_company_authority = ctx.accounts.trading_company_authority.key();
         burn_record.token_mint = state.token_mint;
-        burn_record.trading_company_revenue_token_account = state.trading_company_revenue_token_account;
+        burn_record.trading_company_revenue_token_account =
+            state.trading_company_revenue_token_account;
         burn_record.amount = params.amount;
         burn_record.eligible_revenue_amount = params.eligible_revenue_amount;
         burn_record.burn_rate_bps = params.burn_rate_bps;
@@ -353,7 +468,10 @@ pub mod perax_core {
 fn validate_payment_amount(state: &PeraxState, amount: u64) -> Result<()> {
     require!(amount > 0, PeraxError::InvalidAmount);
     if state.max_payment_amount > 0 {
-        require!(amount <= state.max_payment_amount, PeraxError::PaymentAmountTooLarge);
+        require!(
+            amount <= state.max_payment_amount,
+            PeraxError::PaymentAmountTooLarge
+        );
     }
     Ok(())
 }
@@ -365,34 +483,107 @@ fn validate_reference(reference: [u8; 32]) -> Result<()> {
 
 fn validate_oracle_snapshot(state: &PeraxState, snapshot: &MarketConditionSnapshot) -> Result<()> {
     require!(snapshot.observed_at > 0, PeraxError::InvalidMarketParameter);
-    require!(snapshot.observed_price > 0, PeraxError::InvalidMarketParameter);
-    require!(snapshot.net_buy_volume_bps <= 10_000, PeraxError::InvalidMarketParameter);
-    require!(state.oracle_feed != Pubkey::default(), PeraxError::InvalidOracleFeed);
+    require!(
+        snapshot.observed_price > 0,
+        PeraxError::InvalidMarketParameter
+    );
+    require!(
+        snapshot.net_buy_volume_bps <= 10_000,
+        PeraxError::InvalidMarketParameter
+    );
+    require!(
+        state.oracle_feed != Pubkey::default(),
+        PeraxError::InvalidOracleFeed
+    );
     Ok(())
 }
 
-fn validate_growth_release(state: &PeraxState, params: &MarketConditionalReleaseParams) -> Result<()> {
+fn validate_growth_release(
+    state: &PeraxState,
+    params: &MarketConditionalReleaseParams,
+) -> Result<()> {
     let snapshot = &params.snapshot;
-    let growth_price_trigger = state.launch_price.checked_mul(GROWTH_PRICE_MULTIPLIER).ok_or(PeraxError::InvalidMarketParameter)?;
-    require!(snapshot.observed_price >= growth_price_trigger, PeraxError::GrowthPriceGateNotMet);
-    require!(snapshot.twap_minutes >= MIN_GROWTH_TWAP_MINUTES, PeraxError::TwapGateNotMet);
-    require!(snapshot.liquidity_usd >= MIN_GROWTH_LIQUIDITY_USD, PeraxError::LiquidityGateNotMet);
-    require!(snapshot.net_buy_volume_bps >= MIN_NET_BUY_VOLUME_BPS, PeraxError::BuyPressureGateNotMet);
-    require!(snapshot.observed_at >= state.last_release_timestamp + RELEASE_COOLDOWN_SECONDS || state.last_release_timestamp == 0, PeraxError::ReleaseCooldownActive);
-    require!(state.daily_unlocked_accumulator.saturating_add(params.requested_amount) <= state.daily_release_cap, PeraxError::DailyReleaseCapExceeded);
-    require!(state.monthly_unlocked_accumulator.saturating_add(params.requested_amount) <= state.monthly_release_cap, PeraxError::MonthlyReleaseCapExceeded);
+    let growth_price_trigger = state
+        .launch_price
+        .checked_mul(GROWTH_PRICE_MULTIPLIER)
+        .ok_or(PeraxError::InvalidMarketParameter)?;
+    require!(
+        snapshot.observed_price >= growth_price_trigger,
+        PeraxError::GrowthPriceGateNotMet
+    );
+    require!(
+        snapshot.twap_minutes >= MIN_GROWTH_TWAP_MINUTES,
+        PeraxError::TwapGateNotMet
+    );
+    require!(
+        snapshot.liquidity_usd >= MIN_GROWTH_LIQUIDITY_USD,
+        PeraxError::LiquidityGateNotMet
+    );
+    require!(
+        snapshot.net_buy_volume_bps >= MIN_NET_BUY_VOLUME_BPS,
+        PeraxError::BuyPressureGateNotMet
+    );
+    require!(
+        snapshot.observed_at >= state.last_release_timestamp + RELEASE_COOLDOWN_SECONDS
+            || state.last_release_timestamp == 0,
+        PeraxError::ReleaseCooldownActive
+    );
+    require!(
+        state
+            .daily_unlocked_accumulator
+            .saturating_add(params.requested_amount)
+            <= state.daily_release_cap,
+        PeraxError::DailyReleaseCapExceeded
+    );
+    require!(
+        state
+            .monthly_unlocked_accumulator
+            .saturating_add(params.requested_amount)
+            <= state.monthly_release_cap,
+        PeraxError::MonthlyReleaseCapExceeded
+    );
     Ok(())
 }
 
-fn validate_emergency_release(state: &PeraxState, params: &MarketConditionalReleaseParams) -> Result<()> {
+fn validate_emergency_release(
+    state: &PeraxState,
+    params: &MarketConditionalReleaseParams,
+) -> Result<()> {
     let snapshot = &params.snapshot;
-    require!(snapshot.downside_move_bps >= EMERGENCY_DOWNSIDE_TRIGGER_BPS, PeraxError::EmergencyDownsideGateNotMet);
-    require!(snapshot.liquidity_drain_bps >= EMERGENCY_LIQUIDITY_DRAIN_TRIGGER_BPS, PeraxError::EmergencyLiquidityGateNotMet);
-    require!(snapshot.emergency_reserve_available_amount > 0, PeraxError::InvalidMarketParameter);
-    let hourly_cap = amount_bps(snapshot.emergency_reserve_available_amount, state.emergency_hourly_release_bps)?;
-    require!(params.requested_amount <= hourly_cap, PeraxError::EmergencyHourlyCapExceeded);
-    require!(state.daily_unlocked_accumulator.saturating_add(params.requested_amount) <= state.daily_release_cap, PeraxError::DailyReleaseCapExceeded);
-    require!(state.monthly_unlocked_accumulator.saturating_add(params.requested_amount) <= state.monthly_release_cap, PeraxError::MonthlyReleaseCapExceeded);
+    require!(
+        snapshot.downside_move_bps >= EMERGENCY_DOWNSIDE_TRIGGER_BPS,
+        PeraxError::EmergencyDownsideGateNotMet
+    );
+    require!(
+        snapshot.liquidity_drain_bps >= EMERGENCY_LIQUIDITY_DRAIN_TRIGGER_BPS,
+        PeraxError::EmergencyLiquidityGateNotMet
+    );
+    require!(
+        snapshot.emergency_reserve_available_amount > 0,
+        PeraxError::InvalidMarketParameter
+    );
+    let hourly_cap = amount_bps(
+        snapshot.emergency_reserve_available_amount,
+        state.emergency_hourly_release_bps,
+    )?;
+    require!(
+        params.requested_amount <= hourly_cap,
+        PeraxError::EmergencyHourlyCapExceeded
+    );
+    require!(
+        state
+            .daily_unlocked_accumulator
+            .saturating_add(params.requested_amount)
+            <= state.daily_release_cap,
+        PeraxError::DailyReleaseCapExceeded
+    );
+    require!(
+        state
+            .monthly_unlocked_accumulator
+            .saturating_add(params.requested_amount)
+            <= state.monthly_release_cap,
+        PeraxError::MonthlyReleaseCapExceeded
+    );
     Ok(())
 }
 
@@ -405,6 +596,54 @@ fn reset_release_windows_if_needed(state: &mut PeraxState, observed_at: i64) {
         state.monthly_window_start = observed_at;
         state.monthly_unlocked_accumulator = 0;
     }
+}
+
+fn reset_burn_window_if_needed(state: &mut PeraxState, observed_at: i64) {
+    if state.daily_burn_window_start == 0 || observed_at >= state.daily_burn_window_start + 86_400 {
+        state.daily_burn_window_start = observed_at;
+        state.daily_burn_accumulator = 0;
+    }
+}
+
+fn validate_market_condition_burn(
+    state: &PeraxState,
+    params: &MarketConditionBurnParams,
+    current_mint_supply: u64,
+) -> Result<()> {
+    let conservation_threshold = amount_bps(PEX_TOTAL_SUPPLY, CONSERVATION_SUPPLY_THRESHOLD_BPS)?;
+    let conservation_phase = current_mint_supply <= conservation_threshold;
+
+    let expected_burn_rate_bps = if conservation_phase {
+        CONSERVATION_BURN_RATE_BPS
+    } else {
+        burn_rate_bps_for_market_health(params.market_health_score)?
+    };
+
+    require!(
+        params.burn_rate_bps == expected_burn_rate_bps,
+        PeraxError::InvalidBurnRate
+    );
+
+    let expected_amount = amount_bps(params.eligible_revenue_amount, params.burn_rate_bps)?;
+    require!(
+        params.amount == expected_amount,
+        PeraxError::BurnAmountMismatch
+    );
+
+    let daily_cap_bps = if conservation_phase {
+        CONSERVATION_DAILY_BURN_CAP_BPS
+    } else {
+        EARLY_DAILY_BURN_CAP_BPS
+    };
+
+    let daily_cap_amount = amount_bps(PEX_TOTAL_SUPPLY, daily_cap_bps)?;
+
+    require!(
+        state.daily_burn_accumulator.saturating_add(params.amount) <= daily_cap_amount,
+        PeraxError::DailyBurnCapExceeded
+    );
+
+    Ok(())
 }
 
 fn amount_bps(amount: u64, bps: u16) -> Result<u64> {
@@ -426,6 +665,7 @@ fn burn_rate_bps_for_market_health(score: u8) -> Result<u16> {
         61..=75 => 800,
         76..=85 => 500,
         86..=100 => MIN_BURN_RATE_BPS,
+        _ => return err!(PeraxError::InvalidMarketHealthScore),
     };
     Ok(rate)
 }
@@ -598,7 +838,7 @@ pub struct BurnFromTradingCompany<'info> {
 #[derive(Accounts)]
 #[instruction(params: MarketConditionBurnParams)]
 pub struct ExecuteMarketConditionBurn<'info> {
-    #[account(seeds = [b"perax-state"], bump = state.bump, has_one = authority @ PeraxError::Unauthorized, constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint, constraint = trading_company_revenue_token_account.key() == state.trading_company_revenue_token_account @ PeraxError::InvalidTradingCompanyRevenueAccount)]
+    #[account(mut, seeds = [b"perax-state"], bump = state.bump, has_one = authority @ PeraxError::Unauthorized, constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint, constraint = trading_company_revenue_token_account.key() == state.trading_company_revenue_token_account @ PeraxError::InvalidTradingCompanyRevenueAccount)]
     pub state: Account<'info, PeraxState>,
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -652,6 +892,8 @@ pub struct PeraxState {
     pub daily_release_cap: u64,
     pub monthly_release_cap: u64,
     pub emergency_hourly_release_bps: u16,
+    pub daily_burn_accumulator: u64,
+    pub daily_burn_window_start: i64,
     pub is_paused: bool,
     pub emergency_pause: bool,
     pub bump: u8,
@@ -897,6 +1139,8 @@ pub enum PeraxError {
     InvalidBurnRate,
     #[msg("Burn amount does not match the approved market-condition burn rate.")]
     BurnAmountMismatch,
+    #[msg("Daily burn cap exceeded.")]
+    DailyBurnCapExceeded,
     #[msg("Market health score must be between 0 and 100.")]
     InvalidMarketHealthScore,
 }
