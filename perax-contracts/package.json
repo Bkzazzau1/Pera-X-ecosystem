@@ -1,15 +1,21 @@
 {
   "scripts": {
-    "test": "anchor test",
+    "test": "anchor test --provider.cluster localnet",
     "typecheck": "tsc --noEmit",
     "validate:tokenomics": "node scripts/validate-tokenomics.js",
     "plan:allocation": "node scripts/print-allocation-plan.js",
     "plan:mint": "node scripts/plan-mint.js",
     "plan:initialize": "node scripts/plan-core-initialize.js",
-    "initialize:core:devnet": "node scripts/initialize-core-program.js --execute"
+    "initialize:core:devnet": "node scripts/initialize-core-program.js --execute",
+    "plan:reserve-vaults:devnet": "node scripts/create-reserve-vaults-devnet.js",
+    "create:reserve-vaults:devnet": "node scripts/create-reserve-vaults-devnet.js --execute",
+    "plan:migrate-reserves:devnet": "node scripts/migrate-reserves-to-vaults-devnet.js",
+    "migrate:reserves:devnet": "node scripts/migrate-reserves-to-vaults-devnet.js --execute",
+    "verify:reserve-vaults:devnet": "node scripts/verify-reserve-vaults-devnet.js"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.30.1",
+    "@solana/spl-token": "^0.4.8",
     "@solana/web3.js": "^1.95.3"
   },
   "devDependencies": {
@@ -17,6 +23,7 @@
     "@types/mocha": "^10.0.7",
     "chai": "^4.4.1",
     "ts-mocha": "^10.0.0",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "@types/node": "^22.10.2"
   }
 }
