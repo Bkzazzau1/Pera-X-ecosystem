@@ -145,3 +145,5 @@ pub mod perax_core {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod vault_tests;
