@@ -35,6 +35,26 @@ type AllocationDefinition = {
   releasable: boolean;
 };
 
+type InitializationOverrides = Partial<{
+  allocationId: number[];
+  vaultClass: Record<string, Record<string, never>>;
+  allocationCap: anchor.BN;
+  authorizedSourceOwner: anchor.web3.PublicKey;
+  authorizedSourceTokenAccount: anchor.web3.PublicKey;
+  approvedDestinationOwner: anchor.web3.PublicKey;
+  approvedDestinationTokenAccount: anchor.web3.PublicKey;
+}>;
+
+type ReserveVaultConfigAccount = {
+  authorizedDeposited: anchor.BN;
+  unsolicitedBalance: anchor.BN;
+  totalReleased: anchor.BN;
+};
+
+type ReserveReleaseRecordAccount = {
+  destinationTokenAccount: anchor.web3.PublicKey;
+};
+
 const ALLOCATIONS: AllocationDefinition[] = [
   { key: "liquidity_pool", vaultClass: { liquidity: {} }, releasable: false },
   {
@@ -79,6 +99,15 @@ describe("perax-core reserve vault custody", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
   const program = anchor.workspace.PeraxCore as Program<any>;
+  const programAccounts = program.account as unknown as {
+    reserveVaultConfig: {
+      all(): Promise<Array<{ account: ReserveVaultConfigAccount }>>;
+      fetch(address: anchor.web3.PublicKey): Promise<ReserveVaultConfigAccount>;
+    };
+    reserveReleaseRecord: {
+      fetch(address: anchor.web3.PublicKey): Promise<ReserveReleaseRecordAccount>;
+    };
+  };
   const payer = (provider.wallet as anchor.Wallet).payer;
 
   const authority = provider.wallet.publicKey;
@@ -143,15 +172,7 @@ describe("perax-core reserve vault custody", () => {
 
   async function buildInitialization(
     allocation: AllocationDefinition,
-    overrides: Partial<{
-      allocationId: number[];
-      vaultClass: Record<string, Record<string, never>>;
-      allocationCap: anchor.BN;
-      authorizedSourceOwner: anchor.web3.PublicKey;
-      authorizedSourceTokenAccount: anchor.web3.PublicKey;
-      approvedDestinationOwner: anchor.web3.PublicKey;
-      approvedDestinationTokenAccount: anchor.web3.PublicKey;
-    }> = {}
+    overrides: InitializationOverrides = {}
   ) {
     const allocationId = overrides.allocationId ?? fixedId(allocation.key);
     const sourceOwner = anchor.web3.Keypair.generate();
@@ -210,7 +231,7 @@ describe("perax-core reserve vault custody", () => {
 
   async function initializeVault(
     allocation: AllocationDefinition,
-    overrides: Parameters<typeof buildInitialization>[1] = {}
+    overrides: InitializationOverrides = {}
   ) {
     const built = await buildInitialization(allocation, overrides);
     await program.methods
@@ -513,7 +534,7 @@ describe("perax-core reserve vault custody", () => {
       await initializeVault(allocation);
     }
 
-    const configs = await program.account.reserveVaultConfig.all();
+    const configs = await programAccounts.reserveVaultConfig.all();
     expect(configs.length).to.equal(13);
 
     const community = vaults.get("community_utility_rewards")!;
@@ -571,7 +592,7 @@ describe("perax-core reserve vault custody", () => {
       .rpc();
 
     const vault = await getAccount(provider.connection, community.tokenAccount);
-    const config = await program.account.reserveVaultConfig.fetch(
+    const config = await programAccounts.reserveVaultConfig.fetch(
       community.config
     );
     expect(vault.owner.toBase58()).to.equal(community.authority.toBase58());
@@ -623,7 +644,7 @@ describe("perax-core reserve vault custody", () => {
       })
       .rpc();
 
-    const config = await program.account.reserveVaultConfig.fetch(
+    const config = await programAccounts.reserveVaultConfig.fetch(
       community.config
     );
     expect(config.authorizedDeposited.toString()).to.equal(
@@ -707,8 +728,8 @@ describe("perax-core reserve vault custody", () => {
       [Buffer.from("vault-release"), Buffer.from(params.releaseId)],
       program.programId
     );
-    const record = await program.account.reserveReleaseRecord.fetch(recordPda);
-    const config = await program.account.reserveVaultConfig.fetch(
+    const record = await programAccounts.reserveReleaseRecord.fetch(recordPda);
+    const config = await programAccounts.reserveVaultConfig.fetch(
       community.config
     );
 
