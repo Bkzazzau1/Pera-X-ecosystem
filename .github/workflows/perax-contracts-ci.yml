@@ -27,6 +27,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Reject tracked local key material
+        shell: bash
+        run: |
+          tracked_secrets="$(
+            git -C .. ls-files | grep -E '(^|/)\.local/|(^|/)(id|keypair|wallet|solana-wallet)\.json$|\.keypair\.json$' || true
+          )"
+          if [ -n "$tracked_secrets" ]; then
+            echo "Tracked local or keypair-like files are forbidden:"
+            echo "$tracked_secrets"
+            exit 1
+          fi
+
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
