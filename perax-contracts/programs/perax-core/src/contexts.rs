@@ -4,9 +4,9 @@ use anchor_spl::{
     token::{Mint, Token, TokenAccount, Transfer, TransferChecked},
 };
 use crate::{
-    BurnExecutionRecord, ConditionalBuybackBurnParams, MarketConditionBurnParams,
-    MarketConditionalReleaseParams, PaymentRecord, PeraxError, PeraxState, ReleaseRecord,
-    ReserveReleaseRecord, ReserveVaultConfig, VaultClass,
+    BurnExecutionRecord, ConditionalBuybackBurnParams, InitializeReserveVaultParams,
+    MarketConditionBurnParams, MarketConditionalReleaseParams, PaymentRecord, PeraxError,
+    PeraxState, ReleaseRecord, ReserveReleaseRecord, ReserveVaultConfig,
     VaultMarketConditionalReleaseParams,
 };
 
@@ -34,7 +34,7 @@ pub struct SafetyAdminAction<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(allocation_id: [u8; 32], vault_class: VaultClass, allocation_cap: u64)]
+#[instruction(params: InitializeReserveVaultParams)]
 pub struct InitializeReserveVault<'info> {
     #[account(
         seeds = [b"perax-state"],
@@ -49,12 +49,12 @@ pub struct InitializeReserveVault<'info> {
         init,
         payer = authority,
         space = 8 + ReserveVaultConfig::SPACE,
-        seeds = [b"reserve-config", allocation_id.as_ref()],
+        seeds = [b"reserve-config", params.allocation_id.as_ref()],
         bump
     )]
     pub reserve_vault_config: Account<'info, ReserveVaultConfig>,
     /// CHECK: PDA authority constrained by seeds; it has no private key.
-    #[account(seeds = [b"reserve-authority", allocation_id.as_ref()], bump)]
+    #[account(seeds = [b"reserve-authority", params.allocation_id.as_ref()], bump)]
     pub vault_authority: UncheckedAccount<'info>,
     #[account(
         init,
@@ -94,11 +94,19 @@ pub struct DepositIntoReserveVault<'info> {
         constraint = vault_authority.key() == reserve_vault_config.vault_authority @ PeraxError::InvalidVaultAuthority
     )]
     pub vault_authority: UncheckedAccount<'info>,
+    #[account(
+        constraint = source_owner.key() == reserve_vault_config.authorized_source_owner
+            @ PeraxError::InvalidAuthorizedSourceOwner
+    )]
     pub source_owner: Signer<'info>,
     #[account(
         mut,
-        constraint = source_token_account.owner == source_owner.key() @ PeraxError::Unauthorized,
-        constraint = source_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
+        address = reserve_vault_config.authorized_source_token_account
+            @ PeraxError::InvalidAuthorizedSourceTokenAccount,
+        constraint = source_token_account.owner == source_owner.key()
+            @ PeraxError::InvalidAuthorizedSourceOwner,
+        constraint = source_token_account.mint == token_mint.key()
+            @ PeraxError::InvalidTokenMint
     )]
     pub source_token_account: Account<'info, TokenAccount>,
     #[account(
@@ -202,8 +210,14 @@ pub struct ExecuteMarketConditionalRelease<'info> {
     pub vault_token_account: Account<'info, TokenAccount>,
     #[account(
         mut,
-        constraint = destination_token_account.key() == params.destination_token_account @ PeraxError::InvalidReleaseDestination,
-        constraint = destination_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
+        address = reserve_vault_config.approved_destination_token_account
+            @ PeraxError::InvalidApprovedDestination,
+        constraint = destination_token_account.key() == params.destination_token_account
+            @ PeraxError::InvalidReleaseDestination,
+        constraint = destination_token_account.owner == reserve_vault_config.approved_destination_owner
+            @ PeraxError::InvalidApprovedDestination,
+        constraint = destination_token_account.mint == token_mint.key()
+            @ PeraxError::InvalidTokenMint
     )]
     pub destination_token_account: Account<'info, TokenAccount>,
     #[account(
