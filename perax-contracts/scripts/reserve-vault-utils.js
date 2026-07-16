@@ -23,6 +23,7 @@ const LOCAL_MIGRATION_CONFIG_PATH = path.join(
 const IDL_PATH = path.join(ROOT, 'target/idl/perax_core.json');
 const DEFAULT_RPC_URL = 'https://api.devnet.solana.com';
 const DEFAULT_KEYPAIR_PATH = '.local/devnet-deployer.json';
+const DEFAULT_PUBLIC_KEY = new PublicKey('11111111111111111111111111111111');
 const PEX_DECIMALS = 6;
 const BASE_UNITS = 10n ** BigInt(PEX_DECIMALS);
 
@@ -41,6 +42,15 @@ const VAULT_CLASS_BY_ALLOCATION = Object.freeze({
   advisor_wallet_2: 'vesting',
   advisor_wallet_3: 'vesting',
 });
+
+const MARKET_RELEASABLE_ALLOCATIONS = new Set([
+  'community_utility_rewards',
+  'treasury',
+  'ecosystem_marketing',
+  'trading_company_operations',
+  'future_team_incentives',
+  'team_emergency_reserve',
+]);
 
 function readJson(filePath, label) {
   if (!fs.existsSync(filePath)) {
@@ -64,6 +74,60 @@ function loadKeypair(filePath, label = 'Solana keypair') {
     throw new Error(`${label} must be a JSON array containing 64 integers.`);
   }
   return Keypair.fromSecretKey(Uint8Array.from(raw));
+}
+
+function loadLocalMigrationConfig(required = false) {
+  if (!fs.existsSync(LOCAL_MIGRATION_CONFIG_PATH)) {
+    if (required) {
+      throw new Error(
+        `Local migration configuration not found at ${LOCAL_MIGRATION_CONFIG_PATH}.`
+      );
+    }
+    return { allocationSigners: {}, approvedDestinations: {} };
+  }
+  const value = readJson(
+    LOCAL_MIGRATION_CONFIG_PATH,
+    'Local reserve-vault migration configuration'
+  );
+  return {
+    allocationSigners: value.allocationSigners || {},
+    approvedDestinations: value.approvedDestinations || {},
+  };
+}
+
+function isMarketReleasableAllocation(allocationKey) {
+  return MARKET_RELEASABLE_ALLOCATIONS.has(allocationKey);
+}
+
+function approvedDestination(localConfig, allocationKey, required = false) {
+  if (!isMarketReleasableAllocation(allocationKey)) {
+    return {
+      owner: DEFAULT_PUBLIC_KEY,
+      tokenAccount: DEFAULT_PUBLIC_KEY,
+      configured: true,
+    };
+  }
+
+  const entry = localConfig.approvedDestinations?.[allocationKey];
+  if (!entry || !entry.ownerWallet || !entry.tokenAccount) {
+    if (required) {
+      throw new Error(
+        `Approved destination for ${allocationKey} is missing from ${LOCAL_MIGRATION_CONFIG_PATH}.`
+      );
+    }
+    return {
+      owner: DEFAULT_PUBLIC_KEY,
+      tokenAccount: DEFAULT_PUBLIC_KEY,
+      configured: false,
+    };
+  }
+
+  const owner = new PublicKey(entry.ownerWallet);
+  const tokenAccount = new PublicKey(entry.tokenAccount);
+  if (owner.equals(DEFAULT_PUBLIC_KEY) || tokenAccount.equals(DEFAULT_PUBLIC_KEY)) {
+    throw new Error(`Approved destination for ${allocationKey} cannot be the default public key.`);
+  }
+  return { owner, tokenAccount, configured: true };
 }
 
 function allocationId(allocationKey) {
@@ -162,12 +226,17 @@ module.exports = {
   DEPLOYMENT_RECORD_PATH,
   VAULT_REGISTRY_PATH,
   LOCAL_MIGRATION_CONFIG_PATH,
+  DEFAULT_PUBLIC_KEY,
   PEX_DECIMALS,
   BASE_UNITS,
   VAULT_CLASS_BY_ALLOCATION,
+  MARKET_RELEASABLE_ALLOCATIONS,
   readJson,
   writeJson,
   loadKeypair,
+  loadLocalMigrationConfig,
+  isMarketReleasableAllocation,
+  approvedDestination,
   allocationId,
   allocationKeyFromId,
   vaultClassArg,
