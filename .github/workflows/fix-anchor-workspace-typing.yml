@@ -1,0 +1,71 @@
+name: Repair Anchor workspace test typing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fix-anchor-workspace-typing.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Replace recursive Anchor workspace typing
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("perax-contracts/tests/perax-core.ts")
+          text = path.read_text()
+
+          import_line = 'import { Program } from "@coral-xyz/anchor";\n'
+          program_line = '  const program = anchor.workspace.PeraxCore as Program<any>;\n'
+
+          if text.count(import_line) != 1:
+              raise SystemExit("Expected exactly one Program import")
+          if text.count(program_line) != 1:
+              raise SystemExit("Expected exactly one typed workspace declaration")
+
+          text = text.replace(import_line, "")
+          text = text.replace(
+              program_line,
+              '  // Anchor workspace clients are generated dynamically from the IDL at runtime.\n'
+              '  // Keeping this boundary dynamic avoids TypeScript recursively expanding the full IDL.\n'
+              '  const program: any = anchor.workspace.PeraxCore;\n',
+          )
+          path.write_text(text)
+          PY
+
+      - name: Install dependencies
+        working-directory: perax-contracts
+        run: npm install
+
+      - name: Verify TypeScript
+        working-directory: perax-contracts
+        run: npm run typecheck
+
+      - name: Commit verified repair and remove workflow
+        shell: bash
+        run: |
+          git rm .github/workflows/fix-anchor-workspace-typing.yml
+          git add perax-contracts/tests/perax-core.ts
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'test: avoid recursive Anchor workspace typing'
+          git push origin HEAD:main
