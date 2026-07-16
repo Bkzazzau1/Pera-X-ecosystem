@@ -1,16 +1,21 @@
 const {
+  PublicKey,
   SystemProgram,
   TOKEN_PROGRAM_ID,
   ASSOCIATED_TOKEN_PROGRAM_ID,
   VAULT_REGISTRY_PATH,
+  DEFAULT_PUBLIC_KEY,
   VAULT_CLASS_BY_ALLOCATION,
   writeJson,
+  loadLocalMigrationConfig,
+  approvedDestination,
   vaultClassArg,
   expectedBaseUnits,
   deriveVaultAddresses,
   buildContext,
   bnFromBigInt,
 } = require('./reserve-vault-utils');
+const { getAccount } = require('@solana/spl-token');
 
 const EXECUTE = process.argv.includes('--execute');
 const ONLY_INDEX = process.argv.indexOf('--only');
@@ -18,6 +23,7 @@ const ONLY_ALLOCATION = ONLY_INDEX >= 0 ? process.argv[ONLY_INDEX + 1] : null;
 
 async function main() {
   const { deployment, connection, payer, program, programId, mint, statePda } = buildContext();
+  const localConfig = loadLocalMigrationConfig(EXECUTE);
   const state = await program.account.peraxState.fetch(statePda);
 
   if (!state.tokenMint.equals(mint)) {
@@ -67,6 +73,38 @@ async function main() {
       mint,
       allocationKey
     );
+    const sourceOwner = new PublicKey(allocation.ownerWallet);
+    const sourceTokenAccount = new PublicKey(allocation.tokenAccount);
+    const destination = approvedDestination(localConfig, allocationKey, EXECUTE);
+
+    const sourceAccount = await getAccount(
+      connection,
+      sourceTokenAccount,
+      'confirmed',
+      TOKEN_PROGRAM_ID
+    );
+    if (!sourceAccount.mint.equals(mint)) {
+      throw new Error(`${allocationKey}: authorized source account uses the wrong mint.`);
+    }
+    if (!sourceAccount.owner.equals(sourceOwner)) {
+      throw new Error(`${allocationKey}: authorized source account owner does not match the deployment record.`);
+    }
+
+    if (destination.configured && !destination.tokenAccount.equals(DEFAULT_PUBLIC_KEY)) {
+      const destinationAccount = await getAccount(
+        connection,
+        destination.tokenAccount,
+        'confirmed',
+        TOKEN_PROGRAM_ID
+      );
+      if (!destinationAccount.mint.equals(mint)) {
+        throw new Error(`${allocationKey}: approved destination uses the wrong mint.`);
+      }
+      if (!destinationAccount.owner.equals(destination.owner)) {
+        throw new Error(`${allocationKey}: approved destination owner mismatch.`);
+      }
+    }
+
     const existing = await connection.getAccountInfo(configPda, 'confirmed');
     let signature = null;
     let status = existing ? 'already_initialized' : 'planned';
@@ -77,10 +115,27 @@ async function main() {
     console.log(`  config PDA: ${configPda.toBase58()}`);
     console.log(`  authority PDA: ${authorityPda.toBase58()}`);
     console.log(`  vault token account: ${tokenAccount.toBase58()}`);
+    console.log(`  authorized source owner: ${sourceOwner.toBase58()}`);
+    console.log(`  authorized source account: ${sourceTokenAccount.toBase58()}`);
+    console.log(
+      `  approved destination: ${
+        destination.configured
+          ? destination.tokenAccount.toBase58()
+          : 'REQUIRED BEFORE EXECUTION'
+      }`
+    );
 
     if (!existing && EXECUTE) {
       signature = await program.methods
-        .initializeReserveVault(Array.from(id), vaultClassArg(allocationKey), bnFromBigInt(cap))
+        .initializeReserveVault({
+          allocationId: Array.from(id),
+          vaultClass: vaultClassArg(allocationKey),
+          allocationCap: bnFromBigInt(cap),
+          authorizedSourceOwner: sourceOwner,
+          authorizedSourceTokenAccount: sourceTokenAccount,
+          approvedDestinationOwner: destination.owner,
+          approvedDestinationTokenAccount: destination.tokenAccount,
+        })
         .accounts({
           state: statePda,
           authority: payer.publicKey,
@@ -104,6 +159,18 @@ async function main() {
       if (!config.vaultTokenAccount.equals(tokenAccount)) {
         throw new Error(`${allocationKey}: wrong vault token account.`);
       }
+      if (!config.authorizedSourceOwner.equals(sourceOwner)) {
+        throw new Error(`${allocationKey}: wrong authorized source owner.`);
+      }
+      if (!config.authorizedSourceTokenAccount.equals(sourceTokenAccount)) {
+        throw new Error(`${allocationKey}: wrong authorized source token account.`);
+      }
+      if (!config.approvedDestinationOwner.equals(destination.owner)) {
+        throw new Error(`${allocationKey}: wrong approved destination owner.`);
+      }
+      if (!config.approvedDestinationTokenAccount.equals(destination.tokenAccount)) {
+        throw new Error(`${allocationKey}: wrong approved destination token account.`);
+      }
       if (BigInt(config.allocationCap.toString()) !== cap) {
         throw new Error(`${allocationKey}: existing cap differs from approved allocation.`);
       }
@@ -118,8 +185,12 @@ async function main() {
       configPda: configPda.toBase58(),
       authorityPda: authorityPda.toBase58(),
       tokenAccount: tokenAccount.toBase58(),
-      sourceOwnerWallet: allocation.ownerWallet,
-      sourceTokenAccount: allocation.tokenAccount,
+      authorizedSourceOwner: sourceOwner.toBase58(),
+      authorizedSourceTokenAccount: sourceTokenAccount.toBase58(),
+      approvedDestinationOwner: destination.configured ? destination.owner.toBase58() : null,
+      approvedDestinationTokenAccount: destination.configured
+        ? destination.tokenAccount.toBase58()
+        : null,
       status,
       initializeSignature: signature,
     });
@@ -130,7 +201,7 @@ async function main() {
     writeJson(VAULT_REGISTRY_PATH, registry);
     console.log(`Public vault registry written to ${VAULT_REGISTRY_PATH}`);
   } else {
-    console.log('Dry run complete. Re-run with --execute only after the upgraded program is deployed.');
+    console.log('Dry run complete. Re-run with --execute only after the program passes CI and is deployed.');
   }
 }
 
