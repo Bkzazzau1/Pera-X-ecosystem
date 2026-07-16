@@ -13,6 +13,9 @@ import {
 } from "@solana/spl-token";
 
 const BASE_UNITS = 1_000_000;
+const DEFAULT_PUBLIC_KEY = new anchor.web3.PublicKey(
+  "11111111111111111111111111111111"
+);
 
 function fixedId(label: string): number[] {
   const id = Buffer.alloc(32);
@@ -26,52 +29,329 @@ function uniqueId(value: number): number[] {
   return Array.from(id);
 }
 
+type AllocationDefinition = {
+  key: string;
+  vaultClass: Record<string, Record<string, never>>;
+  releasable: boolean;
+};
+
+const ALLOCATIONS: AllocationDefinition[] = [
+  { key: "liquidity_pool", vaultClass: { liquidity: {} }, releasable: false },
+  {
+    key: "community_utility_rewards",
+    vaultClass: { communityRewards: {} },
+    releasable: true,
+  },
+  { key: "treasury", vaultClass: { marketReserve: {} }, releasable: true },
+  {
+    key: "ecosystem_marketing",
+    vaultClass: { marketReserve: {} },
+    releasable: true,
+  },
+  {
+    key: "trading_company_operations",
+    vaultClass: { operations: {} },
+    releasable: true,
+  },
+  { key: "development_team", vaultClass: { vesting: {} }, releasable: false },
+  { key: "founder", vaultClass: { vesting: {} }, releasable: false },
+  {
+    key: "future_team_incentives",
+    vaultClass: { marketReserve: {} },
+    releasable: true,
+  },
+  {
+    key: "team_emergency_reserve",
+    vaultClass: { emergencyReserve: {} },
+    releasable: true,
+  },
+  {
+    key: "private_strategic_investors",
+    vaultClass: { vesting: {} },
+    releasable: false,
+  },
+  { key: "advisor_wallet_1", vaultClass: { vesting: {} }, releasable: false },
+  { key: "advisor_wallet_2", vaultClass: { vesting: {} }, releasable: false },
+  { key: "advisor_wallet_3", vaultClass: { vesting: {} }, releasable: false },
+];
+
 describe("perax-core reserve vault custody", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
   const program = anchor.workspace.PeraxCore as Program<any>;
   const payer = (provider.wallet as anchor.Wallet).payer;
 
-  const allocationId = fixedId("community_utility_rewards");
+  const authority = provider.wallet.publicKey;
+  const safetyAdmin = anchor.web3.Keypair.generate();
+  const oracle = anchor.web3.Keypair.generate();
+  const outsider = anchor.web3.Keypair.generate();
+
   const [state] = anchor.web3.PublicKey.findProgramAddressSync(
     [Buffer.from("perax-state")],
-    program.programId
-  );
-  const [vaultConfig] = anchor.web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("reserve-config"), Buffer.from(allocationId)],
-    program.programId
-  );
-  const [vaultAuthority] = anchor.web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("reserve-authority"), Buffer.from(allocationId)],
     program.programId
   );
 
   let mint: anchor.web3.PublicKey;
   let wrongMint: anchor.web3.PublicKey;
-  let sourceTokenAccount: anchor.web3.PublicKey;
-  let vaultTokenAccount: anchor.web3.PublicKey;
-  let destinationTokenAccount: anchor.web3.PublicKey;
+  const vaults = new Map<
+    string,
+    {
+      allocationId: number[];
+      config: anchor.web3.PublicKey;
+      authority: anchor.web3.PublicKey;
+      tokenAccount: anchor.web3.PublicKey;
+      sourceOwner: anchor.web3.Keypair;
+      sourceTokenAccount: anchor.web3.PublicKey;
+      destinationOwner: anchor.web3.Keypair | null;
+      destinationTokenAccount: anchor.web3.PublicKey;
+    }
+  >();
+
+  let wrongSourceOwner: anchor.web3.Keypair;
+  let wrongSourceTokenAccount: anchor.web3.PublicKey;
   let otherDestinationTokenAccount: anchor.web3.PublicKey;
   let wrongMintDestination: anchor.web3.PublicKey;
 
-  before(async () => {
-    mint = await createMint(provider.connection, payer, payer.publicKey, null, 6);
-    wrongMint = await createMint(provider.connection, payer, payer.publicKey, null, 6);
+  async function expectFailure(action: () => Promise<unknown>) {
+    let failed = false;
+    try {
+      await action();
+    } catch {
+      failed = true;
+    }
+    expect(failed).to.equal(true);
+  }
 
-    sourceTokenAccount = (
+  function deriveVault(allocationId: number[]) {
+    const [config] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("reserve-config"), Buffer.from(allocationId)],
+      program.programId
+    );
+    const [vaultAuthority] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("reserve-authority"), Buffer.from(allocationId)],
+      program.programId
+    );
+    const tokenAccount = getAssociatedTokenAddressSync(
+      mint,
+      vaultAuthority,
+      true,
+      TOKEN_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID
+    );
+    return { config, vaultAuthority, tokenAccount };
+  }
+
+  async function buildInitialization(
+    allocation: AllocationDefinition,
+    overrides: Partial<{
+      allocationId: number[];
+      vaultClass: Record<string, Record<string, never>>;
+      allocationCap: anchor.BN;
+      authorizedSourceOwner: anchor.web3.PublicKey;
+      authorizedSourceTokenAccount: anchor.web3.PublicKey;
+      approvedDestinationOwner: anchor.web3.PublicKey;
+      approvedDestinationTokenAccount: anchor.web3.PublicKey;
+    }> = {}
+  ) {
+    const allocationId = overrides.allocationId ?? fixedId(allocation.key);
+    const sourceOwner = anchor.web3.Keypair.generate();
+    const sourceTokenAccount = (
       await getOrCreateAssociatedTokenAccount(
         provider.connection,
         payer,
         mint,
-        payer.publicKey
+        sourceOwner.publicKey
       )
     ).address;
-    destinationTokenAccount = (
+
+    let destinationOwner: anchor.web3.Keypair | null = null;
+    let destinationTokenAccount = DEFAULT_PUBLIC_KEY;
+    if (allocation.releasable) {
+      destinationOwner = anchor.web3.Keypair.generate();
+      destinationTokenAccount = (
+        await getOrCreateAssociatedTokenAccount(
+          provider.connection,
+          payer,
+          mint,
+          destinationOwner.publicKey
+        )
+      ).address;
+    }
+
+    const { config, vaultAuthority, tokenAccount } = deriveVault(allocationId);
+    const params = {
+      allocationId,
+      vaultClass: overrides.vaultClass ?? allocation.vaultClass,
+      allocationCap:
+        overrides.allocationCap ?? new anchor.BN(1_000 * BASE_UNITS),
+      authorizedSourceOwner:
+        overrides.authorizedSourceOwner ?? sourceOwner.publicKey,
+      authorizedSourceTokenAccount:
+        overrides.authorizedSourceTokenAccount ?? sourceTokenAccount,
+      approvedDestinationOwner:
+        overrides.approvedDestinationOwner ??
+        destinationOwner?.publicKey ??
+        DEFAULT_PUBLIC_KEY,
+      approvedDestinationTokenAccount:
+        overrides.approvedDestinationTokenAccount ?? destinationTokenAccount,
+    };
+
+    return {
+      params,
+      config,
+      vaultAuthority,
+      tokenAccount,
+      sourceOwner,
+      sourceTokenAccount,
+      destinationOwner,
+      destinationTokenAccount,
+    };
+  }
+
+  async function initializeVault(
+    allocation: AllocationDefinition,
+    overrides: Parameters<typeof buildInitialization>[1] = {}
+  ) {
+    const built = await buildInitialization(allocation, overrides);
+    await program.methods
+      .initializeReserveVault(built.params)
+      .accounts({
+        state,
+        authority,
+        reserveVaultConfig: built.config,
+        vaultAuthority: built.vaultAuthority,
+        vaultTokenAccount: built.tokenAccount,
+        tokenMint: mint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+
+    vaults.set(allocation.key, {
+      allocationId: built.params.allocationId,
+      config: built.config,
+      authority: built.vaultAuthority,
+      tokenAccount: built.tokenAccount,
+      sourceOwner: built.sourceOwner,
+      sourceTokenAccount: built.sourceTokenAccount,
+      destinationOwner: built.destinationOwner,
+      destinationTokenAccount: built.destinationTokenAccount,
+    });
+    return built;
+  }
+
+  function growthRelease(
+    allocationKey: string,
+    releaseNumber: number,
+    destination: anchor.web3.PublicKey,
+    amount = 1
+  ) {
+    const vault = vaults.get(allocationKey);
+    if (!vault) throw new Error(`Vault not initialized: ${allocationKey}`);
+    return {
+      allocationId: vault.allocationId,
+      releaseType: { growth: {} },
+      requestedAmount: new anchor.BN(amount),
+      releaseId: uniqueId(releaseNumber),
+      marketObservationId: uniqueId(releaseNumber + 10_000),
+      destinationTokenAccount: destination,
+      snapshot: {
+        observedPrice: new anchor.BN(3_600),
+        twapMinutes: new anchor.BN(60),
+        liquidityUsd: new anchor.BN(13_680),
+        netBuyVolumeBps: 5_000,
+        downsideMoveBps: 0,
+        liquidityDrainBps: 0,
+        emergencyReserveAvailableAmount: new anchor.BN(0),
+        observedAt: new anchor.BN(1_800_000_000 + releaseNumber * 86_401),
+      },
+    };
+  }
+
+  function emergencyRelease(
+    allocationKey: string,
+    releaseNumber: number,
+    destination: anchor.web3.PublicKey,
+    availableAmount: number,
+    amount = 1
+  ) {
+    const params = growthRelease(
+      allocationKey,
+      releaseNumber,
+      destination,
+      amount
+    );
+    return {
+      ...params,
+      releaseType: { emergency: {} },
+      snapshot: {
+        ...params.snapshot,
+        downsideMoveBps: 3_000,
+        liquidityDrainBps: 6_000,
+        emergencyReserveAvailableAmount: new anchor.BN(availableAmount),
+      },
+    };
+  }
+
+  async function releaseInstruction(
+    allocationKey: string,
+    params: any
+  ) {
+    const vault = vaults.get(allocationKey)!;
+    const [releaseRecord] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("vault-release"), Buffer.from(params.releaseId)],
+      program.programId
+    );
+    return program.methods
+      .executeMarketConditionalRelease(params)
+      .accounts({
+        state,
+        reserveVaultConfig: vault.config,
+        vaultAuthority: vault.authority,
+        vaultTokenAccount: vault.tokenAccount,
+        destinationTokenAccount: params.destinationTokenAccount,
+        releaseRecord,
+        oracleFeed: oracle.publicKey,
+        tokenMint: mint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .instruction();
+  }
+
+  async function executeRelease(
+    allocationKey: string,
+    params: any
+  ) {
+    const instruction = await releaseInstruction(allocationKey, params);
+    const transaction = new anchor.web3.Transaction().add(instruction);
+    return provider.sendAndConfirm(transaction, [oracle]);
+  }
+
+  before(async () => {
+    const airdrop = await provider.connection.requestAirdrop(
+      oracle.publicKey,
+      5 * anchor.web3.LAMPORTS_PER_SOL
+    );
+    await provider.connection.confirmTransaction(airdrop, "confirmed");
+
+    mint = await createMint(provider.connection, payer, payer.publicKey, null, 6);
+    wrongMint = await createMint(
+      provider.connection,
+      payer,
+      payer.publicKey,
+      null,
+      6
+    );
+
+    wrongSourceOwner = anchor.web3.Keypair.generate();
+    wrongSourceTokenAccount = (
       await getOrCreateAssociatedTokenAccount(
         provider.connection,
         payer,
         mint,
-        anchor.web3.Keypair.generate().publicKey
+        wrongSourceOwner.publicKey
       )
     ).address;
     otherDestinationTokenAccount = (
@@ -95,19 +375,20 @@ describe("perax-core reserve vault custody", () => {
       provider.connection,
       payer,
       mint,
-      sourceTokenAccount,
+      wrongSourceTokenAccount,
       payer,
-      1_000n * BigInt(BASE_UNITS)
+      500n * BigInt(BASE_UNITS)
     );
 
     await program.methods
       .initialize({
         tokenMint: mint,
         tradingCompanyTokenAccount: anchor.web3.Keypair.generate().publicKey,
-        tradingCompanyRevenueTokenAccount: anchor.web3.Keypair.generate().publicKey,
+        tradingCompanyRevenueTokenAccount:
+          anchor.web3.Keypair.generate().publicKey,
         maxPaymentAmount: new anchor.BN(0),
-        safetyAdmin: provider.wallet.publicKey,
-        oracleFeed: provider.wallet.publicKey,
+        safetyAdmin: safetyAdmin.publicKey,
+        oracleFeed: oracle.publicKey,
         launchPrice: new anchor.BN(1_200),
         currentSteppedFloor: new anchor.BN(1_200),
         dailyReleaseCap: new anchor.BN("10000000000000"),
@@ -116,203 +397,516 @@ describe("perax-core reserve vault custody", () => {
       })
       .accounts({
         state,
-        authority: provider.wallet.publicKey,
-        systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .rpc();
-
-    vaultTokenAccount = getAssociatedTokenAddressSync(
-      mint,
-      vaultAuthority,
-      true,
-      TOKEN_PROGRAM_ID,
-      ASSOCIATED_TOKEN_PROGRAM_ID
-    );
-
-    await program.methods
-      .initializeReserveVault(
-        allocationId,
-        { communityRewards: {} },
-        new anchor.BN(1_000 * BASE_UNITS)
-      )
-      .accounts({
-        state,
-        authority: provider.wallet.publicKey,
-        reserveVaultConfig: vaultConfig,
-        vaultAuthority,
-        vaultTokenAccount,
-        tokenMint: mint,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        authority,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
       .rpc();
   });
 
-  function growthRelease(
-    releaseNumber: number,
-    destination: anchor.web3.PublicKey,
-    amount = 1
-  ) {
-    return {
-      allocationId,
-      releaseType: { growth: {} },
-      requestedAmount: new anchor.BN(amount),
-      releaseId: uniqueId(releaseNumber),
-      marketObservationId: uniqueId(releaseNumber + 10_000),
-      destinationTokenAccount: destination,
-      snapshot: {
-        observedPrice: new anchor.BN(3_600),
-        twapMinutes: new anchor.BN(60),
-        liquidityUsd: new anchor.BN(13_680),
-        netBuyVolumeBps: 5_000,
-        downsideMoveBps: 0,
-        liquidityDrainBps: 0,
-        emergencyReserveAvailableAmount: new anchor.BN(0),
-        observedAt: new anchor.BN(Math.floor(Date.now() / 1000)),
-      },
+  it("rejects an unknown allocation ID", async () => {
+    const definition: AllocationDefinition = {
+      key: "unknown_allocation",
+      vaultClass: { marketReserve: {} },
+      releasable: true,
     };
-  }
-
-  async function expectFailure(action: () => Promise<unknown>) {
-    let failed = false;
-    try {
-      await action();
-    } catch {
-      failed = true;
-    }
-    expect(failed).to.equal(true);
-  }
-
-  async function executeRelease(params: ReturnType<typeof growthRelease>) {
-    const [releaseRecord] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("vault-release"), Buffer.from(params.releaseId)],
-      program.programId
-    );
-    return program.methods
-      .executeMarketConditionalRelease(params)
-      .accounts({
-        state,
-        reserveVaultConfig: vaultConfig,
-        vaultAuthority,
-        vaultTokenAccount,
-        destinationTokenAccount: params.destinationTokenAccount,
-        releaseRecord,
-        oracleFeed: provider.wallet.publicKey,
-        tokenMint: mint,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .rpc();
-  }
-
-  it("deposits 1,000 PEX into a PDA-controlled vault", async () => {
-    await program.methods
-      .depositIntoReserveVault(allocationId, new anchor.BN(1_000 * BASE_UNITS))
-      .accounts({
-        state,
-        reserveVaultConfig: vaultConfig,
-        vaultAuthority,
-        sourceOwner: provider.wallet.publicKey,
-        sourceTokenAccount,
-        vaultTokenAccount,
-        tokenMint: mint,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      })
-      .rpc();
-
-    const vault = await getAccount(provider.connection, vaultTokenAccount);
-    expect(vault.owner.toBase58()).to.equal(vaultAuthority.toBase58());
-    expect(vault.amount).to.equal(1_000n * BigInt(BASE_UNITS));
-  });
-
-  it("rejects an ordinary-wallet withdrawal", async () => {
-    await expectFailure(() =>
-      transfer(
-        provider.connection,
-        payer,
-        vaultTokenAccount,
-        destinationTokenAccount,
-        payer,
-        1n
-      )
-    );
-  });
-
-  it("atomically releases 100 PEX and stores a permanent record", async () => {
-    const params = growthRelease(1, destinationTokenAccount, 100 * BASE_UNITS);
-    await executeRelease(params);
-
-    const vault = await getAccount(provider.connection, vaultTokenAccount);
-    const destination = await getAccount(provider.connection, destinationTokenAccount);
-    const [recordPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("vault-release"), Buffer.from(params.releaseId)],
-      program.programId
-    );
-    const record = await program.account.reserveReleaseRecord.fetch(recordPda);
-
-    expect(vault.amount).to.equal(900n * BigInt(BASE_UNITS));
-    expect(destination.amount).to.equal(100n * BigInt(BASE_UNITS));
-    expect(record.destinationTokenAccount.toBase58()).to.equal(
-      destinationTokenAccount.toBase58()
-    );
-  });
-
-  it("rejects a replayed release ID", async () => {
-    await expectFailure(() => executeRelease(growthRelease(1, destinationTokenAccount)));
-  });
-
-  it("rejects a destination different from the bot-signed destination", async () => {
-    const params = growthRelease(2, destinationTokenAccount);
-    const [releaseRecord] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("vault-release"), Buffer.from(params.releaseId)],
-      program.programId
-    );
+    const built = await buildInitialization(definition);
     await expectFailure(() =>
       program.methods
-        .executeMarketConditionalRelease(params)
+        .initializeReserveVault(built.params)
         .accounts({
           state,
-          reserveVaultConfig: vaultConfig,
-          vaultAuthority,
-          vaultTokenAccount,
-          destinationTokenAccount: otherDestinationTokenAccount,
-          releaseRecord,
-          oracleFeed: provider.wallet.publicKey,
+          authority,
+          reserveVaultConfig: built.config,
+          vaultAuthority: built.vaultAuthority,
+          vaultTokenAccount: built.tokenAccount,
           tokenMint: mint,
           tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
           systemProgram: anchor.web3.SystemProgram.programId,
         })
         .rpc()
     );
   });
 
-  it("rejects a destination using the wrong mint", async () => {
-    await expectFailure(() => executeRelease(growthRelease(3, wrongMintDestination)));
-  });
-
-  it("rejects release while the vault is paused", async () => {
-    await program.methods
-      .setReserveVaultPause(allocationId, true)
-      .accounts({ state, reserveVaultConfig: vaultConfig, actor: provider.wallet.publicKey })
-      .rpc();
-
-    await expectFailure(() => executeRelease(growthRelease(4, destinationTokenAccount)));
-
-    await program.methods
-      .setReserveVaultPause(allocationId, false)
-      .accounts({ state, reserveVaultConfig: vaultConfig, actor: provider.wallet.publicKey })
-      .rpc();
-  });
-
-  it("rejects release above the authoritative vault balance", async () => {
+  it("rejects a wrong vault class", async () => {
+    const treasury = ALLOCATIONS.find((item) => item.key === "treasury")!;
+    const built = await buildInitialization(treasury, {
+      vaultClass: { vesting: {} },
+    });
     await expectFailure(() =>
-      executeRelease(growthRelease(5, destinationTokenAccount, 901 * BASE_UNITS))
+      program.methods
+        .initializeReserveVault(built.params)
+        .accounts({
+          state,
+          authority,
+          reserveVaultConfig: built.config,
+          vaultAuthority: built.vaultAuthority,
+          vaultTokenAccount: built.tokenAccount,
+          tokenMint: mint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .rpc()
+    );
+  });
+
+  it("rejects an allocation cap above the approved maximum", async () => {
+    const treasury = ALLOCATIONS.find((item) => item.key === "treasury")!;
+    const built = await buildInitialization(treasury, {
+      allocationCap: new anchor.BN(121_000_000 * BASE_UNITS),
+    });
+    await expectFailure(() =>
+      program.methods
+        .initializeReserveVault(built.params)
+        .accounts({
+          state,
+          authority,
+          reserveVaultConfig: built.config,
+          vaultAuthority: built.vaultAuthority,
+          vaultTokenAccount: built.tokenAccount,
+          tokenMint: mint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .rpc()
+    );
+  });
+
+  it("rejects a configured destination owned by any reserve-authority PDA", async () => {
+    const treasury = ALLOCATIONS.find((item) => item.key === "treasury")!;
+    const liquidityAuthority = deriveVault(fixedId("liquidity_pool")).vaultAuthority;
+    const crossVaultDestination = (
+      await getOrCreateAssociatedTokenAccount(
+        provider.connection,
+        payer,
+        mint,
+        liquidityAuthority,
+        true
+      )
+    ).address;
+    const built = await buildInitialization(treasury, {
+      approvedDestinationOwner: liquidityAuthority,
+      approvedDestinationTokenAccount: crossVaultDestination,
+    });
+    await expectFailure(() =>
+      program.methods
+        .initializeReserveVault(built.params)
+        .accounts({
+          state,
+          authority,
+          reserveVaultConfig: built.config,
+          vaultAuthority: built.vaultAuthority,
+          vaultTokenAccount: built.tokenAccount,
+          tokenMint: mint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .rpc()
+    );
+  });
+
+  it("initializes all 13 approved allocation vaults with separate identities", async () => {
+    for (const allocation of ALLOCATIONS) {
+      await initializeVault(allocation);
+    }
+
+    const configs = await program.account.reserveVaultConfig.all();
+    expect(configs.length).to.equal(13);
+
+    const community = vaults.get("community_utility_rewards")!;
+    await mintTo(
+      provider.connection,
+      payer,
+      mint,
+      community.sourceTokenAccount,
+      payer,
+      1_000n * BigInt(BASE_UNITS)
+    );
+  });
+
+  it("rejects a deposit from an unauthorized source account", async () => {
+    const community = vaults.get("community_utility_rewards")!;
+    await expectFailure(() =>
+      program.methods
+        .depositIntoReserveVault(
+          community.allocationId,
+          new anchor.BN(10 * BASE_UNITS)
+        )
+        .accounts({
+          state,
+          reserveVaultConfig: community.config,
+          vaultAuthority: community.authority,
+          sourceOwner: wrongSourceOwner.publicKey,
+          sourceTokenAccount: wrongSourceTokenAccount,
+          vaultTokenAccount: community.tokenAccount,
+          tokenMint: mint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([wrongSourceOwner])
+        .rpc()
+    );
+  });
+
+  it("deposits exactly 1,000 authorized PEX into the community vault", async () => {
+    const community = vaults.get("community_utility_rewards")!;
+    await program.methods
+      .depositIntoReserveVault(
+        community.allocationId,
+        new anchor.BN(1_000 * BASE_UNITS)
+      )
+      .accounts({
+        state,
+        reserveVaultConfig: community.config,
+        vaultAuthority: community.authority,
+        sourceOwner: community.sourceOwner.publicKey,
+        sourceTokenAccount: community.sourceTokenAccount,
+        vaultTokenAccount: community.tokenAccount,
+        tokenMint: mint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([community.sourceOwner])
+      .rpc();
+
+    const vault = await getAccount(provider.connection, community.tokenAccount);
+    const config = await program.account.reserveVaultConfig.fetch(
+      community.config
+    );
+    expect(vault.owner.toBase58()).to.equal(community.authority.toBase58());
+    expect(vault.amount).to.equal(1_000n * BigInt(BASE_UNITS));
+    expect(config.authorizedDeposited.toString()).to.equal(
+      String(1_000 * BASE_UNITS)
+    );
+    expect(config.unsolicitedBalance.toString()).to.equal("0");
+  });
+
+  it("rejects an authorized deposit above the configured cap", async () => {
+    const community = vaults.get("community_utility_rewards")!;
+    await expectFailure(() =>
+      program.methods
+        .depositIntoReserveVault(community.allocationId, new anchor.BN(1))
+        .accounts({
+          state,
+          reserveVaultConfig: community.config,
+          vaultAuthority: community.authority,
+          sourceOwner: community.sourceOwner.publicKey,
+          sourceTokenAccount: community.sourceTokenAccount,
+          vaultTokenAccount: community.tokenAccount,
+          tokenMint: mint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([community.sourceOwner])
+        .rpc()
+    );
+  });
+
+  it("records unsolicited direct transfers separately without increasing allocation capacity", async () => {
+    const community = vaults.get("community_utility_rewards")!;
+    await transfer(
+      provider.connection,
+      payer,
+      wrongSourceTokenAccount,
+      community.tokenAccount,
+      wrongSourceOwner,
+      50n * BigInt(BASE_UNITS)
+    );
+
+    await program.methods
+      .reconcileReserveVault(community.allocationId)
+      .accounts({
+        state,
+        authority,
+        reserveVaultConfig: community.config,
+        vaultTokenAccount: community.tokenAccount,
+      })
+      .rpc();
+
+    const config = await program.account.reserveVaultConfig.fetch(
+      community.config
+    );
+    expect(config.authorizedDeposited.toString()).to.equal(
+      String(1_000 * BASE_UNITS)
+    );
+    expect(config.unsolicitedBalance.toString()).to.equal(
+      String(50 * BASE_UNITS)
+    );
+  });
+
+  it("rejects an ordinary-wallet withdrawal", async () => {
+    const community = vaults.get("community_utility_rewards")!;
+    await expectFailure(() =>
+      transfer(
+        provider.connection,
+        payer,
+        community.tokenAccount,
+        community.destinationTokenAccount,
+        payer,
+        1n
+      )
+    );
+  });
+
+  it("proves full transaction rollback when a later instruction fails", async () => {
+    const community = vaults.get("community_utility_rewards")!;
+    const beforeVault = await getAccount(
+      provider.connection,
+      community.tokenAccount
+    );
+    const beforeDestination = await getAccount(
+      provider.connection,
+      community.destinationTokenAccount
+    );
+    const params = growthRelease(
+      "community_utility_rewards",
+      40,
+      community.destinationTokenAccount,
+      10 * BASE_UNITS
+    );
+    const first = await releaseInstruction(
+      "community_utility_rewards",
+      params
+    );
+    const second = await releaseInstruction(
+      "community_utility_rewards",
+      params
+    );
+    const transaction = new anchor.web3.Transaction().add(first, second);
+
+    await expectFailure(() => provider.sendAndConfirm(transaction, [oracle]));
+
+    const afterVault = await getAccount(
+      provider.connection,
+      community.tokenAccount
+    );
+    const afterDestination = await getAccount(
+      provider.connection,
+      community.destinationTokenAccount
+    );
+    expect(afterVault.amount).to.equal(beforeVault.amount);
+    expect(afterDestination.amount).to.equal(beforeDestination.amount);
+  });
+
+  it("atomically releases 100 PEX only to the configured destination", async () => {
+    const community = vaults.get("community_utility_rewards")!;
+    const params = growthRelease(
+      "community_utility_rewards",
+      1,
+      community.destinationTokenAccount,
+      100 * BASE_UNITS
+    );
+    await executeRelease("community_utility_rewards", params);
+
+    const vault = await getAccount(provider.connection, community.tokenAccount);
+    const destination = await getAccount(
+      provider.connection,
+      community.destinationTokenAccount
+    );
+    const [recordPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("vault-release"), Buffer.from(params.releaseId)],
+      program.programId
+    );
+    const record = await program.account.reserveReleaseRecord.fetch(recordPda);
+    const config = await program.account.reserveVaultConfig.fetch(
+      community.config
+    );
+
+    expect(vault.amount).to.equal(950n * BigInt(BASE_UNITS));
+    expect(destination.amount).to.equal(100n * BigInt(BASE_UNITS));
+    expect(record.destinationTokenAccount.toBase58()).to.equal(
+      community.destinationTokenAccount.toBase58()
+    );
+    expect(config.authorizedDeposited.toString()).to.equal(
+      String(1_000 * BASE_UNITS)
+    );
+    expect(config.unsolicitedBalance.toString()).to.equal(
+      String(50 * BASE_UNITS)
+    );
+    expect(config.totalReleased.toString()).to.equal(
+      String(100 * BASE_UNITS)
+    );
+  });
+
+  it("rejects a replayed release ID", async () => {
+    const community = vaults.get("community_utility_rewards")!;
+    await expectFailure(() =>
+      executeRelease(
+        "community_utility_rewards",
+        growthRelease(
+          "community_utility_rewards",
+          1,
+          community.destinationTokenAccount,
+          1
+        )
+      )
+    );
+  });
+
+  it("rejects an unapproved ordinary PEX destination", async () => {
+    await expectFailure(() =>
+      executeRelease(
+        "community_utility_rewards",
+        growthRelease(
+          "community_utility_rewards",
+          2,
+          otherDestinationTokenAccount
+        )
+      )
+    );
+  });
+
+  it("rejects a destination using the wrong mint", async () => {
+    await expectFailure(() =>
+      executeRelease(
+        "community_utility_rewards",
+        growthRelease(
+          "community_utility_rewards",
+          3,
+          wrongMintDestination
+        )
+      )
+    );
+  });
+
+  it("rejects a destination pointing to another reserve vault", async () => {
+    const treasury = vaults.get("treasury")!;
+    await expectFailure(() =>
+      executeRelease(
+        "community_utility_rewards",
+        growthRelease(
+          "community_utility_rewards",
+          4,
+          treasury.tokenAccount
+        )
+      )
+    );
+  });
+
+  it("rejects unauthorized pause attempts and accepts the safety admin", async () => {
+    const community = vaults.get("community_utility_rewards")!;
+    await expectFailure(() =>
+      program.methods
+        .setReserveVaultPause(community.allocationId, true)
+        .accounts({
+          state,
+          reserveVaultConfig: community.config,
+          actor: outsider.publicKey,
+        })
+        .signers([outsider])
+        .rpc()
+    );
+
+    await program.methods
+      .setReserveVaultPause(community.allocationId, true)
+      .accounts({
+        state,
+        reserveVaultConfig: community.config,
+        actor: safetyAdmin.publicKey,
+      })
+      .signers([safetyAdmin])
+      .rpc();
+
+    await expectFailure(() =>
+      executeRelease(
+        "community_utility_rewards",
+        growthRelease(
+          "community_utility_rewards",
+          5,
+          community.destinationTokenAccount
+        )
+      )
+    );
+
+    await program.methods
+      .setReserveVaultPause(community.allocationId, false)
+      .accounts({
+        state,
+        reserveVaultConfig: community.config,
+        actor: safetyAdmin.publicKey,
+      })
+      .signers([safetyAdmin])
+      .rpc();
+  });
+
+  it("rejects release above authorized remaining balance", async () => {
+    const community = vaults.get("community_utility_rewards")!;
+    await expectFailure(() =>
+      executeRelease(
+        "community_utility_rewards",
+        growthRelease(
+          "community_utility_rewards",
+          6,
+          community.destinationTokenAccount,
+          901 * BASE_UNITS
+        )
+      )
+    );
+  });
+
+  it("rejects liquidity and vesting vault market releases", async () => {
+    const liquidity = vaults.get("liquidity_pool")!;
+    const vesting = vaults.get("development_team")!;
+    await expectFailure(() =>
+      executeRelease(
+        "liquidity_pool",
+        growthRelease(
+          "liquidity_pool",
+          7,
+          otherDestinationTokenAccount
+        )
+      )
+    );
+    await expectFailure(() =>
+      executeRelease(
+        "development_team",
+        growthRelease(
+          "development_team",
+          8,
+          otherDestinationTokenAccount
+        )
+      )
+    );
+    expect(liquidity.destinationTokenAccount.equals(DEFAULT_PUBLIC_KEY)).to.equal(
+      true
+    );
+    expect(vesting.destinationTokenAccount.equals(DEFAULT_PUBLIC_KEY)).to.equal(
+      true
+    );
+  });
+
+  it("rejects emergency release from a growth vault and growth release from the emergency vault", async () => {
+    const treasury = vaults.get("treasury")!;
+    const emergency = vaults.get("team_emergency_reserve")!;
+
+    await expectFailure(() =>
+      executeRelease(
+        "treasury",
+        emergencyRelease(
+          "treasury",
+          9,
+          treasury.destinationTokenAccount,
+          1_000,
+          1
+        )
+      )
+    );
+    await expectFailure(() =>
+      executeRelease(
+        "team_emergency_reserve",
+        growthRelease(
+          "team_emergency_reserve",
+          10,
+          emergency.destinationTokenAccount,
+          1
+        )
+      )
     );
   });
 
   it("disables the old approval-only release route", async () => {
-    const releaseId = uniqueId(6);
+    const community = vaults.get("community_utility_rewards")!;
+    const releaseId = uniqueId(11);
     const [releaseRecord] = anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("release"), Buffer.from(releaseId)],
       program.programId
@@ -323,14 +917,19 @@ describe("perax-core reserve vault custody", () => {
           releaseType: { growth: {} },
           requestedAmount: new anchor.BN(1),
           releaseId,
-          snapshot: growthRelease(6, destinationTokenAccount).snapshot,
+          snapshot: growthRelease(
+            "community_utility_rewards",
+            11,
+            community.destinationTokenAccount
+          ).snapshot,
         })
         .accounts({
           state,
           releaseRecord,
-          oracleFeed: provider.wallet.publicKey,
+          oracleFeed: oracle.publicKey,
           systemProgram: anchor.web3.SystemProgram.programId,
         })
+        .signers([oracle])
         .rpc()
     );
   });
