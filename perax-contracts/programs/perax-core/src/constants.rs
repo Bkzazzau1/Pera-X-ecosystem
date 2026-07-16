@@ -26,12 +26,10 @@ pub const ALLOCATION_LIQUIDITY_POOL: [u8; 32] = padded_allocation_id(b"liquidity
 pub const ALLOCATION_COMMUNITY_REWARDS: [u8; 32] =
     padded_allocation_id(b"community_utility_rewards");
 pub const ALLOCATION_TREASURY: [u8; 32] = padded_allocation_id(b"treasury");
-pub const ALLOCATION_ECOSYSTEM_MARKETING: [u8; 32] =
-    padded_allocation_id(b"ecosystem_marketing");
+pub const ALLOCATION_ECOSYSTEM_MARKETING: [u8; 32] = padded_allocation_id(b"ecosystem_marketing");
 pub const ALLOCATION_TRADING_OPERATIONS: [u8; 32] =
     padded_allocation_id(b"trading_company_operations");
-pub const ALLOCATION_DEVELOPMENT_TEAM: [u8; 32] =
-    padded_allocation_id(b"development_team");
+pub const ALLOCATION_DEVELOPMENT_TEAM: [u8; 32] = padded_allocation_id(b"development_team");
 pub const ALLOCATION_FOUNDER: [u8; 32] = padded_allocation_id(b"founder");
 pub const ALLOCATION_FUTURE_TEAM_INCENTIVES: [u8; 32] =
     padded_allocation_id(b"future_team_incentives");

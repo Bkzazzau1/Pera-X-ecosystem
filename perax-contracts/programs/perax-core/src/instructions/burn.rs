@@ -1,12 +1,12 @@
-use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Burn};
 use crate::{
     reset_burn_window_if_needed, validate_market_condition_burn, validate_reference,
     BurnExecutionRecord, BurnFromTradingCompany, BurnFulfillmentSource,
-    ConditionalBuybackBurnExecuted, ConditionalBuybackBurnParams,
-    ExecuteConditionalBuybackBurn, ExecuteMarketConditionBurn, MarketConditionBurnExecuted,
-    MarketConditionBurnParams, PeraxError, PeraxState,
+    ConditionalBuybackBurnExecuted, ConditionalBuybackBurnParams, ExecuteConditionalBuybackBurn,
+    ExecuteMarketConditionBurn, MarketConditionBurnExecuted, MarketConditionBurnParams, PeraxError,
+    PeraxState,
 };
+use anchor_lang::prelude::*;
+use anchor_spl::token::{self, Burn};
 
 pub fn burn_from_trading_company(
     _ctx: Context<BurnFromTradingCompany>,

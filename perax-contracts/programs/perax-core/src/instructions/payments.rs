@@ -1,9 +1,9 @@
-use anchor_lang::prelude::*;
-use anchor_spl::token;
 use crate::{
     validate_payment_amount, validate_reference, ExternalUtilityPaymentRecorded,
     PayToTradingCompany, PeraxError, RecordExternalUtilityPayment, UtilityPaymentReceived,
 };
+use anchor_lang::prelude::*;
+use anchor_spl::token;
 
 pub fn pay_to_trading_company(
     ctx: Context<PayToTradingCompany>,

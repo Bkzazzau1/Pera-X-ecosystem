@@ -1,5 +1,5 @@
-use anchor_lang::prelude::*;
 use crate::{BurnFulfillmentSource, ReleaseType, VaultClass};
+use anchor_lang::prelude::*;
 
 #[event]
 pub struct ConfigInitialized {

@@ -1,10 +1,10 @@
-use anchor_lang::prelude::*;
 use crate::{
     AcceptAuthority, AuthorityTransferAccepted, AuthorityTransferCancelled,
     AuthorityTransferNominated, ConfigInitialized, ConfigUpdated, EmergencyPauseStatusChanged,
     Initialize, InitializeParams, MarketEngineConfigUpdated, PauseStatusChanged, PeraxError,
     SafetyAdminAction, UpdateConfig, UpdateConfigParams, UpdateMarketEngineConfigParams,
 };
+use anchor_lang::prelude::*;
 
 pub fn initialize(ctx: Context<Initialize>, params: InitializeParams) -> Result<()> {
     require!(

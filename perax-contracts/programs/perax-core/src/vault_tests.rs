@@ -39,7 +39,10 @@ fn all_approved_allocations_resolve_to_expected_classes() {
         (ALLOCATION_DEVELOPMENT_TEAM, VaultClass::Vesting),
         (ALLOCATION_FOUNDER, VaultClass::Vesting),
         (ALLOCATION_FUTURE_TEAM_INCENTIVES, VaultClass::MarketReserve),
-        (ALLOCATION_TEAM_EMERGENCY_RESERVE, VaultClass::EmergencyReserve),
+        (
+            ALLOCATION_TEAM_EMERGENCY_RESERVE,
+            VaultClass::EmergencyReserve,
+        ),
         (ALLOCATION_PRIVATE_STRATEGIC, VaultClass::Vesting),
         (ALLOCATION_ADVISOR_1, VaultClass::Vesting),
         (ALLOCATION_ADVISOR_2, VaultClass::Vesting),
@@ -85,50 +88,31 @@ fn accounting_rejects_released_amount_above_authorized_deposits() {
 
 #[test]
 fn growth_release_classes_are_strictly_limited() {
-    assert!(validate_vault_class_for_release(
-        VaultClass::MarketReserve,
-        ReleaseType::Growth
-    )
-    .is_ok());
-    assert!(validate_vault_class_for_release(
-        VaultClass::Operations,
-        ReleaseType::Growth
-    )
-    .is_ok());
-    assert!(validate_vault_class_for_release(
-        VaultClass::CommunityRewards,
-        ReleaseType::Growth
-    )
-    .is_ok());
-    assert!(validate_vault_class_for_release(
-        VaultClass::Liquidity,
-        ReleaseType::Growth
-    )
-    .is_err());
-    assert!(validate_vault_class_for_release(
-        VaultClass::Vesting,
-        ReleaseType::Growth
-    )
-    .is_err());
-    assert!(validate_vault_class_for_release(
-        VaultClass::EmergencyReserve,
-        ReleaseType::Growth
-    )
-    .is_err());
+    assert!(
+        validate_vault_class_for_release(VaultClass::MarketReserve, ReleaseType::Growth).is_ok()
+    );
+    assert!(validate_vault_class_for_release(VaultClass::Operations, ReleaseType::Growth).is_ok());
+    assert!(
+        validate_vault_class_for_release(VaultClass::CommunityRewards, ReleaseType::Growth).is_ok()
+    );
+    assert!(validate_vault_class_for_release(VaultClass::Liquidity, ReleaseType::Growth).is_err());
+    assert!(validate_vault_class_for_release(VaultClass::Vesting, ReleaseType::Growth).is_err());
+    assert!(
+        validate_vault_class_for_release(VaultClass::EmergencyReserve, ReleaseType::Growth)
+            .is_err()
+    );
 }
 
 #[test]
 fn emergency_release_is_limited_to_emergency_reserve() {
-    assert!(validate_vault_class_for_release(
-        VaultClass::EmergencyReserve,
-        ReleaseType::Emergency
-    )
-    .is_ok());
-    assert!(validate_vault_class_for_release(
-        VaultClass::MarketReserve,
-        ReleaseType::Emergency
-    )
-    .is_err());
+    assert!(
+        validate_vault_class_for_release(VaultClass::EmergencyReserve, ReleaseType::Emergency)
+            .is_ok()
+    );
+    assert!(
+        validate_vault_class_for_release(VaultClass::MarketReserve, ReleaseType::Emergency)
+            .is_err()
+    );
 }
 
 #[test]

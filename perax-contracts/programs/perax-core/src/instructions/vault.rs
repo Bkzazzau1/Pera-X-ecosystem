@@ -1,5 +1,3 @@
-use anchor_lang::prelude::*;
-use anchor_spl::token::{self, TransferChecked};
 use crate::{
     approved_allocation, calculate_vault_available_amount, is_market_releasable_vault_class,
     is_program_derived_destination, reset_release_windows_if_needed,
@@ -12,16 +10,15 @@ use crate::{
     ReserveVaultReleaseExecuted, SetReserveVaultPause, VaultMarketConditionalReleaseParams,
     PEX_MINT_DECIMALS,
 };
+use anchor_lang::prelude::*;
+use anchor_spl::token::{self, TransferChecked};
 
 pub fn initialize_reserve_vault(
     ctx: Context<InitializeReserveVault>,
     params: InitializeReserveVaultParams,
 ) -> Result<()> {
     validate_reference(params.allocation_id)?;
-    require!(
-        params.allocation_cap > 0,
-        PeraxError::InvalidAllocationCap
-    );
+    require!(params.allocation_cap > 0, PeraxError::InvalidAllocationCap);
     require!(
         ctx.accounts.token_mint.decimals == PEX_MINT_DECIMALS,
         PeraxError::InvalidTokenMint
@@ -263,17 +260,13 @@ pub fn execute_market_conditional_release(
         PeraxError::InvalidReleaseDestination
     );
     require!(
-        !is_program_derived_destination(
-            ctx.accounts.destination_token_account.owner,
-        ),
+        !is_program_derived_destination(ctx.accounts.destination_token_account.owner,),
         PeraxError::DestinationIsReserveVault
     );
     validate_vault_class_for_release(config_snapshot.vault_class, params.release_type)?;
 
-    let available_amount = calculate_vault_available_amount(
-        config_snapshot,
-        ctx.accounts.vault_token_account.amount,
-    )?;
+    let available_amount =
+        calculate_vault_available_amount(config_snapshot, ctx.accounts.vault_token_account.amount)?;
     require!(
         params.requested_amount <= available_amount,
         PeraxError::InsufficientVaultBalance
@@ -287,11 +280,9 @@ pub fn execute_market_conditional_release(
         reset_release_windows_if_needed(state, params.snapshot.observed_at);
 
         match params.release_type {
-            ReleaseType::Growth => validate_growth_release_fields(
-                state,
-                params.requested_amount,
-                &params.snapshot,
-            )?,
+            ReleaseType::Growth => {
+                validate_growth_release_fields(state, params.requested_amount, &params.snapshot)?
+            }
             ReleaseType::Emergency => validate_emergency_release_fields(
                 state,
                 params.requested_amount,

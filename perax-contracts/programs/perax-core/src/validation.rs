@@ -1,18 +1,17 @@
-use anchor_lang::prelude::*;
 use crate::{
     ConditionalBuybackBurnParams, MarketConditionSnapshot, MarketConditionalReleaseParams,
     PeraxError, PeraxState, ReleaseType, ReserveVaultConfig, VaultClass, ALLOCATION_ADVISOR_1,
     ALLOCATION_ADVISOR_2, ALLOCATION_ADVISOR_3, ALLOCATION_COMMUNITY_REWARDS,
     ALLOCATION_DEVELOPMENT_TEAM, ALLOCATION_ECOSYSTEM_MARKETING, ALLOCATION_FOUNDER,
-    ALLOCATION_FUTURE_TEAM_INCENTIVES, ALLOCATION_LIQUIDITY_POOL,
-    ALLOCATION_PRIVATE_STRATEGIC, ALLOCATION_TEAM_EMERGENCY_RESERVE,
-    ALLOCATION_TRADING_OPERATIONS, ALLOCATION_TREASURY, CONSERVATION_BURN_RATE_BPS,
-    CONSERVATION_DAILY_BURN_CAP_BPS, CONSERVATION_SUPPLY_THRESHOLD_BPS,
+    ALLOCATION_FUTURE_TEAM_INCENTIVES, ALLOCATION_LIQUIDITY_POOL, ALLOCATION_PRIVATE_STRATEGIC,
+    ALLOCATION_TEAM_EMERGENCY_RESERVE, ALLOCATION_TRADING_OPERATIONS, ALLOCATION_TREASURY,
+    CONSERVATION_BURN_RATE_BPS, CONSERVATION_DAILY_BURN_CAP_BPS, CONSERVATION_SUPPLY_THRESHOLD_BPS,
     DEFAULT_BURN_RATE_BPS, EARLY_DAILY_BURN_CAP_BPS, EMERGENCY_DOWNSIDE_TRIGGER_BPS,
     EMERGENCY_LIQUIDITY_DRAIN_TRIGGER_BPS, GROWTH_PRICE_MULTIPLIER, MAX_BURN_RATE_BPS,
-    MIN_BURN_RATE_BPS, MIN_GROWTH_LIQUIDITY_USD, MIN_GROWTH_TWAP_MINUTES,
-    MIN_NET_BUY_VOLUME_BPS, PEX_DECIMALS, PEX_TOTAL_SUPPLY, RELEASE_COOLDOWN_SECONDS,
+    MIN_BURN_RATE_BPS, MIN_GROWTH_LIQUIDITY_USD, MIN_GROWTH_TWAP_MINUTES, MIN_NET_BUY_VOLUME_BPS,
+    PEX_DECIMALS, PEX_TOTAL_SUPPLY, RELEASE_COOLDOWN_SECONDS,
 };
+use anchor_lang::prelude::*;
 
 pub(crate) fn validate_payment_amount(state: &PeraxState, amount: u64) -> Result<()> {
     require!(amount > 0, PeraxError::InvalidAmount);
@@ -85,9 +84,7 @@ pub(crate) fn validate_vault_class_for_release(
         ReleaseType::Growth => require!(
             matches!(
                 vault_class,
-                VaultClass::MarketReserve
-                    | VaultClass::Operations
-                    | VaultClass::CommunityRewards
+                VaultClass::MarketReserve | VaultClass::Operations | VaultClass::CommunityRewards
             ),
             PeraxError::VaultClassNotMarketReleasable
         ),

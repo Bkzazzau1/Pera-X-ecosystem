@@ -40,10 +40,7 @@ pub mod perax_core {
         instructions::set_pause(ctx, is_paused)
     }
 
-    pub fn set_emergency_pause(
-        ctx: Context<SafetyAdminAction>,
-        is_paused: bool,
-    ) -> Result<()> {
+    pub fn set_emergency_pause(ctx: Context<SafetyAdminAction>, is_paused: bool) -> Result<()> {
         instructions::set_emergency_pause(ctx, is_paused)
     }
 

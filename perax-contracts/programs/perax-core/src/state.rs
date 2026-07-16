@@ -230,11 +230,8 @@ pub struct ReserveReleaseRecord {
 }
 
 impl ReserveReleaseRecord {
-    pub const SPACE: usize = 32 + 32 + 32 + 32 + 1 + 32 + 32 + 32 + 1 + 8 + 8 + 8 + 8 + 2
-        + 32
-        + 8
-        + 8
-        + 1;
+    pub const SPACE: usize =
+        32 + 32 + 32 + 32 + 1 + 32 + 32 + 32 + 1 + 8 + 8 + 8 + 8 + 2 + 32 + 8 + 8 + 1;
 }
 
 #[account]
