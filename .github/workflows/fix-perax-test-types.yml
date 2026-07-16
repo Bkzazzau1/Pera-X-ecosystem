@@ -1,5 +1,6 @@
 name: Repair Anchor test TypeScript types
 
+# Triggered after workflow creation so GitHub Actions evaluates the repair job.
 on:
   push:
     branches:
