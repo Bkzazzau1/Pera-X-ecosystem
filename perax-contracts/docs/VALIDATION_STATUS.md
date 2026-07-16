@@ -14,7 +14,8 @@
 - The tracked `.local` directory has been removed from the current `main` tree.
 - JavaScript migration and verification scripts pass `node --check` in the available offline environment.
 - Rust and TypeScript sources pass structural delimiter checks in the available offline environment.
-- The Anchor transaction test harness now uses explicit helper types and a narrow account namespace adapter instead of recursive `Parameters<...>` inference; CI confirmation remains required.
+- The Anchor transaction test harness uses explicit helper types and a narrow account namespace adapter instead of recursive `Parameters<...>` inference.
+- The dynamically generated Anchor workspace client is kept at an explicit `any` boundary so TypeScript does not recursively expand the full IDL. A guarded GitHub Actions repair run completed `npm run typecheck` before committing this change; full CI confirmation remains required.
 
 ## CI validation required
 
