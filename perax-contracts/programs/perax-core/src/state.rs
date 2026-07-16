@@ -42,6 +42,17 @@ pub enum VaultClass {
     Vesting,
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct InitializeReserveVaultParams {
+    pub allocation_id: [u8; 32],
+    pub vault_class: VaultClass,
+    pub allocation_cap: u64,
+    pub authorized_source_owner: Pubkey,
+    pub authorized_source_token_account: Pubkey,
+    pub approved_destination_owner: Pubkey,
+    pub approved_destination_token_account: Pubkey,
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReleaseType {
     Growth,
@@ -143,8 +154,13 @@ pub struct ReserveVaultConfig {
     pub token_mint: Pubkey,
     pub vault_authority: Pubkey,
     pub vault_token_account: Pubkey,
+    pub authorized_source_owner: Pubkey,
+    pub authorized_source_token_account: Pubkey,
+    pub approved_destination_owner: Pubkey,
+    pub approved_destination_token_account: Pubkey,
     pub allocation_cap: u64,
-    pub total_deposited: u64,
+    pub authorized_deposited: u64,
+    pub unsolicited_balance: u64,
     pub total_released: u64,
     pub is_active: bool,
     pub is_paused: bool,
@@ -153,7 +169,7 @@ pub struct ReserveVaultConfig {
 }
 
 impl ReserveVaultConfig {
-    pub const SPACE: usize = 32 + 32 + 1 + 32 + 32 + 32 + 8 + 8 + 8 + 1 + 1 + 1 + 1;
+    pub const SPACE: usize = (9 * 32) + 1 + (4 * 8) + 4;
 }
 
 #[account]
