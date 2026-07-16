@@ -213,7 +213,7 @@ pub struct ExecuteMarketConditionalRelease<'info> {
         seeds = [b"vault-release", params.release_id.as_ref()],
         bump
     )]
-    pub release_record_v2: Account<'info, ReserveReleaseRecord>,
+    pub release_record: Account<'info, ReserveReleaseRecord>,
     #[account(mut)]
     pub oracle_feed: Signer<'info>,
     pub token_mint: Account<'info, Mint>,

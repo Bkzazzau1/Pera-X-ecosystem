@@ -185,7 +185,7 @@ describe("perax-core reserve vault custody", () => {
   }
 
   async function executeRelease(params: ReturnType<typeof growthRelease>) {
-    const [releaseRecordV2] = anchor.web3.PublicKey.findProgramAddressSync(
+    const [releaseRecord] = anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("vault-release"), Buffer.from(params.releaseId)],
       program.programId
     );
@@ -197,7 +197,7 @@ describe("perax-core reserve vault custody", () => {
         vaultAuthority,
         vaultTokenAccount,
         destinationTokenAccount: params.destinationTokenAccount,
-        releaseRecordV2,
+        releaseRecord,
         oracleFeed: provider.wallet.publicKey,
         tokenMint: mint,
         tokenProgram: TOKEN_PROGRAM_ID,
@@ -264,7 +264,7 @@ describe("perax-core reserve vault custody", () => {
 
   it("rejects a destination different from the bot-signed destination", async () => {
     const params = growthRelease(2, destinationTokenAccount);
-    const [releaseRecordV2] = anchor.web3.PublicKey.findProgramAddressSync(
+    const [releaseRecord] = anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("vault-release"), Buffer.from(params.releaseId)],
       program.programId
     );
@@ -277,7 +277,7 @@ describe("perax-core reserve vault custody", () => {
           vaultAuthority,
           vaultTokenAccount,
           destinationTokenAccount: otherDestinationTokenAccount,
-          releaseRecordV2,
+          releaseRecord,
           oracleFeed: provider.wallet.publicKey,
           tokenMint: mint,
           tokenProgram: TOKEN_PROGRAM_ID,

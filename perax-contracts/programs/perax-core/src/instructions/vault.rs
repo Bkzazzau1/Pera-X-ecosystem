@@ -293,7 +293,7 @@ pub fn execute_market_conditional_release(
         PeraxError::VaultAccountingMismatch
     );
 
-    let record = &mut ctx.accounts.release_record_v2;
+    let record = &mut ctx.accounts.release_record;
     record.release_id = params.release_id;
     record.state = state.key();
     record.allocation_id = allocation_id;
@@ -311,7 +311,7 @@ pub fn execute_market_conditional_release(
     record.market_observation_id = params.market_observation_id;
     record.observed_at = params.snapshot.observed_at;
     record.executed_at = executed_at;
-    record.bump = ctx.bumps.release_record_v2;
+    record.bump = ctx.bumps.release_record;
 
     emit!(ReserveVaultReleaseExecuted {
         state: state.key(),
