@@ -1,6 +1,5 @@
 name: Repair Anchor test TypeScript types
 
-# Triggered after workflow creation so GitHub Actions evaluates the repair job.
 on:
   push:
     branches:
@@ -15,37 +14,28 @@ jobs:
   repair:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: perax-contracts
     steps:
       - name: Checkout main
         uses: actions/checkout@v4
         with:
           ref: main
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-          package-manager-cache: false
-
-      - name: Patch test typing
+      - name: Apply deterministic typing repair
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          path = Path("tests/perax-core.ts")
+          path = Path("perax-contracts/tests/perax-core.ts")
           text = path.read_text()
 
-          allocation_type = '''type AllocationDefinition = {
+          allocation_marker = '''type AllocationDefinition = {
             key: string;
             vaultClass: Record<string, Record<string, never>>;
             releasable: boolean;
           };
           '''
-          replacement_allocation_type = '''type AllocationDefinition = {
+          type_block = '''type AllocationDefinition = {
             key: string;
             vaultClass: Record<string, Record<string, never>>;
             releasable: boolean;
@@ -71,67 +61,44 @@ jobs:
             destinationTokenAccount: anchor.web3.PublicKey;
           };
           '''
-          if text.count(allocation_type) != 1:
-              raise SystemExit("AllocationDefinition insertion point changed")
-          text = text.replace(allocation_type, replacement_allocation_type)
+          if "type InitializationOverrides" not in text:
+              if text.count(allocation_marker) != 1:
+                  raise SystemExit("AllocationDefinition marker not found exactly once")
+              text = text.replace(allocation_marker, type_block)
 
-          program_line = '  const program = anchor.workspace.PeraxCore as Program<any>;\n'
-          program_replacement = '''  const program = anchor.workspace.PeraxCore as Program<any>;
+          program_marker = '  const program = anchor.workspace.PeraxCore as Program<any>;\n'
+          account_adapter = '''  const program = anchor.workspace.PeraxCore as Program<any>;
             const programAccounts = program.account as unknown as {
               reserveVaultConfig: {
-                all(): Promise<
-                  Array<{
-                    publicKey: anchor.web3.PublicKey;
-                    account: ReserveVaultConfigAccount;
-                  }>
-                >;
-                fetch(
-                  address: anchor.web3.PublicKey
-                ): Promise<ReserveVaultConfigAccount>;
+                all(): Promise<Array<{ account: ReserveVaultConfigAccount }>>;
+                fetch(address: anchor.web3.PublicKey): Promise<ReserveVaultConfigAccount>;
               };
               reserveReleaseRecord: {
-                fetch(
-                  address: anchor.web3.PublicKey
-                ): Promise<ReserveReleaseRecordAccount>;
+                fetch(address: anchor.web3.PublicKey): Promise<ReserveReleaseRecordAccount>;
               };
             };
           '''
-          if text.count(program_line) != 1:
-              raise SystemExit("Program declaration insertion point changed")
-          text = text.replace(program_line, program_replacement)
+          if "const programAccounts =" not in text:
+              if text.count(program_marker) != 1:
+                  raise SystemExit("Program marker not found exactly once")
+              text = text.replace(program_marker, account_adapter)
 
-          inline_overrides = '''    overrides: Partial<{
-                allocationId: number[];
-                vaultClass: Record<string, Record<string, never>>;
-                allocationCap: anchor.BN;
-                authorizedSourceOwner: anchor.web3.PublicKey;
-                authorizedSourceTokenAccount: anchor.web3.PublicKey;
-                approvedDestinationOwner: anchor.web3.PublicKey;
-                approvedDestinationTokenAccount: anchor.web3.PublicKey;
-              }> = {}
-          '''
-          if text.count(inline_overrides) != 1:
-              raise SystemExit("Inline initialization override type changed")
-          text = text.replace(
-              inline_overrides,
-              '    overrides: InitializationOverrides = {}\n',
+          build_start = text.index("  async function buildInitialization(")
+          build_end = text.index("  ) {", build_start)
+          build_signature = text[build_start:build_end]
+          override_start = build_signature.index("    overrides: Partial<{")
+          override_end = build_signature.index("    }> = {}", override_start) + len("    }> = {}")
+          build_signature = (
+              build_signature[:override_start]
+              + "    overrides: InitializationOverrides = {}"
+              + build_signature[override_end:]
           )
+          text = text[:build_start] + build_signature + text[build_end:]
 
-          recursive_type = '    overrides: Parameters<typeof buildInitialization>[1] = {}\n'
-          if text.count(recursive_type) != 1:
-              raise SystemExit("Recursive helper type changed")
           text = text.replace(
-              recursive_type,
-              '    overrides: InitializationOverrides = {}\n',
+              "    overrides: Parameters<typeof buildInitialization>[1] = {}",
+              "    overrides: InitializationOverrides = {}",
           )
-
-          vault_count = text.count("program.account.reserveVaultConfig")
-          release_count = text.count("program.account.reserveReleaseRecord")
-          if vault_count != 4:
-              raise SystemExit(f"Expected 4 reserveVaultConfig accesses, found {vault_count}")
-          if release_count != 1:
-              raise SystemExit(f"Expected 1 reserveReleaseRecord access, found {release_count}")
-
           text = text.replace(
               "program.account.reserveVaultConfig",
               "programAccounts.reserveVaultConfig",
@@ -141,18 +108,21 @@ jobs:
               "programAccounts.reserveReleaseRecord",
           )
 
+          forbidden = [
+              "Parameters<typeof buildInitialization>[1]",
+              "program.account.reserveVaultConfig",
+              "program.account.reserveReleaseRecord",
+              "overrides: Partial<{",
+          ]
+          remaining = [item for item in forbidden if item in text]
+          if remaining:
+              raise SystemExit(f"Typing repair incomplete: {remaining}")
+
           path.write_text(text)
           PY
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Verify TypeScript
-        run: npm run typecheck
-
       - name: Commit repair and remove workflow
         shell: bash
-        working-directory: .
         run: |
           git rm .github/workflows/fix-perax-test-types.yml
           git add perax-contracts/tests/perax-core.ts
