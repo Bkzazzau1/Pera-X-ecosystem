@@ -1,10 +1,8 @@
 # Pera-X Core: Program-Controlled Reserve Vaults
 
-## Scope
+## Current status
 
-This development change updates reserve custody and release execution only. It does not alter the approved staged-price thresholds.
-
-The existing initialized `PeraxState` account is not resized. Every allocation receives a separate `ReserveVaultConfig` PDA, a separate authority PDA, and a separate PEX associated token account owned by that authority PDA.
+This document describes source code under active development. The hardened reserve-vault program has not yet been activated on devnet, and existing devnet reserve balances must be treated as remaining in their legacy token accounts until the public registry and deployment record prove otherwise.
 
 ## PDA layout
 
@@ -15,9 +13,31 @@ Reserve token account: canonical PEX ATA owned by reserve authority PDA
 Release record:        ["vault-release", release_id]
 ```
 
-`allocation_id` is the allocation key encoded as UTF-8 and zero-padded to 32 bytes. The contract accepts only the 13 allocations already recorded in the public devnet deployment record and enforces their approved maximum caps.
+Every approved allocation receives a separate `ReserveVaultConfig`, authority PDA and PEX token account. The program accepts only the 13 allocation IDs and maximum caps recorded in the public deployment record.
 
-## Vault classes
+## Custody policy
+
+Each configuration stores:
+
+- `authorized_source_owner`
+- `authorized_source_token_account`
+- `approved_destination_owner`
+- `approved_destination_token_account`
+- `authorized_deposited`
+- `unsolicited_balance`
+- `total_released`
+
+Migration deposits succeed only when the configured source owner signs and the exact configured legacy PEX token account is supplied. Deposits from another allocation account cannot consume the vault's allocation cap.
+
+Direct SPL-token transfers cannot be prevented. They are therefore recorded separately as `unsolicited_balance`. They never increase `authorized_deposited` or the amount the program may release for that allocation.
+
+## Approved destinations
+
+Market-releasable vaults must be initialized with one approved ordinary-wallet owner and its exact PEX token account. A release must match both values. A PDA-owned destination, including another reserve vault, is rejected. After a valid release, the approved destination owner may transfer or sell the released PEX normally.
+
+Liquidity and vesting allocations do not receive an ordinary market-release destination and cannot use `execute_market_conditional_release`.
+
+## Vault classes and approved caps
 
 | Allocation | Vault class | Approved cap |
 |---|---|---:|
@@ -35,80 +55,58 @@ Release record:        ["vault-release", release_id]
 | advisor_wallet_2 | Vesting | 10,000,000 PEX |
 | advisor_wallet_3 | Vesting | 10,000,000 PEX |
 
-Liquidity and vesting vaults cannot use `execute_market_conditional_release`. They remain program-controlled but require their own future liquidity-deployment and vesting instructions.
+Growth releases are limited to `MarketReserve`, `Operations` and `CommunityRewards`. Emergency releases are limited to `EmergencyReserve`.
 
-## Instructions
+## Atomic release
 
-### `initialize_reserve_vault`
+`execute_market_conditional_release` validates the oracle signer, market snapshot, vault class, authorized available balance, approved destination and replay ID. It then performs the PDA-signed PEX transfer, updates state and vault accounting, and creates the permanent release record in the same Solana transaction. Any failure rolls back every operation.
 
-Creates one configuration PDA, one authority PDA and one canonical PEX token account. It rejects unknown allocation IDs, incorrect classes, zero caps, caps above the approved allocation, wrong mint and duplicate initialization.
+The legacy approval-only instruction always returns `UseVaultControlledRelease`.
 
-### `deposit_into_reserve_vault`
+## Local and CI validation
 
-Moves already-minted PEX from a legacy allocation token account into its PDA-controlled vault. The source owner must sign. Deposits cannot exceed the approved lifetime allocation cap.
-
-### `execute_market_conditional_release`
-
-Performs market validation, vault validation, replay protection, accounting updates, PDA-signed PEX transfer and permanent release recording in one transaction. The destination token account is included in the oracle bot's signed instruction data and must match the provided account. The vault itself cannot be used as the destination.
-
-Growth releases are allowed only from `MarketReserve`, `Operations` and `CommunityRewards` vaults. Emergency releases are allowed only from `EmergencyReserve` vaults.
-
-### `set_reserve_vault_pause`
-
-The program authority or safety admin can pause or unpause an individual vault. A pause blocks releases but does not transfer tokens.
-
-### `reconcile_reserve_vault`
-
-Records unsolicited direct PEX deposits by reconciling the actual token balance with lifetime deposits. It never permits reconciliation above the approved allocation cap and never hides a missing-balance discrepancy.
-
-### Legacy route
-
-`record_market_conditional_release` now returns `UseVaultControlledRelease`. It cannot increase release counters without moving tokens.
-
-## Devnet migration scripts
+The repository CI is configured to run:
 
 ```bash
-npm run plan:reserve-vaults:devnet
-npm run create:reserve-vaults:devnet
-npm run plan:migrate-reserves:devnet
-npm run migrate:reserves:devnet
-npm run verify:reserve-vaults:devnet
+npm install
+npm run validate:tokenomics
+anchor build
+cargo test --manifest-path programs/perax-core/Cargo.toml
+npm run typecheck
+anchor test --provider.cluster localnet
 ```
 
-The creation script never transfers PEX. The migration script never mints PEX and requires a local ignored signer configuration copied from:
+A passing workflow is required before any devnet program update or token migration.
+
+## Devnet preparation
+
+Copy the ignored configuration template:
 
 ```text
 config/reserve-vault-migration.devnet.local.example.json
 ```
 
-Create the real file as:
+Create:
 
 ```text
 config/reserve-vault-migration.devnet.local.json
 ```
 
-That file is already protected by `.gitignore`. Never commit allocation keypairs.
+The local file must contain the rotated allocation signer paths and approved release destinations. Never commit keypairs or the populated local configuration.
 
-## Required migration order
+## Required activation order
 
-1. Build and test the program locally.
-2. Update the devnet program.
-3. Create only the community vault configuration, but move no full allocation yet.
-4. Deposit only 1,000 PEX from the existing community allocation account.
-5. Execute a valid 100 PEX release.
-6. Confirm replay, ordinary-wallet withdrawal, wrong destination, wrong mint, paused release and over-balance release all fail.
-7. Create the final vault configurations with the approved caps.
-8. Migrate each allocation with its current owner signer.
-9. Run the verification script.
-10. Commit only the resulting public vault-address registry.
+1. Rotate every keypair previously exposed in repository history.
+2. Confirm repository history and current branches no longer expose key material.
+3. Obtain a passing Anchor build, Rust test, TypeScript check and local-validator transaction test.
+4. Update the devnet program using the new secure upgrade authority.
+5. Initialize only the community vault with its full approved cap.
+6. Deposit exactly 1,000 PEX from its configured legacy source account.
+7. Execute a valid 100 PEX release to its approved ordinary-wallet destination.
+8. Confirm all negative and rollback tests.
+9. Initialize all 13 vaults.
+10. Migrate the remaining authorized devnet balances.
+11. Run `verify-reserve-vaults-devnet.js`.
+12. Commit only the safe public vault registry and update the public deployment record.
 
-Use these commands for the limited first trial:
-
-```bash
-node scripts/create-reserve-vaults-devnet.js --only community_utility_rewards --execute
-node scripts/migrate-reserves-to-vaults-devnet.js --only community_utility_rewards --amount-pex 1000 --execute
-```
-
-The community configuration may use its final approved cap while only 1,000 PEX is deposited for the trial. After the tests pass, run the normal creation and migration commands for all remaining balances.
-
-Do not move the full devnet balances until the trial passes.
+Do not migrate full balances before the limited community trial passes.
