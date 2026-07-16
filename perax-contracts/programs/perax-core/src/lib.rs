@@ -49,11 +49,9 @@ pub mod perax_core {
 
     pub fn initialize_reserve_vault(
         ctx: Context<InitializeReserveVault>,
-        allocation_id: [u8; 32],
-        vault_class: VaultClass,
-        allocation_cap: u64,
+        params: InitializeReserveVaultParams,
     ) -> Result<()> {
-        instructions::initialize_reserve_vault(ctx, allocation_id, vault_class, allocation_cap)
+        instructions::initialize_reserve_vault(ctx, params)
     }
 
     pub fn deposit_into_reserve_vault(
