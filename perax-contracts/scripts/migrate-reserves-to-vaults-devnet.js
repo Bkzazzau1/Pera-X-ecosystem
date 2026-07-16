@@ -5,6 +5,7 @@ const {
   VAULT_REGISTRY_PATH,
   readJson,
   loadKeypair,
+  loadLocalMigrationConfig,
   allocationId,
   expectedBaseUnits,
   buildContext,
@@ -20,10 +21,7 @@ const MAX_AMOUNT_PEX = AMOUNT_INDEX >= 0 ? BigInt(process.argv[AMOUNT_INDEX + 1]
 async function main() {
   const { deployment, connection, payer, program, mint, statePda } = buildContext();
   const registry = readJson(VAULT_REGISTRY_PATH, 'Public reserve-vault registry');
-  const localConfig = readJson(
-    LOCAL_MIGRATION_CONFIG_PATH,
-    'Local reserve-vault migration signer configuration'
-  );
+  const localConfig = loadLocalMigrationConfig(true);
   const signerPaths = localConfig.allocationSigners || {};
 
   console.log('================================================');
@@ -66,21 +64,31 @@ async function main() {
     const vaultAuthority = new PublicKey(registryEntry.authorityPda);
     const vaultTokenAccount = new PublicKey(registryEntry.tokenAccount);
     const config = await program.account.reserveVaultConfig.fetch(vaultConfig);
+    if (!config.authorizedSourceOwner.equals(sourceOwner.publicKey)) {
+      throw new Error(`${allocationKey}: on-chain authorized source owner mismatch.`);
+    }
+    if (!config.authorizedSourceTokenAccount.equals(sourceTokenAccount)) {
+      throw new Error(`${allocationKey}: on-chain authorized source account mismatch.`);
+    }
+
     const expected = expectedBaseUnits(allocation);
-    const alreadyDeposited = BigInt(config.totalDeposited.toString());
+    const alreadyDeposited = BigInt(config.authorizedDeposited.toString());
     if (alreadyDeposited > expected) {
-      throw new Error(`${allocationKey}: totalDeposited exceeds the approved allocation.`);
+      throw new Error(`${allocationKey}: authorizedDeposited exceeds the approved allocation.`);
     }
     const remaining = expected - alreadyDeposited;
-    const requestedMigration = MAX_AMOUNT_PEX === null
-      ? remaining
-      : (MAX_AMOUNT_PEX * 1_000_000n < remaining ? MAX_AMOUNT_PEX * 1_000_000n : remaining);
+    const requestedMigration =
+      MAX_AMOUNT_PEX === null
+        ? remaining
+        : MAX_AMOUNT_PEX * 1_000_000n < remaining
+          ? MAX_AMOUNT_PEX * 1_000_000n
+          : remaining;
     const sourceBalance = await connection.getTokenAccountBalance(sourceTokenAccount, 'confirmed');
     const sourceAmount = BigInt(sourceBalance.value.amount);
 
     console.log(`${allocationKey}`);
     console.log(`  expected base units: ${expected}`);
-    console.log(`  already deposited: ${alreadyDeposited}`);
+    console.log(`  authorized deposited: ${alreadyDeposited}`);
     console.log(`  remaining migration: ${remaining}`);
     console.log(`  amount selected now: ${requestedMigration}`);
     console.log(`  source balance: ${sourceAmount}`);
@@ -91,13 +99,16 @@ async function main() {
       continue;
     }
     if (sourceAmount < requestedMigration) {
-      throw new Error(`${allocationKey}: source account does not hold the remaining amount.`);
+      throw new Error(`${allocationKey}: source account does not hold the selected amount.`);
     }
 
     if (EXECUTE) {
       const signerList = sourceOwner.publicKey.equals(payer.publicKey) ? [] : [sourceOwner];
       const signature = await program.methods
-        .depositIntoReserveVault(Array.from(allocationId(allocationKey)), bnFromBigInt(requestedMigration))
+        .depositIntoReserveVault(
+          Array.from(allocationId(allocationKey)),
+          bnFromBigInt(requestedMigration)
+        )
         .accounts({
           state: statePda,
           reserveVaultConfig: vaultConfig,
