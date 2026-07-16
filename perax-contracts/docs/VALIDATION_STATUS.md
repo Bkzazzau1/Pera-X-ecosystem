@@ -16,6 +16,7 @@
 - Rust and TypeScript sources pass structural delimiter checks in the available offline environment.
 - The Anchor transaction test harness uses explicit helper types and a narrow account namespace adapter instead of recursive `Parameters<...>` inference.
 - The dynamically generated Anchor workspace client is kept at an explicit `any` boundary so TypeScript does not recursively expand the full IDL. A guarded GitHub Actions repair run completed `npm run typecheck` before committing this change; full CI confirmation remains required.
+- The contract workspace was formatted with the CI-pinned Rust 1.79.0 toolchain, and the guarded formatter run completed `cargo fmt --all -- --check` before committing; unit-test and build confirmation remain required.
 
 ## CI validation required
 
