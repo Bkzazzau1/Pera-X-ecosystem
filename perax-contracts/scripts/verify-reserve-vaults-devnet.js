@@ -3,6 +3,7 @@ const {
   TOKEN_PROGRAM_ID,
   VAULT_REGISTRY_PATH,
   VAULT_CLASS_BY_ALLOCATION,
+  DEFAULT_PUBLIC_KEY,
   readJson,
   allocationKeyFromId,
   expectedBaseUnits,
@@ -73,11 +74,48 @@ async function main() {
     if (!config.vaultTokenAccount.equals(derived.tokenAccount)) {
       failures.push(`${allocationKey}: wrong token account in config.`);
     }
+    if (!config.authorizedSourceOwner.equals(new PublicKey(allocation.ownerWallet))) {
+      failures.push(`${allocationKey}: authorized source owner mismatch.`);
+    }
+    if (!config.authorizedSourceTokenAccount.equals(new PublicKey(allocation.tokenAccount))) {
+      failures.push(`${allocationKey}: authorized source token account mismatch.`);
+    }
     if (BigInt(config.allocationCap.toString()) !== expected) {
       failures.push(`${allocationKey}: allocation cap mismatch.`);
     }
     if (enumVariantName(config.vaultClass) !== VAULT_CLASS_BY_ALLOCATION[allocationKey]) {
       failures.push(`${allocationKey}: vault class mismatch.`);
+    }
+
+    const registryDestinationOwner = registryEntry.approvedDestinationOwner
+      ? new PublicKey(registryEntry.approvedDestinationOwner)
+      : DEFAULT_PUBLIC_KEY;
+    const registryDestinationTokenAccount = registryEntry.approvedDestinationTokenAccount
+      ? new PublicKey(registryEntry.approvedDestinationTokenAccount)
+      : DEFAULT_PUBLIC_KEY;
+    if (!config.approvedDestinationOwner.equals(registryDestinationOwner)) {
+      failures.push(`${allocationKey}: approved destination owner mismatch.`);
+    }
+    if (!config.approvedDestinationTokenAccount.equals(registryDestinationTokenAccount)) {
+      failures.push(`${allocationKey}: approved destination token account mismatch.`);
+    }
+
+    if (!registryDestinationTokenAccount.equals(DEFAULT_PUBLIC_KEY)) {
+      const destinationAccount = await getAccount(
+        connection,
+        registryDestinationTokenAccount,
+        'confirmed',
+        TOKEN_PROGRAM_ID
+      );
+      if (!destinationAccount.mint.equals(mint)) {
+        failures.push(`${allocationKey}: approved destination uses wrong mint.`);
+      }
+      if (!destinationAccount.owner.equals(registryDestinationOwner)) {
+        failures.push(`${allocationKey}: approved destination owner does not control its token account.`);
+      }
+      if (destinationAccount.owner.equals(derived.authorityPda)) {
+        failures.push(`${allocationKey}: approved destination is the same reserve authority.`);
+      }
     }
 
     const vaultAccount = await getAccount(connection, derived.tokenAccount, 'confirmed', TOKEN_PROGRAM_ID);
@@ -93,14 +131,27 @@ async function main() {
       TOKEN_PROGRAM_ID
     );
     const legacyBalance = legacyAccount.amount;
-    const accountedDeposits = BigInt(config.totalDeposited.toString());
+    const authorizedDeposited = BigInt(config.authorizedDeposited.toString());
+    const unsolicitedBalance = BigInt(config.unsolicitedBalance.toString());
     const released = BigInt(config.totalReleased.toString());
 
-    if (accountedDeposits !== vaultBalance + released) {
-      failures.push(`${allocationKey}: deposit/release accounting does not match token balance.`);
+    if (released > authorizedDeposited) {
+      failures.push(`${allocationKey}: released amount exceeds authorized deposits.`);
+    } else {
+      const expectedVaultBalance = authorizedDeposited - released + unsolicitedBalance;
+      if (vaultBalance !== expectedVaultBalance) {
+        failures.push(
+          `${allocationKey}: vault balance does not match authorized remaining plus unsolicited balance.`
+        );
+      }
     }
-    if (vaultBalance + legacyBalance + released !== expected) {
-      failures.push(`${allocationKey}: legacy + vault + released does not equal allocation.`);
+    if (authorizedDeposited > expected) {
+      failures.push(`${allocationKey}: authorized deposits exceed the approved allocation.`);
+    }
+    if (legacyBalance + authorizedDeposited !== expected) {
+      failures.push(
+        `${allocationKey}: legacy balance plus authorized deposits does not equal the allocation.`
+      );
     }
 
     combinedVaultBalances += vaultBalance;
@@ -110,6 +161,8 @@ async function main() {
     console.log(`  config: ${derived.configPda.toBase58()}`);
     console.log(`  authority: ${derived.authorityPda.toBase58()}`);
     console.log(`  vault balance: ${vaultBalance}`);
+    console.log(`  authorized deposited: ${authorizedDeposited}`);
+    console.log(`  unsolicited balance: ${unsolicitedBalance}`);
     console.log(`  released: ${released}`);
     console.log(`  old allocation balance: ${legacyBalance}`);
     console.log('');
@@ -149,7 +202,7 @@ async function main() {
   }
 
   console.log('VERIFICATION PASSED');
-  console.log('All approved allocations are separately controlled by the expected program PDAs.');
+  console.log('Authorized migration sources, destinations, accounting, and PDA custody are correct.');
   console.log('No minting occurred and total PEX supply remains exactly 1 billion.');
 }
 
