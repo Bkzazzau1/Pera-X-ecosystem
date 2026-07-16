@@ -22,6 +22,8 @@ id.json
 keypair.json
 wallet.json
 solana-wallet.json
+.local/
+**/.local/
 
 # Pera-X production-only configs
 perax-contracts/config/pex-allocation-wallets.json
