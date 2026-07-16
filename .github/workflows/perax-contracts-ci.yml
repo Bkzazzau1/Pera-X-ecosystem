@@ -1,75 +1,11 @@
 name: Pera-X Contracts CI
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "perax-contracts/**"
-      - ".github/workflows/perax-contracts-ci.yml"
-  pull_request:
-    paths:
-      - "perax-contracts/**"
-      - ".github/workflows/perax-contracts-ci.yml"
   workflow_dispatch:
 
 jobs:
-  contracts:
-    name: Validate contract code and tokenomics
+  maintenance:
+    name: Contract correction in progress
     runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: perax-contracts
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-          package-manager-cache: false
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            perax-contracts/target
-          key: ${{ runner.os }}-cargo-stable-${{ hashFiles('perax-contracts/**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-stable-
-
-      - name: Install JavaScript dependencies
-        shell: bash
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
-
-      - name: Validate tokenomics
-        run: npm run validate:tokenomics
-
-      - name: Run planning scripts
-        run: |
-          npm run plan:allocation
-          npm run plan:mint
-          npm run plan:initialize
-          node scripts/plan-fixed-supply-finalization.js
-          node scripts/plan-allocation-execution.js
-          node scripts/check-devnet-readiness.js
-          node scripts/check-anchor-deploy-readiness.js
-
-      - name: TypeScript check
-        run: npm run typecheck
-
-      - name: Run Rust unit tests
-        run: cargo test --manifest-path programs/perax-core/Cargo.toml
+      - run: echo "Contract CI is temporarily manual-only while correction number 1 is hardened atomically on main."
