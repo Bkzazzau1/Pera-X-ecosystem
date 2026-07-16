@@ -1,11 +1,103 @@
 name: Pera-X Contracts CI
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "perax-contracts/**"
+      - ".github/workflows/perax-contracts-ci.yml"
+  pull_request:
+    paths:
+      - "perax-contracts/**"
+      - ".github/workflows/perax-contracts-ci.yml"
   workflow_dispatch:
 
 jobs:
-  maintenance:
-    name: Contract correction in progress
+  contracts:
+    name: Build and transaction-test Anchor program
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    defaults:
+      run:
+        working-directory: perax-contracts
+
     steps:
-      - run: echo "Contract CI is temporarily manual-only while correction number 1 is hardened atomically on main."
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Cache Cargo registry and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            perax-contracts/target
+          key: ${{ runner.os }}-cargo-stable-${{ hashFiles('perax-contracts/**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-stable-
+
+      - name: Install Solana CLI
+        shell: bash
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v1.18.26/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor CLI
+        shell: bash
+        run: |
+          cargo install \
+            --git https://github.com/coral-xyz/anchor \
+            --tag v0.30.1 \
+            anchor-cli \
+            --locked
+
+      - name: Create ephemeral CI wallet
+        shell: bash
+        run: |
+          mkdir -p .local
+          solana-keygen new \
+            --no-bip39-passphrase \
+            --silent \
+            --force \
+            --outfile .local/devnet-deployer.json
+
+      - name: Install JavaScript dependencies
+        run: npm install
+
+      - name: Validate tokenomics
+        run: npm run validate:tokenomics
+
+      - name: Run planning scripts
+        run: |
+          npm run plan:allocation
+          npm run plan:mint
+          npm run plan:initialize
+          node scripts/plan-fixed-supply-finalization.js
+          node scripts/plan-allocation-execution.js
+          node scripts/check-devnet-readiness.js
+          node scripts/check-anchor-deploy-readiness.js
+
+      - name: Build Anchor program
+        run: anchor build
+
+      - name: Run Rust unit tests
+        run: cargo test --manifest-path programs/perax-core/Cargo.toml
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Run local-validator transaction tests
+        run: anchor test --provider.cluster localnet
