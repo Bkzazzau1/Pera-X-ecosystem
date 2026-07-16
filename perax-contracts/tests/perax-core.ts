@@ -1,5 +1,4 @@
 import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
 import { expect } from "chai";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -98,7 +97,9 @@ const ALLOCATIONS: AllocationDefinition[] = [
 describe("perax-core reserve vault custody", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
-  const program = anchor.workspace.PeraxCore as Program<any>;
+  // Anchor workspace clients are generated dynamically from the IDL at runtime.
+  // Keeping this boundary dynamic avoids TypeScript recursively expanding the full IDL.
+  const program: any = anchor.workspace.PeraxCore;
   const programAccounts = program.account as unknown as {
     reserveVaultConfig: {
       all(): Promise<Array<{ account: ReserveVaultConfigAccount }>>;
