@@ -1,48 +1,90 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, TransferChecked};
 use crate::{
-    approved_allocation, calculate_vault_available_amount, reset_release_windows_if_needed,
+    approved_allocation, calculate_vault_available_amount, is_market_releasable_vault_class,
+    is_program_derived_destination, reset_release_windows_if_needed,
     validate_emergency_release_fields, validate_growth_release_fields, validate_oracle_snapshot,
     validate_reference, validate_vault_class_for_release, DepositIntoReserveVault,
-    ExecuteMarketConditionalRelease, InitializeReserveVault, MarketConditionalReleaseParams,
-    PeraxError, ReconcileReserveVault, RecordMarketConditionalRelease,
-    ReleaseType, ReserveVaultDepositReceived, ReserveVaultInitialized, ReserveVaultPaused,
-    ReserveVaultReconciled, ReserveVaultReleaseExecuted, SetReserveVaultPause,
-    VaultClass, VaultMarketConditionalReleaseParams, PEX_MINT_DECIMALS,
+    ExecuteMarketConditionalRelease, InitializeReserveVault, InitializeReserveVaultParams,
+    MarketConditionalReleaseParams, PeraxError, ReconcileReserveVault,
+    RecordMarketConditionalRelease, ReleaseType, ReserveVaultDepositReceived,
+    ReserveVaultInitialized, ReserveVaultPaused, ReserveVaultReconciled,
+    ReserveVaultReleaseExecuted, SetReserveVaultPause, VaultMarketConditionalReleaseParams,
+    PEX_MINT_DECIMALS,
 };
 
 pub fn initialize_reserve_vault(
     ctx: Context<InitializeReserveVault>,
-    allocation_id: [u8; 32],
-    vault_class: VaultClass,
-    allocation_cap: u64,
+    params: InitializeReserveVaultParams,
 ) -> Result<()> {
-    validate_reference(allocation_id)?;
-    require!(allocation_cap > 0, PeraxError::InvalidAllocationCap);
+    validate_reference(params.allocation_id)?;
+    require!(
+        params.allocation_cap > 0,
+        PeraxError::InvalidAllocationCap
+    );
     require!(
         ctx.accounts.token_mint.decimals == PEX_MINT_DECIMALS,
         PeraxError::InvalidTokenMint
     );
-
-    let (approved_class, approved_cap) = approved_allocation(allocation_id)?;
     require!(
-        vault_class == approved_class,
+        params.authorized_source_owner != Pubkey::default(),
+        PeraxError::InvalidAuthorizedSourceOwner
+    );
+    require!(
+        params.authorized_source_token_account != Pubkey::default(),
+        PeraxError::InvalidAuthorizedSourceTokenAccount
+    );
+
+    let (approved_class, approved_cap) = approved_allocation(params.allocation_id)?;
+    require!(
+        params.vault_class == approved_class,
         PeraxError::UnsupportedVaultClass
     );
     require!(
-        allocation_cap <= approved_cap,
+        params.allocation_cap <= approved_cap,
         PeraxError::AllocationCapExceeded
     );
+    require!(
+        params.authorized_source_token_account != ctx.accounts.vault_token_account.key(),
+        PeraxError::InvalidAuthorizedSourceTokenAccount
+    );
+
+    if is_market_releasable_vault_class(params.vault_class) {
+        require!(
+            params.approved_destination_owner != Pubkey::default()
+                && params.approved_destination_token_account != Pubkey::default(),
+            PeraxError::InvalidApprovedDestination
+        );
+        require!(
+            params.approved_destination_token_account != ctx.accounts.vault_token_account.key(),
+            PeraxError::InvalidApprovedDestination
+        );
+        require!(
+            !is_program_derived_destination(params.approved_destination_owner),
+            PeraxError::DestinationIsReserveVault
+        );
+    } else {
+        require!(
+            params.approved_destination_owner == Pubkey::default()
+                && params.approved_destination_token_account == Pubkey::default(),
+            PeraxError::InvalidApprovedDestination
+        );
+    }
 
     let config = &mut ctx.accounts.reserve_vault_config;
     config.state = ctx.accounts.state.key();
-    config.allocation_id = allocation_id;
-    config.vault_class = vault_class;
+    config.allocation_id = params.allocation_id;
+    config.vault_class = params.vault_class;
     config.token_mint = ctx.accounts.token_mint.key();
     config.vault_authority = ctx.accounts.vault_authority.key();
     config.vault_token_account = ctx.accounts.vault_token_account.key();
-    config.allocation_cap = allocation_cap;
-    config.total_deposited = 0;
+    config.authorized_source_owner = params.authorized_source_owner;
+    config.authorized_source_token_account = params.authorized_source_token_account;
+    config.approved_destination_owner = params.approved_destination_owner;
+    config.approved_destination_token_account = params.approved_destination_token_account;
+    config.allocation_cap = params.allocation_cap;
+    config.authorized_deposited = 0;
+    config.unsolicited_balance = 0;
     config.total_released = 0;
     config.is_active = true;
     config.is_paused = false;
@@ -51,12 +93,16 @@ pub fn initialize_reserve_vault(
 
     emit!(ReserveVaultInitialized {
         state: config.state,
-        allocation_id,
-        vault_class,
+        allocation_id: config.allocation_id,
+        vault_class: config.vault_class,
         token_mint: config.token_mint,
         vault_authority: config.vault_authority,
         vault_token_account: config.vault_token_account,
-        allocation_cap,
+        authorized_source_owner: config.authorized_source_owner,
+        authorized_source_token_account: config.authorized_source_token_account,
+        approved_destination_owner: config.approved_destination_owner,
+        approved_destination_token_account: config.approved_destination_token_account,
+        allocation_cap: config.allocation_cap,
         initialized_by: ctx.accounts.authority.key(),
         initialized_at: Clock::get()?.unix_timestamp,
     });
@@ -72,19 +118,21 @@ pub fn deposit_into_reserve_vault(
     require!(amount > 0, PeraxError::InvalidAmount);
     let config = &ctx.accounts.reserve_vault_config;
     require!(config.is_active, PeraxError::VaultInactive);
+    require!(
+        ctx.accounts.source_owner.key() == config.authorized_source_owner,
+        PeraxError::InvalidAuthorizedSourceOwner
+    );
+    require!(
+        ctx.accounts.source_token_account.key() == config.authorized_source_token_account,
+        PeraxError::InvalidAuthorizedSourceTokenAccount
+    );
 
-    let observed_lifetime_deposits = ctx
-        .accounts
-        .vault_token_account
-        .amount
-        .checked_add(config.total_released)
-        .ok_or(PeraxError::VaultAccountingOverflow)?;
-    let accounted_deposits = config.total_deposited.max(observed_lifetime_deposits);
-    let new_total_deposited = accounted_deposits
+    let new_authorized_deposited = config
+        .authorized_deposited
         .checked_add(amount)
         .ok_or(PeraxError::VaultAccountingOverflow)?;
     require!(
-        new_total_deposited <= config.allocation_cap,
+        new_authorized_deposited <= config.allocation_cap,
         PeraxError::AllocationCapExceeded
     );
     let vault_balance_after = ctx
@@ -101,7 +149,7 @@ pub fn deposit_into_reserve_vault(
     )?;
 
     let config = &mut ctx.accounts.reserve_vault_config;
-    config.total_deposited = new_total_deposited;
+    config.authorized_deposited = new_authorized_deposited;
 
     emit!(ReserveVaultDepositReceived {
         state: config.state,
@@ -111,7 +159,8 @@ pub fn deposit_into_reserve_vault(
         source_token_account: ctx.accounts.source_token_account.key(),
         vault_token_account: config.vault_token_account,
         amount,
-        total_deposited: config.total_deposited,
+        authorized_deposited: config.authorized_deposited,
+        unsolicited_balance: config.unsolicited_balance,
         vault_balance_after,
         deposited_at: Clock::get()?.unix_timestamp,
     });
@@ -151,33 +200,35 @@ pub fn reconcile_reserve_vault(
     allocation_id: [u8; 32],
 ) -> Result<()> {
     let config = &mut ctx.accounts.reserve_vault_config;
-    let observed_total_deposited = ctx
-        .accounts
-        .vault_token_account
-        .amount
-        .checked_add(config.total_released)
-        .ok_or(PeraxError::VaultAccountingOverflow)?;
-
     require!(
-        observed_total_deposited >= config.total_deposited,
+        config.total_released <= config.authorized_deposited,
         PeraxError::VaultAccountingMismatch
     );
+    let authorized_remaining = config
+        .authorized_deposited
+        .checked_sub(config.total_released)
+        .ok_or(PeraxError::VaultAccountingMismatch)?;
+    let actual_vault_balance = ctx.accounts.vault_token_account.amount;
     require!(
-        observed_total_deposited <= config.allocation_cap,
-        PeraxError::AllocationCapExceeded
+        actual_vault_balance >= authorized_remaining,
+        PeraxError::VaultAccountingMismatch
     );
 
-    let previous_total_deposited = config.total_deposited;
-    config.total_deposited = observed_total_deposited;
+    let reconciled_unsolicited_balance = actual_vault_balance
+        .checked_sub(authorized_remaining)
+        .ok_or(PeraxError::VaultAccountingMismatch)?;
+    let previous_unsolicited_balance = config.unsolicited_balance;
+    config.unsolicited_balance = reconciled_unsolicited_balance;
 
     emit!(ReserveVaultReconciled {
         state: ctx.accounts.state.key(),
         allocation_id,
         vault_token_account: config.vault_token_account,
-        previous_total_deposited,
-        reconciled_total_deposited: observed_total_deposited,
-        actual_vault_balance: ctx.accounts.vault_token_account.amount,
+        authorized_deposited: config.authorized_deposited,
         total_released: config.total_released,
+        previous_unsolicited_balance,
+        reconciled_unsolicited_balance,
+        actual_vault_balance,
         reconciled_by: ctx.accounts.authority.key(),
         reconciled_at: Clock::get()?.unix_timestamp,
     });
@@ -196,15 +247,27 @@ pub fn execute_market_conditional_release(
         params.destination_token_account == ctx.accounts.destination_token_account.key(),
         PeraxError::InvalidReleaseDestination
     );
-    require!(
-        ctx.accounts.destination_token_account.key()
-            != ctx.accounts.reserve_vault_config.vault_token_account,
-        PeraxError::InvalidReleaseDestination
-    );
 
     let config_snapshot = &ctx.accounts.reserve_vault_config;
     require!(config_snapshot.is_active, PeraxError::VaultInactive);
     require!(!config_snapshot.is_paused, PeraxError::VaultPaused);
+    require!(
+        ctx.accounts.destination_token_account.key()
+            == config_snapshot.approved_destination_token_account
+            && ctx.accounts.destination_token_account.owner
+                == config_snapshot.approved_destination_owner,
+        PeraxError::InvalidApprovedDestination
+    );
+    require!(
+        ctx.accounts.destination_token_account.key() != config_snapshot.vault_token_account,
+        PeraxError::InvalidReleaseDestination
+    );
+    require!(
+        !is_program_derived_destination(
+            ctx.accounts.destination_token_account.owner,
+        ),
+        PeraxError::DestinationIsReserveVault
+    );
     validate_vault_class_for_release(config_snapshot.vault_class, params.release_type)?;
 
     let available_amount = calculate_vault_available_amount(
@@ -244,8 +307,13 @@ pub fn execute_market_conditional_release(
         .amount
         .checked_sub(params.requested_amount)
         .ok_or(PeraxError::InsufficientVaultBalance)?;
-    let allocation_id = ctx.accounts.reserve_vault_config.allocation_id;
-    let authority_bump = [ctx.accounts.reserve_vault_config.authority_bump];
+    require!(
+        remaining_vault_balance >= config_snapshot.unsolicited_balance,
+        PeraxError::VaultAccountingMismatch
+    );
+
+    let allocation_id = config_snapshot.allocation_id;
+    let authority_bump = [config_snapshot.authority_bump];
     let authority_seeds: &[&[u8]] = &[
         b"reserve-authority",
         allocation_id.as_ref(),
@@ -289,7 +357,7 @@ pub fn execute_market_conditional_release(
         .checked_add(params.requested_amount)
         .ok_or(PeraxError::VaultAccountingOverflow)?;
     require!(
-        config.total_released <= config.total_deposited,
+        config.total_released <= config.authorized_deposited,
         PeraxError::VaultAccountingMismatch
     );
 
@@ -325,6 +393,8 @@ pub fn execute_market_conditional_release(
         release_type: params.release_type,
         release_amount: params.requested_amount,
         remaining_vault_balance,
+        authorized_deposited: config.authorized_deposited,
+        unsolicited_balance: config.unsolicited_balance,
         total_released: config.total_released,
         market_observation_id: params.market_observation_id,
         observed_at: params.snapshot.observed_at,
