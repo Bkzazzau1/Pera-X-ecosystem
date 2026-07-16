@@ -46,7 +46,7 @@ jobs:
           package-manager-cache: false
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.79.0
         with:
           components: rustfmt
 
@@ -57,9 +57,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             perax-contracts/target
-          key: ${{ runner.os }}-cargo-stable-${{ hashFiles('perax-contracts/**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-rust-1.79.0-${{ hashFiles('perax-contracts/**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-stable-
+            ${{ runner.os }}-cargo-rust-1.79.0-
 
       - name: Install Solana CLI
         shell: bash
