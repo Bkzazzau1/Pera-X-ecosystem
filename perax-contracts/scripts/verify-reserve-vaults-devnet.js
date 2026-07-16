@@ -30,6 +30,7 @@ async function main() {
   const allConfigs = await program.account.reserveVaultConfig.all();
   const observedKeys = new Set();
   let combinedVaultBalances = 0n;
+  let combinedAuthorizedRemaining = 0n;
   let combinedLegacyBalances = 0n;
 
   console.log('================================================');
@@ -155,6 +156,7 @@ async function main() {
     }
 
     combinedVaultBalances += vaultBalance;
+    combinedAuthorizedRemaining += authorizedDeposited - released;
     combinedLegacyBalances += legacyBalance;
 
     console.log(`${allocationKey}`);
@@ -185,11 +187,12 @@ async function main() {
     (sum, item) => sum + BigInt(item.account.totalReleased.toString()),
     0n
   );
-  if (combinedVaultBalances + combinedLegacyBalances + releasedTotal !== expectedSupply) {
-    failures.push('Combined vault, old-account, and released totals do not equal 1 billion PEX.');
+  if (combinedAuthorizedRemaining + combinedLegacyBalances + releasedTotal !== expectedSupply) {
+    failures.push('Authorized remaining, old-account, and released accounting does not equal 1 billion PEX.');
   }
 
-  console.log(`Combined vault balances: ${combinedVaultBalances}`);
+  console.log(`Combined physical vault balances: ${combinedVaultBalances}`);
+  console.log(`Combined authorized remaining: ${combinedAuthorizedRemaining}`);
   console.log(`Combined old allocation balances: ${combinedLegacyBalances}`);
   console.log(`Combined released amount: ${releasedTotal}`);
   console.log(`Mint supply: ${mintInfo.supply}`);
