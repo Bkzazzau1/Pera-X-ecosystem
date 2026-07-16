@@ -13,5 +13,31 @@
     "advisor_wallet_1": ".local/allocation-advisor-1-owner.json",
     "advisor_wallet_2": ".local/allocation-advisor-2-owner.json",
     "advisor_wallet_3": ".local/allocation-advisor-3-owner.json"
+  },
+  "approvedDestinations": {
+    "community_utility_rewards": {
+      "ownerWallet": "REPLACE_WITH_APPROVED_OWNER_PUBLIC_KEY",
+      "tokenAccount": "REPLACE_WITH_APPROVED_PEX_TOKEN_ACCOUNT"
+    },
+    "treasury": {
+      "ownerWallet": "REPLACE_WITH_APPROVED_OWNER_PUBLIC_KEY",
+      "tokenAccount": "REPLACE_WITH_APPROVED_PEX_TOKEN_ACCOUNT"
+    },
+    "ecosystem_marketing": {
+      "ownerWallet": "REPLACE_WITH_APPROVED_OWNER_PUBLIC_KEY",
+      "tokenAccount": "REPLACE_WITH_APPROVED_PEX_TOKEN_ACCOUNT"
+    },
+    "trading_company_operations": {
+      "ownerWallet": "REPLACE_WITH_APPROVED_OWNER_PUBLIC_KEY",
+      "tokenAccount": "REPLACE_WITH_APPROVED_PEX_TOKEN_ACCOUNT"
+    },
+    "future_team_incentives": {
+      "ownerWallet": "REPLACE_WITH_APPROVED_OWNER_PUBLIC_KEY",
+      "tokenAccount": "REPLACE_WITH_APPROVED_PEX_TOKEN_ACCOUNT"
+    },
+    "team_emergency_reserve": {
+      "ownerWallet": "REPLACE_WITH_APPROVED_OWNER_PUBLIC_KEY",
+      "tokenAccount": "REPLACE_WITH_APPROVED_PEX_TOKEN_ACCOUNT"
+    }
   }
 }
