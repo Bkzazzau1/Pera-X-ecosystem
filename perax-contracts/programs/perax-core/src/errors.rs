@@ -62,7 +62,7 @@ pub enum PeraxError {
     UnsupportedVaultClass,
     #[msg("The vault allocation cap is invalid.")]
     InvalidAllocationCap,
-    #[msg("The requested cap or deposit exceeds the approved allocation cap.")]
+    #[msg("The requested cap or authorized deposit exceeds the approved allocation cap.")]
     AllocationCapExceeded,
     #[msg("The reserve vault configuration is invalid.")]
     InvalidVaultConfiguration,
@@ -76,11 +76,11 @@ pub enum PeraxError {
     VaultPaused,
     #[msg("This vault class cannot use the market-conditional release route.")]
     VaultClassNotMarketReleasable,
-    #[msg("The reserve vault does not have enough authoritative available PEX.")]
+    #[msg("The reserve vault does not have enough authorized available PEX.")]
     InsufficientVaultBalance,
     #[msg("The release destination does not match the destination signed by the oracle bot.")]
     InvalidReleaseDestination,
-    #[msg("Vault accounting is inconsistent with deposited and released totals.")]
+    #[msg("Vault accounting is inconsistent with authorized deposits, unsolicited balance, and released totals.")]
     VaultAccountingMismatch,
     #[msg("Vault accounting arithmetic overflowed.")]
     VaultAccountingOverflow,
@@ -98,4 +98,12 @@ pub enum PeraxError {
     InvalidMarketHealthScore,
     #[msg("The selected burn source account is not approved for this burn source.")]
     InvalidBurnSourceAccount,
+    #[msg("The migration signer is not the configured allocation source owner.")]
+    InvalidAuthorizedSourceOwner,
+    #[msg("The migration token account is not the configured allocation source account.")]
+    InvalidAuthorizedSourceTokenAccount,
+    #[msg("The configured or supplied release destination is not approved for this vault.")]
+    InvalidApprovedDestination,
+    #[msg("A program-derived account, including another reserve vault, cannot receive a market release.")]
+    DestinationIsReserveVault,
 }
