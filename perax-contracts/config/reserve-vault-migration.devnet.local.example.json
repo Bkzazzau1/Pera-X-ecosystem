@@ -1,0 +1,17 @@
+{
+  "allocationSigners": {
+    "liquidity_pool": ".local/allocation-liquidity-owner.json",
+    "community_utility_rewards": ".local/allocation-community-owner.json",
+    "treasury": ".local/allocation-treasury-owner.json",
+    "ecosystem_marketing": ".local/allocation-ecosystem-owner.json",
+    "trading_company_operations": ".local/allocation-operations-owner.json",
+    "development_team": ".local/allocation-development-team-owner.json",
+    "founder": ".local/allocation-founder-owner.json",
+    "future_team_incentives": ".local/allocation-future-team-owner.json",
+    "team_emergency_reserve": ".local/allocation-emergency-owner.json",
+    "private_strategic_investors": ".local/allocation-private-investors-owner.json",
+    "advisor_wallet_1": ".local/allocation-advisor-1-owner.json",
+    "advisor_wallet_2": ".local/allocation-advisor-2-owner.json",
+    "advisor_wallet_3": ".local/allocation-advisor-3-owner.json"
+  }
+}
