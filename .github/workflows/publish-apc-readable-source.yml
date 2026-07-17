@@ -66,19 +66,34 @@ jobs:
           echo 'e752f07cb5854171cfefb51650f6c1a7604bc4e3a9218b36ce935f0851ebae43  /tmp/apc-fix01.patch' | sha256sum --check
           echo "Final multipart patch digest: $(sha256sum /tmp/apc-final.patch | cut -d' ' -f1)"
 
-      - name: Reconstruct readable implementation branch
+      - name: Switch to clean implementation branch
         shell: bash
         run: |
           set -euo pipefail
           git fetch origin agent/adaptive-price-control
-          git switch agent/adaptive-price-control
+          git switch -C agent/adaptive-price-control origin/agent/adaptive-price-control
           test "$(git rev-parse HEAD)" = "67036d6a2bbabb9801359dc627f5c1a5bd913507"
-          git apply --check /tmp/apc-base.patch
+
+      - name: Apply base APC source
+        shell: bash
+        run: |
+          set -o pipefail
+          git apply --check --verbose /tmp/apc-base.patch 2>&1 | tee /tmp/apply-base.log
           git apply /tmp/apc-base.patch
-          git apply --check /tmp/apc-fix01.patch
+
+      - name: Apply validated correction fixes
+        shell: bash
+        run: |
+          set -o pipefail
+          git apply --check --verbose /tmp/apc-fix01.patch 2>&1 | tee /tmp/apply-fix01.log
           git apply /tmp/apc-fix01.patch
           (cd perax-contracts && cargo +1.79.0 fmt --all)
-          git apply --check /tmp/apc-final.patch
+
+      - name: Apply final APC source
+        shell: bash
+        run: |
+          set -o pipefail
+          git apply --check --verbose /tmp/apc-final.patch 2>&1 | tee /tmp/apply-final.log
           git apply /tmp/apc-final.patch
           git diff --check
 
@@ -117,3 +132,17 @@ jobs:
           git config user.email "actions@github.com"
           git commit -m "Implement adaptive price control"
           git push origin agent/adaptive-price-control
+
+      - name: Upload publisher diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apc-publisher-diagnostics
+          path: |
+            /tmp/apc-base.patch
+            /tmp/apc-fix01.patch
+            /tmp/apc-final.patch
+            /tmp/apply-base.log
+            /tmp/apply-fix01.log
+            /tmp/apply-final.log
+          if-no-files-found: warn
