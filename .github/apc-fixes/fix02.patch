@@ -1,0 +1,314 @@
+--- a/perax-contracts/programs/perax-core/src/contexts.rs
++++ b/perax-contracts/programs/perax-core/src/contexts.rs
+@@ -718,6 +718,33 @@
+     pub token_mint: Account<'info, Mint>,
+     pub oracle_feed: Signer<'info>,
+     pub token_program: Program<'info, Token>,
++}
++
++#[derive(Accounts)]
++pub struct ConfirmApcAbsorption<'info> {
++    #[account(seeds = [b"perax-state"], bump = state.bump)]
++    pub state: Account<'info, PeraxState>,
++    #[account(
++        seeds = [b"apc-config", state.key().as_ref()],
++        bump = apc_config.bump,
++        has_one = oracle_feed @ PeraxError::Unauthorized
++    )]
++    pub apc_config: Account<'info, ApcConfig>,
++    #[account(
++        mut,
++        seeds = [b"apc-state", apc_config.key().as_ref()],
++        bump = apc_state.bump,
++        constraint = apc_state.config == apc_config.key() @ PeraxError::ApcNotInitialized
++    )]
++    pub apc_state: Account<'info, ApcState>,
++    #[account(
++        mut,
++        seeds = [b"apc-observation", observation.observation_id.as_ref()],
++        bump = observation.bump,
++        constraint = observation.oracle_feed == oracle_feed.key() @ PeraxError::Unauthorized
++    )]
++    pub observation: Account<'info, ApcObservation>,
++    pub oracle_feed: Signer<'info>,
+ }
+ 
+ #[derive(Accounts)]
+--- a/perax-contracts/programs/perax-core/src/events.rs
++++ b/perax-contracts/programs/perax-core/src/events.rs
+@@ -283,6 +283,16 @@
+ }
+ 
+ #[event]
++pub struct ApcAbsorptionConfirmed {
++    pub apc_state: Pubkey,
++    pub band_index: u32,
++    pub observation_id: [u8; 32],
++    pub reference_price: u64,
++    pub confirmed_price: u64,
++    pub confirmed_at: i64,
++}
++
++#[event]
+ pub struct ApcStatusChanged {
+     pub apc_state: Pubkey,
+     pub previous_status: ApcStatus,
+--- a/perax-contracts/programs/perax-core/src/instructions/apc.rs
++++ b/perax-contracts/programs/perax-core/src/instructions/apc.rs
+@@ -3,12 +3,14 @@
+     calculate_counterweight_requirement, calculate_effective_apc_price, calculate_next_band_price,
+     calculate_vault_available_amount, is_apc_releasable_vault_class,
+     is_program_derived_destination, reset_apc_windows_if_needed, reset_release_windows_if_needed,
+-    validate_apc_market_gates, validate_apc_observation_fresh, validate_apc_observation_submission,
+-    validate_apc_policy, validate_apc_release_caps, validate_reference,
++    validate_apc_absorption_confirmation, validate_apc_market_gates,
++    validate_apc_observation_fresh, validate_apc_observation_submission, validate_apc_policy,
++    validate_apc_release_caps, validate_reference,
+     validate_sequential_band_index, ActivateApcBandParams, ActivateNextApcBand, ApcBandActivated,
+-    ApcInitialized, ApcObservationSubmitted, ApcPaused, ApcPumpControlEntered, ApcReleaseExecuted,
+-    ApcStatus, ApcStatusChanged, ExecuteApcRelease, ExecuteApcReleaseParams, InitializeApc,
+-    InitializeApcParams, PauseApc, PeraxError, SubmitApcObservation, SubmitApcObservationParams,
+-    PEX_MINT_DECIMALS,
++    ApcAbsorptionConfirmed, ApcInitialized, ApcObservationSubmitted, ApcPaused,
++    ApcPumpControlEntered, ApcReleaseExecuted, ApcStatus, ApcStatusChanged, ConfirmApcAbsorption,
++    ExecuteApcRelease, ExecuteApcReleaseParams, InitializeApc, InitializeApcParams, PauseApc,
++    PeraxError, SubmitApcObservation, SubmitApcObservationParams, PEX_MINT_DECIMALS,
+ };
+ use anchor_lang::prelude::*;
+ use anchor_spl::token::{self, TransferChecked};
+@@ -66,6 +68,7 @@
+     let apc_state = &mut ctx.accounts.apc_state;
+     apc_state.config = config.key();
+     apc_state.status = ApcStatus::Armed;
++    apc_state.status_before_pause = ApcStatus::Armed;
+     apc_state.current_reference_price = ctx.accounts.state.launch_price;
+     apc_state.next_band_price = config.first_activation_price;
+     apc_state.current_band_index = 0;
+@@ -159,6 +162,7 @@
+     observation.observed_at = params.observed_at;
+     observation.submitted_at = now;
+     observation.is_consumed_for_release = false;
++    observation.is_consumed_for_confirmation = false;
+     observation.consumed_by_release = Pubkey::default();
+     observation.bump = ctx.bumps.observation;
+ 
+@@ -328,7 +332,8 @@
+     validate_apc_market_gates(config, &ctx.accounts.observation)?;
+     require!(
+-        !ctx.accounts.observation.is_consumed_for_release,
++        !ctx.accounts.observation.is_consumed_for_release
++            && !ctx.accounts.observation.is_consumed_for_confirmation,
+         PeraxError::ObservationAlreadyUsed
+     );
+@@ -554,6 +559,54 @@
+     Ok(())
+ }
+ 
++pub fn confirm_apc_absorption(ctx: Context<ConfirmApcAbsorption>) -> Result<()> {
++    require!(!ctx.accounts.state.is_paused, PeraxError::ProgramPaused);
++    require!(ctx.accounts.apc_config.is_active, PeraxError::ApcInactive);
++    require!(!ctx.accounts.apc_config.is_paused, PeraxError::ApcPaused);
++    let now = Clock::get()?.unix_timestamp;
++    let confirmed_price = validate_apc_absorption_confirmation(
++        &ctx.accounts.apc_config,
++        &ctx.accounts.apc_state,
++        &ctx.accounts.observation,
++        now,
++    )?;
++
++    let previous_status = ctx.accounts.apc_state.status;
++    ctx.accounts.apc_state.status = ApcStatus::Active;
++    ctx.accounts.observation.is_consumed_for_confirmation = true;
++
++    emit!(ApcAbsorptionConfirmed {
++        apc_state: ctx.accounts.apc_state.key(),
++        band_index: ctx.accounts.apc_state.current_band_index,
++        observation_id: ctx.accounts.observation.observation_id,
++        reference_price: ctx.accounts.apc_state.current_reference_price,
++        confirmed_price,
++        confirmed_at: now,
++    });
++    emit!(ApcStatusChanged {
++        apc_state: ctx.accounts.apc_state.key(),
++        previous_status,
++        new_status: ApcStatus::Active,
++        actor: ctx.accounts.oracle_feed.key(),
++        changed_at: now,
++    });
++
++    Ok(())
++}
++
+ pub fn pause_apc(ctx: Context<PauseApc>, is_paused: bool) -> Result<()> {
+     let actor = ctx.accounts.actor.key();
+@@ -563,14 +616,21 @@
+         PeraxError::Unauthorized
+     );
+     let previous_status = ctx.accounts.apc_state.status;
+-    ctx.accounts.apc_config.is_paused = is_paused;
+-    ctx.accounts.apc_state.status = if is_paused {
+-        ApcStatus::Paused
+-    } else if ctx.accounts.apc_state.current_band_index == 0 {
+-        ApcStatus::Armed
++    if is_paused {
++        require!(previous_status != ApcStatus::Paused, PeraxError::ApcPaused);
++        ctx.accounts.apc_state.status_before_pause = previous_status;
++        ctx.accounts.apc_state.status = ApcStatus::Paused;
+     } else {
+-        ApcStatus::Active
+-    };
++        require!(
++            previous_status == ApcStatus::Paused,
++            PeraxError::InvalidApcStatus
++        );
++        require!(
++            ctx.accounts.apc_state.status_before_pause != ApcStatus::Paused,
++            PeraxError::InvalidApcStatus
++        );
++        ctx.accounts.apc_state.status = ctx.accounts.apc_state.status_before_pause;
++    }
++    ctx.accounts.apc_config.is_paused = is_paused;
+     let now = Clock::get()?.unix_timestamp;
+--- a/perax-contracts/programs/perax-core/src/instructions/counterweight.rs
++++ b/perax-contracts/programs/perax-core/src/instructions/counterweight.rs
+@@ -91,6 +91,11 @@
+             <= now.saturating_add(ctx.accounts.apc_config.maximum_future_clock_skew_seconds),
+         PeraxError::ObservationFromFuture
+     );
++    require!(
++        now.saturating_sub(params.observed_at)
++            <= ctx.accounts.apc_config.maximum_observation_age_seconds,
++        PeraxError::ObservationStale
++    );
+ 
+     let total_deferred_after = ctx
+--- a/perax-contracts/programs/perax-core/src/lib.rs
++++ b/perax-contracts/programs/perax-core/src/lib.rs
+@@ -184,6 +184,10 @@
+         instructions::execute_deferred_burn(ctx, params)
+     }
+ 
++    pub fn confirm_apc_absorption(ctx: Context<ConfirmApcAbsorption>) -> Result<()> {
++        instructions::confirm_apc_absorption(ctx)
++    }
++
+     pub fn enter_apc_recovery(ctx: Context<EnterApcRecovery>) -> Result<()> {
+--- a/perax-contracts/programs/perax-core/src/state.rs
++++ b/perax-contracts/programs/perax-core/src/state.rs
+@@ -292,6 +292,7 @@
+ pub struct ApcState {
+     pub config: Pubkey,
+     pub status: ApcStatus,
++    pub status_before_pause: ApcStatus,
+     pub current_reference_price: u64,
+@@ -333,6 +334,7 @@
+     pub submitted_at: i64,
+     pub is_consumed_for_release: bool,
++    pub is_consumed_for_confirmation: bool,
+     pub consumed_by_release: Pubkey,
+--- a/perax-contracts/programs/perax-core/src/tests.rs
++++ b/perax-contracts/programs/perax-core/src/tests.rs
+@@ -103,6 +103,7 @@
+         config,
+         status: ApcStatus::Active,
++        status_before_pause: ApcStatus::Active,
+         current_reference_price: 3_600,
+@@ -151,6 +152,33 @@
+     }
+ }
+ 
++fn test_observation(config: &ApcConfig, observation_id: [u8; 32], observed_at: i64) -> ApcObservation {
++    ApcObservation {
++        observation_id,
++        sequence: 2,
++        oracle_feed: config.oracle_feed,
++        pool: config.approved_pool,
++        spot_price: 4_000,
++        twap_price: 3_900,
++        twap_minutes: config.minimum_twap_minutes,
++        liquidity_usd: config.minimum_liquidity_usd,
++        quote_liquidity_usd: config.minimum_liquidity_usd / 2,
++        volume_usd: config.minimum_volume_usd,
++        net_buy_pressure_bps: config.minimum_buy_pressure_bps,
++        price_velocity_bps: 2_000,
++        volatility_bps: 1_000,
++        estimated_price_impact_bps: 100,
++        observed_at,
++        submitted_at: observed_at,
++        is_consumed_for_release: false,
++        is_consumed_for_confirmation: false,
++        consumed_by_release: Pubkey::default(),
++        bump: 252,
++    }
++}
++
+@@ -366,6 +394,36 @@
+ }
+ 
+ #[test]
++fn absorption_confirmation_requires_a_distinct_fresh_supported_observation() {
++    let config = test_apc_config();
++    let mut state = test_apc_state(config.state);
++    state.status = ApcStatus::AwaitingAbsorption;
++    state.current_reference_price = 3_600;
++    state.last_release_observation_id = [7u8; 32];
++    let now = 10_000;
++    let valid = test_observation(&config, [8u8; 32], now - 5);
++    assert_eq!(
++        validate_apc_absorption_confirmation(&config, &state, &valid, now).unwrap(),
++        3_900
++    );
++    let reused = test_observation(&config, [7u8; 32], now - 5);
++    assert!(validate_apc_absorption_confirmation(&config, &state, &reused, now).is_err());
++    let mut below_support = test_observation(&config, [9u8; 32], now - 5);
++    below_support.spot_price = 3_599;
++    below_support.twap_price = 3_599;
++    assert!(validate_apc_absorption_confirmation(&config, &state, &below_support, now).is_err());
++    let stale = test_observation(
++        &config,
++        [10u8; 32],
++        now - config.maximum_observation_age_seconds - 1,
++    );
++    assert!(validate_apc_absorption_confirmation(&config, &state, &stale, now).is_err());
++}
++
++#[test]
+ fn burn_is_deferred_during_pump_absorption_and_recovery() {
+--- a/perax-contracts/programs/perax-core/src/validation.rs
++++ b/perax-contracts/programs/perax-core/src/validation.rs
+@@ -596,6 +596,35 @@
+     Ok(())
+ }
+ 
++pub(crate) fn validate_apc_absorption_confirmation(
++    config: &ApcConfig,
++    apc_state: &ApcState,
++    observation: &ApcObservation,
++    now: i64,
++) -> Result<u64> {
++    require!(
++        matches!(
++            apc_state.status,
++            ApcStatus::AwaitingAbsorption | ApcStatus::PumpControl
++        ),
++        PeraxError::InvalidApcStatus
++    );
++    validate_apc_observation_fresh(config, observation, now)?;
++    validate_apc_market_gates(config, observation)?;
++    require!(
++        observation.observation_id != apc_state.last_release_observation_id,
++        PeraxError::ObservationAlreadyUsed
++    );
++    require!(
++        !observation.is_consumed_for_release && !observation.is_consumed_for_confirmation,
++        PeraxError::ObservationAlreadyUsed
++    );
++    let confirmed_price =
++        calculate_effective_apc_price(observation.spot_price, observation.twap_price)?;
++    require!(
++        confirmed_price >= apc_state.current_reference_price,
++        PeraxError::ApcPriceGateNotMet
++    );
++    Ok(confirmed_price)
++}
++
