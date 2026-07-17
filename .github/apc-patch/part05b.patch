@@ -1,0 +1,127 @@
+!= Pubkey::default(),
++        PeraxError::InvalidRecoveryProgram
++    );
++    require!(params.price_scale > 0, PeraxError::InvalidApcPolicy);
++    let expected_first_activation = state
++        .launch_price
++        .checked_mul(APC_FIRST_ACTIVATION_MULTIPLIER)
++        .ok_or(PeraxError::InvalidApcPolicy)?;
++    require!(
++        params.first_activation_price == expected_first_activation,
++        PeraxError::InvalidApcPolicy
++    );
++    require!(
++        params.minimum_band_interval_bps > 0
++            && params.minimum_band_interval_bps < params.maximum_band_interval_bps,
++        PeraxError::InvalidBandInterval
++    );
++    require!(
++        params.maximum_band_interval_bps <= 10_000,
++        PeraxError::InvalidBandInterval
++    );
++    require!(
++        params.maximum_observation_age_seconds > 0
++            && params.maximum_future_clock_skew_seconds >= 0,
++        PeraxError::InvalidApcPolicy
++    );
++    require!(
++        params.hourly_release_cap > 0
++            && params.hourly_release_cap <= state.daily_release_cap
++            && params.pump_window_release_cap > 0
++            && params.pump_window_release_cap <= state.monthly_release_cap
++            && params.pump_window_seconds > 0,
++        PeraxError::InvalidApcPolicy
++    );
++    require!(
++        params.minimum_counterweight_coverage_bps <= 10_000
++            && params.minimum_buy_pressure_bps <= 10_000,
++        PeraxError::InvalidApcPolicy
++    );
++    require!(
++        params.base_band_release_cap > 0
++            && params.base_band_release_cap <= state.daily_release_cap
++            && params.recovery_spending_cap > 0,
++        PeraxError::InvalidApcPolicy
++    );
++    require!(
++        params.minimum_twap_minutes > 0
++            && params.minimum_liquidity_usd > 0
++            && params.minimum_volume_usd > 0,
++        PeraxError::InvalidApcPolicy
++    );
++    validate_strictly_increasing_u32(params.risk_velocity_thresholds_bps)?;
++    validate_strictly_increasing_u32(params.risk_volatility_thresholds_bps)?;
++    validate_strictly_increasing_u32(params.risk_price_impact_thresholds_bps)?;
++
++    for interval in params.band_interval_bps_by_risk {
++        require!(
++            interval >= params.minimum_band_interval_bps
++                && interval <= params.maximum_band_interval_bps,
++            PeraxError::InvalidBandInterval
++        );
++    }
++    for release_bps in params.band_release_bps_by_risk {
++        require!(release_bps > 0 && release_bps <= 10_000, PeraxError::InvalidApcPolicy);
++    }
++    let mut previous = 10_001u16;
++    for reduction in params.cascade_reduction_bps {
++        require!(
++            reduction > 0 && reduction <= 10_000 && reduction <= previous,
++            PeraxError::InvalidApcPolicy
++        );
++        previous = reduction;
++    }
++    Ok(())
++}
++
++pub(crate) fn validate_apc_observation_submission(
++    config: &ApcConfig,
++    apc_state: &ApcState,
++    params: &SubmitApcObservationParams,
++    now: i64,
++) -> Result<()> {
++    validate_reference(params.observation_id)?;
++    require!(
++        params.sequence > apc_state.last_observation_sequence,
++        PeraxError::ObservationSequenceInvalid
++    );
++    require!(params.pool == config.approved_pool, PeraxError::InvalidApcPool);
++    require!(
++        params.observed_at <= now.saturating_add(config.maximum_future_clock_skew_seconds),
++        PeraxError::ObservationFromFuture
++    );
++    require!(
++        now.saturating_sub(params.observed_at) <= config.maximum_observation_age_seconds,
++        PeraxError::ObservationStale
++    );
++    require!(
++        params.spot_price > 0
++            && params.twap_price > 0
++            && params.twap_minutes > 0
++            && params.liquidity_usd > 0
++            && params.quote_liquidity_usd > 0,
++        PeraxError::InvalidMarketParameter
++    );
++    require!(
++        params.net_buy_pressure_bps <= 10_000,
++        PeraxError::InvalidMarketParameter
++    );
++    Ok(())
++}
++
++pub(crate) fn validate_apc_observation_fresh(
++    config: &ApcConfig,
++    observation: &ApcObservation,
++    now: i64,
++) -> Result<()> {
++    require!(
++        observation.pool == config.approved_pool,
++        PeraxError::InvalidApcPool
++    );
++    require!(
++        observation.observed_at
++            <= now.saturating_add(config.maximum_future_clock_skew_seconds),
++        PeraxError::ObservationFromFuture
++    );
++    require!(
++        now.saturating_sub(observation.observed_at) <= config.maximum_observ
