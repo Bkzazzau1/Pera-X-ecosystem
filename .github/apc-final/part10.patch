@@ -1,0 +1,18 @@
+diff --git a/perax-contracts/programs/perax-core/src/contexts.rs b/perax-contracts/programs/perax-core/src/contexts.rs
+index a91dfa8..ed07c9f 100644
+--- a/perax-contracts/programs/perax-core/src/contexts.rs
++++ b/perax-contracts/programs/perax-core/src/contexts.rs
+@@ -3,9 +3,11 @@ use crate::{
+     ApcReleaseRecord, ApcState, BurnExecutionRecord, ConditionalBuybackBurnParams,
+     CounterweightConfig, CounterweightDepositRecord, DeferredBurnRecord,
+     DepositCounterweightParams, ExecuteApcReleaseParams, ExecuteCounterweightPurchaseParams,
+-    InitializeApcParams, InitializeReserveVaultParams, MarketConditionBurnParams,
++    InitializeApcParams, InitializeRecoveryPoolParams, InitializeReserveVaultParams,
++    MarketConditionBurnParams,
+     MarketConditionalReleaseParams, PaymentRecord, PeraxError, PeraxState,
+-    RecordDeferredBurnParams, ReleaseRecord, ReserveReleaseRecord, ReserveVaultConfig,
++    RecordDeferredBurnParams, RecoveryPoolConfig, ReleaseRecord, ReserveReleaseRecord,
++    ReserveVaultConfig,
+     SubmitApcObservationParams, VaultMarketConditionalReleaseParams,
+ };
+ use anchor_lang::prelude::*;
