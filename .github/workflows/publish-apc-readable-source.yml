@@ -107,20 +107,43 @@ jobs:
           CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +1.85.0 generate-lockfile
           cargo +1.85.0 update -p blake3 --precise 1.5.0
 
-      - name: Validate source before publishing
+      - name: Validate tokenomics policy
+        working-directory: perax-contracts
         shell: bash
         run: |
-          set -euo pipefail
-          cd perax-contracts
-          node scripts/validate-tokenomics.js
+          set -o pipefail
+          node scripts/validate-tokenomics.js 2>&1 | tee /tmp/tokenomics-validation.log
+
+      - name: Verify Rust formatting
+        working-directory: perax-contracts
+        shell: bash
+        run: |
+          set -o pipefail
           cargo +1.79.0 fmt --all
-          cargo +1.79.0 fmt --all -- --check
-          cargo +1.79.0 test --locked --all-targets
-          cargo +1.79.0 check --locked --all-targets
-          cd ../perax-market-engine
-          npm ci
-          npm run typecheck
-          npm test
+          cargo +1.79.0 fmt --all -- --check 2>&1 | tee /tmp/rust-format.log
+
+      - name: Run Rust unit tests
+        working-directory: perax-contracts
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo +1.79.0 test --locked --all-targets 2>&1 | tee /tmp/rust-tests.log
+
+      - name: Check Rust contracts
+        working-directory: perax-contracts
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo +1.79.0 check --locked --all-targets 2>&1 | tee /tmp/rust-check.log
+
+      - name: Validate APC market engine
+        working-directory: perax-market-engine
+        shell: bash
+        run: |
+          set -o pipefail
+          npm ci 2>&1 | tee /tmp/market-engine-install.log
+          npm run typecheck 2>&1 | tee /tmp/market-engine-typecheck.log
+          npm test 2>&1 | tee /tmp/market-engine-tests.log
 
       - name: Commit readable APC source
         shell: bash
@@ -145,4 +168,11 @@ jobs:
             /tmp/apply-base.log
             /tmp/apply-fix01.log
             /tmp/apply-final.log
+            /tmp/tokenomics-validation.log
+            /tmp/rust-format.log
+            /tmp/rust-tests.log
+            /tmp/rust-check.log
+            /tmp/market-engine-install.log
+            /tmp/market-engine-typecheck.log
+            /tmp/market-engine-tests.log
           if-no-files-found: warn
