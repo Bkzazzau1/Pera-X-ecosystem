@@ -1,0 +1,252 @@
+diff --git a/perax-contracts/config/pex-tokenomics.json b/perax-contracts/config/pex-tokenomics.json
+index daeeb13..557be14 100644
+--- a/perax-contracts/config/pex-tokenomics.json
++++ b/perax-contracts/config/pex-tokenomics.json
+@@ -1 +1,217 @@
+-{"token":{"name":"Pera-X","symbol":"PEX","network":"solana","totalSupply":"1000000000","decimals":6,"initialPriceUsd":"0.000012","initialValuationUsd":"12000"},"allocations":[{"key":"liquidity_pool","name":"Liquidity Pool","percentage":38,"amount":"380000000","purpose":"Meteora DLMM liquidity, reduced volatility, launch confidence, and trading trust."},{"key":"community_utility_rewards","name":"Community / Utility Rewards","percentage":17,"amount":"170000000","purpose":"User rewards, referral bonuses, service discounts, loyalty incentives, and community growth."},{"key":"treasury","name":"Treasury","percentage":12,"amount":"120000000","purpose":"Future development, strategic expansion, emergency support, listings, integrations, audits, and long-term sustainability."},{"key":"ecosystem_marketing","name":"Ecosystem / Marketing","percentage":12,"amount":"120000000","purpose":"Partnerships, campaigns, influencer marketing, product adoption, brand growth, and ecosystem expansion."},{"key":"trading_company_operations","name":"Trading Company Operations & Revenue Settlement","percentage":7,"amount":"70000000","purpose":"Service settlement, liquidity support, buyback-and-burn execution, treasury strengthening, and utility expansion."},{"key":"team","name":"Team","percentage":6,"amount":"60000000","purpose":"Founding and core development team allocation, vested gradually to show long-term commitment and avoid early selling pressure.","children":[{"key":"development_team","name":"Development Team","percentage":2,"amount":"20000000"},{"key":"founder","name":"Founder","percentage":2,"amount":"20000000"},{"key":"future_team_incentives","name":"Future Team Incentives","percentage":1,"amount":"10000000"},{"key":"team_emergency_reserve","name":"Team Emergency Reserve","percentage":1,"amount":"10000000"}]},{"key":"private_strategic_investors","name":"Private / Strategic Investors","percentage":5,"amount":"50000000","purpose":"Strategic investors supporting funding, partnerships, liquidity, infrastructure, and growth."},{"key":"advisors","name":"Advisors","percentage":3,"amount":"30000000","purpose":"Technical, legal, tokenomics, telecom, fintech, exchange, and strategic advisory support.","children":[{"key":"advisor_wallet_1","name":"Advisor Wallet 1","percentage":1,"amount":"10000000"},{"key":"advisor_wallet_2","name":"Advisor Wallet 2","percentage":1,"amount":"10000000"},{"key":"advisor_wallet_3","name":"Advisor Wallet 3","percentage":1,"amount":"10000000"}]}],"initialLiquidity":{"policy":"OPTION_B_FULL_38_PERCENT_LIQUIDITY_ALLOCATION","targetUsd":"4560","pair":"PEX/USDC","dex":"Meteora DLMM","pexAmount":"380000000","quoteAmountUsd":"4560","remainingLiquidityReserve":"0","note":"Option B is final: launch uses the full 38% liquidity allocation. Option A with 250,000,000 PEX + $3,000 USDC is rejected."},"marketConditionalReleasePolicy":{"minimumLiquidityMultipleOfInitial":3,"minimumLiquidityUsd":"13680","minimumNetBuyPressureBps":5000,"minimumNetBuyPressurePercentage":50,"dailyReleaseCapPercentageOfTotalSupply":1,"dailyReleaseCapAmount":"10000000","monthlyReleaseCapPercentageOfTotalSupply":15,"monthlyReleaseCapAmount":"150000000"},"unlocking":{"model":"reactive_market_conditional_unlocking_with_twap_protection","monitoringIntervalMinutes":10,"twapConfirmationMinutesMin":30,"twapConfirmationMinutesMax":60,"cooldownHoursMin":2,"cooldownHoursMax":6,"maxDailyUnlockPercentageOfTotalSupply":1,"maxDailyUnlockAmount":"10000000","maxMonthlyUnlockPercentageOfTotalSupply":15,"maxMonthlyUnlockAmount":"150000000","requiresManualOrMultisigApproval":false,"releaseAuthority":"market_condition_oracle_only","safetyAuthority":"emergency_pause_and_system_maintenance_only","emergencyPauseEnabled":true,"stages":[{"stage":1,"basePriceUsd":"0.000012","triggerPriceUsd":"0.00003","targetSupportPriceUsd":"0.00002","newBasePriceUsd":"0.00002"},{"stage":2,"basePriceUsd":"0.00002","triggerPriceUsd":"0.00006","targetSupportPriceUsd":"0.00004","newBasePriceUsd":"0.00004"},{"stage":3,"basePriceUsd":"0.00004","triggerPriceUsd":"0.00008","targetSupportPriceUsd":"0.00006","newBasePriceUsd":"0.00006","note":"From this stage upward, the margin of price movement becomes smaller as the token matures, while unlocking remains controlled and market-conditional."}],"healthChecks":["twap_confirmation","liquidity_depth_3x_initial","real_trading_volume","minimum_50_percent_buy_side_demand","cooldown_complete","daily_1_percent_cap_available","monthly_15_percent_cap_available","clear_business_or_ecosystem_purpose"]}}
+\ No newline at end of file
++{
++  "token": {
++    "name": "Pera-X",
++    "symbol": "PEX",
++    "network": "solana",
++    "totalSupply": "1000000000",
++    "decimals": 6,
++    "initialPriceUsd": "0.000012",
++    "initialValuationUsd": "12000"
++  },
++  "allocations": [
++    {
++      "key": "liquidity_pool",
++      "name": "Liquidity Pool",
++      "percentage": 38,
++      "amount": "380000000",
++      "purpose": "Meteora DLMM liquidity, reduced volatility, launch confidence, and trading trust."
++    },
++    {
++      "key": "community_utility_rewards",
++      "name": "Community / Utility Rewards",
++      "percentage": 17,
++      "amount": "170000000",
++      "purpose": "User rewards, referral bonuses, service discounts, loyalty incentives, and community growth."
++    },
++    {
++      "key": "treasury",
++      "name": "Treasury",
++      "percentage": 12,
++      "amount": "120000000",
++      "purpose": "Future development, strategic expansion, emergency support, listings, integrations, audits, and long-term sustainability."
++    },
++    {
++      "key": "ecosystem_marketing",
++      "name": "Ecosystem / Marketing",
++      "percentage": 12,
++      "amount": "120000000",
++      "purpose": "Partnerships, campaigns, influencer marketing, product adoption, brand growth, and ecosystem expansion."
++    },
++    {
++      "key": "trading_company_operations",
++      "name": "Trading Company Operations & Revenue Settlement",
++      "percentage": 7,
++      "amount": "70000000",
++      "purpose": "Service settlement, liquidity support, buyback-and-burn execution, treasury strengthening, and utility expansion."
++    },
++    {
++      "key": "team",
++      "name": "Team",
++      "percentage": 6,
++      "amount": "60000000",
++      "purpose": "Founding and core development team allocation, vested gradually to show long-term commitment and avoid early selling pressure.",
++      "children": [
++        {
++          "key": "development_team",
++          "name": "Development Team",
++          "percentage": 2,
++          "amount": "20000000"
++        },
++        {
++          "key": "founder",
++          "name": "Founder",
++          "percentage": 2,
++          "amount": "20000000"
++        },
++        {
++          "key": "future_team_incentives",
++          "name": "Future Team Incentives",
++          "percentage": 1,
++          "amount": "10000000"
++        },
++        {
++          "key": "team_emergency_reserve",
++          "name": "Team Emergency Reserve",
++          "percentage": 1,
++          "amount": "10000000"
++        }
++      ]
++    },
++    {
++      "key": "private_strategic_investors",
++      "name": "Private / Strategic Investors",
++      "percentage": 5,
++      "amount": "50000000",
++      "purpose": "Strategic investors supporting funding, partnerships, liquidity, infrastructure, and growth."
++    },
++    {
++      "key": "advisors",
++      "name": "Advisors",
++      "percentage": 3,
++      "amount": "30000000",
++      "purpose": "Technical, legal, tokenomics, telecom, fintech, exchange, and strategic advisory support.",
++      "children": [
++        {
++          "key": "advisor_wallet_1",
++          "name": "Advisor Wallet 1",
++          "percentage": 1,
++          "amount": "10000000"
++        },
++        {
++          "key": "advisor_wallet_2",
++          "name": "Advisor Wallet 2",
++          "percentage": 1,
++          "amount": "10000000"
++        },
++        {
++          "key": "advisor_wallet_3",
++          "name": "Advisor Wallet 3",
++          "percentage": 1,
++          "amount": "10000000"
++        }
++      ]
++    }
++  ],
++  "initialLiquidity": {
++    "policy": "OPTION_B_FULL_38_PERCENT_LIQUIDITY_ALLOCATION",
++    "targetUsd": "4560",
++    "pair": "PEX/USDC",
++    "dex": "Meteora DLMM",
++    "pexAmount": "380000000",
++    "quoteAmountUsd": "4560",
++    "remainingLiquidityReserve": "0",
++    "note": "Option B is final: launch uses the full 38% liquidity allocation. Option A with 250,000,000 PEX + $3,000 USDC is rejected."
++  },
++  "marketConditionalReleasePolicy": {
++    "minimumLiquidityMultipleOfInitial": 3,
++    "minimumLiquidityUsd": "13680",
++    "minimumNetBuyPressureBps": 5000,
++    "minimumNetBuyPressurePercentage": 50,
++    "dailyReleaseCapPercentageOfTotalSupply": 1,
++    "dailyReleaseCapAmount": "10000000",
++    "monthlyReleaseCapPercentageOfTotalSupply": 15,
++    "monthlyReleaseCapAmount": "150000000"
++  },
++  "adaptivePriceControl": {
++    "model": "deterministic_adaptive_price_control",
++    "policyStatus": "pending_formal_numerical_approval",
++    "launchPriceUsd": "0.000012",
++    "priceScale": "100000000",
++    "launchPriceScaled": "1200",
++    "firstActivationMultiplier": 3,
++    "firstActivationPriceUsd": "0.000036",
++    "firstActivationPriceScaled": "3600",
++    "fixedMultiplicationAfterFirstActivation": false,
++    "bandPolicy": {
++      "sequentialActivation": true,
++      "multiBandPerFreshObservation": true,
++      "immutableBandRecords": true,
++      "usedBandCapacityNeverRestores": true,
++      "minimumIntervalBps": null,
++      "maximumIntervalBps": null,
++      "riskTierThresholds": null,
++      "intervalFormula": "contract_derived_from_risk_tier",
++      "releaseCapFormula": "contract_derived_from_risk_and_cascade",
++      "cascadeReductionBps": null
++    },
++    "observationPolicy": {
++      "permanentObservationPda": true,
++      "strictlyIncreasingSequence": true,
++      "freshObservationPerRelease": true,
++      "trustedClockForWindows": true,
++      "maximumObservationAgeSeconds": null,
++      "maximumFutureClockSkewSeconds": null,
++      "approvedPoolOnly": true
++    },
++    "releaseCaps": {
++      "perBandHardCapRequired": true,
++      "hourlyCapAmount": null,
++      "pumpWindowCapAmount": null,
++      "pumpWindowSeconds": null,
++      "dailyCapAmount": "10000000",
++      "monthlyCapAmount": "150000000",
++      "unconfirmedExposureCapRequired": true
++    },
++    "counterweightPolicy": {
++      "quoteMint": "USDC",
++      "realSplTransferRequired": true,
++      "pdaControlledVault": true,
++      "minimumCoverageBps": null,
++      "proceedsAllocationBps": null,
++      "missingCoverageStopsLaterReleases": true
++    },
++    "burnDeferralPolicy": {
++      "enabledDuringPumpControl": true,
++      "pexEscrowRequired": true,
++      "permanentDeferredBurnRecord": true,
++      "resumptionRateBps": null
++    },
++    "recoveryPolicy": {
++      "atomicSwapRequired": true,
++      "approvedAdapterOnly": true,
++      "lockedRecoveryVault": true,
++      "hardSpendingCapRequired": true,
++      "hardSpendingCapAmount": null,
++      "recoveredPexAutomaticallyBurned": false,
++      "recoveredPexAutomaticallyRecirculated": false
++    },
++    "authorityPolicy": {
++      "observationAuthority": "autonomous_oracle_signer",
++      "routineReleaseApproval": "none",
++      "requiresManualOrMultisigApproval": false,
++      "safetyAuthority": "pause_and_recovery_safety_only"
++    },
++    "unresolvedNumericalPolicies": [
++      "risk_tier_thresholds",
++      "risk_to_band_interval_formula",
++      "normal_tranche_formula",
++      "cascade_reductions",
++      "pump_window_duration",
++      "pump_window_release_cap",
++      "counterweight_proceeds_allocation",
++      "minimum_counterweight_coverage",
++      "burn_deferral_resumption_rate",
++      "recovery_spending_bands_and_limits"
++    ]
++  }
++}
+diff --git a/perax-contracts/package.json b/perax-contracts/package.json
+index 02ed7c1..9c122b5 100644
+--- a/perax-contracts/package.json
++++ b/perax-contracts/package.json
+@@ -11,7 +11,10 @@
+     "create:reserve-vaults:devnet": "node scripts/create-reserve-vaults-devnet.js --execute",
+     "plan:migrate-reserves:devnet": "node scripts/migrate-reserves-to-vaults-devnet.js",
+     "migrate:reserves:devnet": "node scripts/migrate-reserves-to-vaults-devnet.js --execute",
+-    "verify:reserve-vaults:devnet": "node scripts/verify-reserve-vaults-devnet.js"
++    "verify:reserve-vaults:devnet": "node scripts/verify-reserve-vaults-devnet.js",
++    "plan:apc": "node scripts/plan-apc-initialize.js",
++    "initialize:apc": "node scripts/initialize-apc-program.js --execute",
++    "verify:apc": "node scripts/verify-apc-state.js"
+   },
+   "dependencies": {
+     "@coral-xyz/anchor": "^0.30.1",
+diff --git a/perax-contracts/programs/perax-core/src/constants.rs b/perax-contracts/programs/perax-core/src/constants.rs
+index 1066d73..db2b856 100644
+--- a/perax-contracts/programs/perax-core/src/constants.rs
++++ b/perax-contracts/programs/perax-core/src/constants.rs
+@@ -7,6 +7,7 @@ pub const APC_RISK_TIER_COUNT: usize = 4;
+ pub const APC_THRESHOLD_COUNT: usize = 3;
+ pub const APC_BPS_DENOMINATOR: u128 = 10_000;
+ pub const APC_QUOTE_DECIMALS: u8 = 6;
++pub const APC_MAX_METRIC_BPS: u32 = 10_000_000;
+ pub const MIN_GROWTH_TWAP_MINUTES: u64 = 60;
+ pub const INITIAL_LIQUIDITY_USD: u64 = 4_560;
+ pub const MIN_GROWTH_LIQUIDITY_USD: u64 = INITIAL_LIQUIDITY_USD * 3;
