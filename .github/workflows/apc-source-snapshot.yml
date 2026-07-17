@@ -28,6 +28,30 @@ jobs:
         run: |
           set -euo pipefail
           cat .github/apc-patch/part*.patch > /tmp/apc.patch
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+
+          path = Path('/tmp/apc.patch')
+          data = path.read_bytes()
+          replacements = [
+              (b'pub last _release_timestamp', b'pub last_release_timestamp'),
+              (b'require!(next  <= cap', b'require!(next <= cap'),
+              (
+                  b'+       ),\n+        PeraxError::InvalidApcStatus',
+                  b'+        ),\n+        PeraxError::InvalidApcStatus',
+              ),
+          ]
+          for old, new in replacements:
+              if data.count(old) != 1:
+                  raise SystemExit(f'unexpected APC patch transport boundary for {old!r}')
+              data = data.replace(old, new)
+          digest = hashlib.sha256(data).hexdigest()
+          expected = 'b61d4f0a0c732f40aaa31d0b15b682dc4b058bee964e948f50f09aecc4a3230c'
+          if digest != expected:
+              raise SystemExit(f'APC patch digest mismatch: {digest}')
+          path.write_bytes(data)
+          PY
           git apply --check /tmp/apc.patch
           git apply /tmp/apc.patch
           git diff --check
