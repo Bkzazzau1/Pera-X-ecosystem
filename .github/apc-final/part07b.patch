@@ -1,0 +1,40 @@
+diff --git a/perax-contracts/scripts/check-devnet-readiness.js b/perax-contracts/scripts/check-devnet-readiness.js
+index 1bc065e..3da9925 100644
+--- a/perax-contracts/scripts/check-devnet-readiness.js
++++ b/perax-contracts/scripts/check-devnet-readiness.js
+@@ -101,15 +101,15 @@ function main() {
+   }
+   console.log('');
+ 
+-  console.log('Market-conditional release policy:');
++  console.log('Adaptive Price Control policy:');
+   console.log('----------------------------------------------');
+-  console.log(`Release authority: ${tokenomics.unlocking.releaseAuthority}`);
+-  console.log(`Human approval when market conditions pass: ${tokenomics.unlocking.requiresManualOrMultisigApproval}`);
+-  console.log(`Safety authority: ${tokenomics.unlocking.safetyAuthority}`);
+-  console.log(`Liquidity gate: ${tokenomics.marketConditionalReleasePolicy.minimumLiquidityMultipleOfInitial}x ($${formatNumber(tokenomics.marketConditionalReleasePolicy.minimumLiquidityUsd)})`);
+-  console.log(`Buy pressure gate: ${tokenomics.marketConditionalReleasePolicy.minimumNetBuyPressurePercentage}%`);
+-  console.log(`Daily cap: ${formatNumber(tokenomics.marketConditionalReleasePolicy.dailyReleaseCapAmount)} PEX`);
+-  console.log(`Monthly cap: ${formatNumber(tokenomics.marketConditionalReleasePolicy.monthlyReleaseCapAmount)} PEX`);
++  const apc = tokenomics.adaptivePriceControl;
++  console.log(`Policy status: ${apc.policyStatus}`);
++  console.log(`Observation authority: ${apc.authorityPolicy.observationAuthority}`);
++  console.log(`Human approval when contract gates pass: ${apc.authorityPolicy.requiresManualOrMultisigApproval}`);
++  console.log(`First activation: $${apc.firstActivationPriceUsd}`);
++  console.log(`Daily cap: ${formatNumber(apc.releaseCaps.dailyCapAmount)} PEX`);
++  console.log(`Monthly cap: ${formatNumber(apc.releaseCaps.monthlyCapAmount)} PEX`);
+   console.log('');
+ 
+   const blockers = [];
+@@ -121,8 +121,9 @@ function main() {
+   if (tokenomics.initialLiquidity.policy !== 'OPTION_B_FULL_38_PERCENT_LIQUIDITY_ALLOCATION') blockers.push('Option B liquidity policy is not locked');
+   if (tokenomics.initialLiquidity.pexAmount !== '380000000') blockers.push('liquidity PEX side must be 380,000,000 PEX');
+   if (tokenomics.initialLiquidity.quoteAmountUsd !== '4560') blockers.push('liquidity quote side must be $4,560');
+-  if (tokenomics.unlocking.releaseAuthority !== 'market_condition_oracle_only') blockers.push('release authority must be market_condition_oracle_only');
+-  if (tokenomics.unlocking.requiresManualOrMultisigApproval !== false) blockers.push('manual/multisig approval must remain disabled');
++  if (apc.authorityPolicy.requiresManualOrMultisigApproval !== false) blockers.push('manual/multisig approval must remain disabled');
++  if (apc.fixedMultiplicationAfterFirstActivation !== false) blockers.push('fixed multiplication must be disabled after first activation');
++  if (apc.policyStatus !== 'approved') blockers.push('APC numerical policy is not formally approved');
+ 
+   const missingOnchain = [];
+   if (isMissing(env.PEX_MINT_ADDRESS)) missingOnchain.push('PEX_MINT_ADDRESS');
