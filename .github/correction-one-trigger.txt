@@ -1,2 +1,2 @@
 Validate the exact reserve-cap rule and successful emergency-vault transaction coverage.
-Trace the Rust 1.79 incompatible dependency before running locked tests.
+Regenerate dependencies for the declared Rust 1.79 MSRV and run locked checks.
