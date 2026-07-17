@@ -1,0 +1,25 @@
+name: APC source snapshot
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apc-source-snapshot.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package repository source
+        run: |
+          tar --exclude=.git -czf perax-source-snapshot.tar.gz .
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: perax-source-snapshot
+          path: perax-source-snapshot.tar.gz
+          if-no-files-found: error
