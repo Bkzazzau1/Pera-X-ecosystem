@@ -1,0 +1,240 @@
+
++    )?;
++
++    let band_released_after = ctx
++        .accounts
++        .band_record
++        .amount_released
++        .checked_add(params.amount)
++        .ok_or(PeraxError::BandReleaseCapExceeded)?;
++    let pump_window_released_after = ctx
++        .accounts
++        .apc_state
++        .pump_window_released
++        .checked_add(params.amount)
++        .ok_or(PeraxError::PumpWindowCapExceeded)?;
++    let hourly_released_after = ctx
++        .accounts
++        .apc_state
++        .hourly_released
++        .checked_add(params.amount)
++        .ok_or(PeraxError::HourlyApcCapExceeded)?;
++    let total_apc_released_after = ctx
++        .accounts
++        .apc_state
++        .total_apc_released
++        .checked_add(params.amount)
++        .ok_or(PeraxError::ReleaseCapExceeded)?;
++    let counterweight_required_after = calculate_counterweight_requirement(
++        total_apc_released_after,
++        ctx.accounts.observation.twap_price,
++        config.price_scale,
++        config.minimum_counterweight_coverage_bps,
++    )?;
++
++    ctx.accounts.state.daily_unlocked_accumulator = ctx
++        .accounts
++        .state
++        .daily_unlocked_accumulator
++        .checked_add(params.amount)
++        .ok_or(PeraxError::DailyReleaseCapExceeded)?;
++    ctx.accounts.state.monthly_unlocked_accumulator = ctx
++        .accounts
++        .state
++        .monthly_unlocked_accumulator
++        .checked_add(params.amount)
++        .ok_or(PeraxError::MonthlyReleaseCapExceeded)?;
++    ctx.accounts.state.last_release_timestamp = now;
++
++    ctx.accounts.apc_state.hourly_released = hourly_released_after;
++    ctx.accounts.apc_state.pump_window_released = pump_window_released_after;
++    ctx.accounts.apc_state.total_apc_released = total_apc_released_after;
++    ctx.accounts.apc_state.last_release_timestamp = now;
++    ctx.accounts.apc_state.last_release_observation_id = params.observation_id;
++    let previous_status = ctx.accounts.apc_state.status;
++    ctx.accounts.apc_state.status = ApcStatus::AwaitingAbsorption;
++
++    ctx.accounts.band_record.amount_released = band_released_after;
++    ctx.accounts.band_record.last_release_at = now;
++    ctx.accounts.band_record.is_exhausted =
++        band_released_after == ctx.accounts.band_record.maximum_release_amount;
++
++    ctx.accounts.reserve_vault_config.total_released = ctx
++        .accounts
++        .reserve_vault_config
++        .total_released
++        .checked_add(params.amount)
++        .ok_or(PeraxError::VaultAccountingOverflow)?;
++    require!(
++        ctx.accounts.reserve_vault_config.total_released
++            <= ctx.accounts.reserve_vault_config.authorized_deposited,
++        PeraxError::VaultAccountingMismatch
++    );
++
++    let record = &mut ctx.accounts.release_record;
++    record.release_id = params.release_id;
++    record.band_index = params.band_index;
++    record.band_record = ctx.accounts.band_record.key();
++    record.allocation_id = params.allocation_id;
++    record.vault_config = ctx.accounts.reserve_vault_config.key();
++    record.destination_token_account = ctx.accounts.destination_token_account.key();
++    record.observation_id = params.observation_id;
++    record.amount = params.amount;
++    record.band_released_after = band_released_after;
++    record.pump_window_released_after = pump_window_released_after;
++    record.counterweight_required_after = counterweight_required_after;
++    record.executed_at = now;
++    record.bump = ctx.bumps.release_record;
++
++    ctx.accounts.observation.is_consumed_for_release = true;
++    ctx.accounts.observation.consumed_by_release = record.key();
++
++    emit!(ApcReleaseExecuted {
++        release_record: record.key(),
++        release_id: record.release_id,
++        band_index: record.band_index,
++        allocation_id: record.allocation_id,
++        vault_config: record.vault_config,
++        destination_token_account: record.destination_token_account,
++        observation_id: record.observation_id,
++        amount: record.amount,
++        band_released_after,
++        pump_window_released_after,
++        counterweight_required_after,
++        executed_at: now,
++    });
++
++    if previous_status != ctx.accounts.apc_state.status {
++        emit!(ApcStatusChanged {
++            apc_state: ctx.accounts.apc_state.key(),
++            previous_status,
++            new_status: ctx.accounts.apc_state.status,
++            actor: ctx.accounts.oracle_feed.key(),
++            changed_at: now,
++        });
++    }
++
++    Ok(())
++}
++
++pub fn pause_apc(ctx: Context<PauseApc>, is_paused: bool) -> Result<()> {
++    let actor = ctx.accounts.actor.key();
++    require!(
++        actor == ctx.accounts.state.authority || actor == ctx.accounts.state.safety_admin,
++        PeraxError::Unauthorized
++    );
++    let previous_status = ctx.accounts.apc_state.status;
++    ctx.accounts.apc_config.is_paused = is_paused;
++    ctx.accounts.apc_state.status = if is_paused {
++        ApcStatus::Paused
++    } else if ctx.accounts.apc_state.current_band_index == 0 {
++        ApcStatus::Armed
++    } else {
++        ApcStatus::Active
++    };
++    let now = Clock::get()?.unix_timestamp;
++    emit!(ApcPaused {
++        apc_state: ctx.accounts.apc_state.key(),
++        actor,
++        is_paused,
++        changed_at: now,
++    });
++    if previous_status != ctx.accounts.apc_state.status {
++        emit!(ApcStatusChanged {
++            apc_state: ctx.accounts.apc_state.key(),
++            previous_status,
++            new_status: ctx.accounts.apc_state.status,
++            actor,
++            changed_at: now,
++        });
++    }
++    Ok(())
++}
+--- /dev/null
++++ b/perax-contracts/programs/perax-core/src/instructions/counterweight.rs
+@@ -0,0 +1,222 @@
++use crate::{
++    validate_reference, ApcStatus, CounterweightProceedsDeposited, DeferredBurnExecuted,
++    DeferredBurnRecorded, DepositCounterweightParams, DepositCounterweightProceeds,
++    ExecuteDeferredBurn, ExecuteDeferredBurnParams, PeraxError, RecordDeferredBurn,
++    RecordDeferredBurnParams,
++};
++use anchor_lang::prelude::*;
++use anchor_spl::token::{self, Burn, TransferChecked};
++
++pub fn deposit_counterweight_proceeds(
++    ctx: Context<DepositCounterweightProceeds>,
++    params: DepositCounterweightParams,
++) -> Result<()> {
++    validate_reference(params.deposit_id)?;
++    require!(params.amount > 0, PeraxError::InvalidAmount);
++    require!(!ctx.accounts.state.is_paused, PeraxError::ProgramPaused);
++    require!(ctx.accounts.apc_config.is_active, PeraxError::ApcInactive);
++    require!(!ctx.accounts.apc_config.is_paused, PeraxError::ApcPaused);
++
++    let credited_after = ctx
++        .accounts
++        .apc_state
++        .total_counterweight_credited
++        .checked_add(params.amount)
++        .ok_or(PeraxError::InvalidCounterweightVault)?;
++
++    let transfer_accounts = TransferChecked {
++        mint: ctx.accounts.quote_mint.to_account_info(),
++        from: ctx.accounts.source_token_account.to_account_info(),
++        to: ctx.accounts.counterweight_vault.to_account_info(),
++        authority: ctx.accounts.source_owner.to_account_info(),
++    };
++    token::transfer_checked(
++        CpiContext::new(
++            ctx.accounts.token_program.to_account_info(),
++            transfer_accounts,
++        ),
++        params.amount,
++        ctx.accounts.quote_mint.decimals,
++    )?;
++
++    ctx.accounts.apc_state.total_counterweight_credited = credited_after;
++    let deposited_at = Clock::get()?.unix_timestamp;
++    let record = &mut ctx.accounts.deposit_record;
++    record.deposit_id = params.deposit_id;
++    record.source_owner = ctx.accounts.source_owner.key();
++    record.source_token_account = ctx.accounts.source_token_account.key();
++    record.amount = params.amount;
++    record.credited_after = credited_after;
++    record.deposited_at = deposited_at;
++    record.bump = ctx.bumps.deposit_record;
++
++    emit!(CounterweightProceedsDeposited {
++        deposit_record: record.key(),
++        deposit_id: record.deposit_id,
++        source_owner: record.source_owner,
++        source_token_account: record.source_token_account,
++        counterweight_vault: ctx.accounts.counterweight_vault.key(),
++        amount: record.amount,
++        credited_after,
++        deposited_at,
++    });
++
++    Ok(())
++}
++
++pub fn record_deferred_burn(
++    ctx: Context<RecordDeferredBurn>,
++    params: RecordDeferredBurnParams,
++) -> Result<()> {
++    validate_reference(params.decision_id)?;
++    require!(params.amount > 0, PeraxError::InvalidAmount);
++    require!(!ctx.accounts.state.is_paused, PeraxError::ProgramPaused);
++    require!(!ctx.accounts.apc_config.is_paused, PeraxError::ApcPaused);
++    require!(
++        matches!(
++            ctx.accounts.apc_state.status,
++            ApcStatus::PumpControl | ApcStatus::AwaitingAbsorption | ApcStatus::Recovery
++        ),
++        PeraxError::InvalidApcStatus
++    );
++
++    let now = Clock::get()?.unix_timestamp;
++    require!(params.observed_at > 0, PeraxError::InvalidMarketParameter);
++
