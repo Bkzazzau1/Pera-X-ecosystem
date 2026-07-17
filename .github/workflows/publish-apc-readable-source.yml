@@ -45,11 +45,28 @@ jobs:
           npm install
           npm run typecheck
 
-      - name: Commit and push corrections
+      - name: Commit corrections
         run: |
+          set -o pipefail
+          git status --short | tee /tmp/git-status.log
           git diff --check
           git add perax-contracts/tests/perax-core.ts
           git config user.name "Pera-X APC automation"
           git config user.email "actions@github.com"
-          git commit -m "Fix APC transaction test typing"
-          git push origin agent/adaptive-price-control
+          git commit -m "Fix APC transaction test typing" 2>&1 | tee /tmp/git-commit.log
+
+      - name: Push corrections
+        run: |
+          set -o pipefail
+          git push --verbose origin agent/adaptive-price-control 2>&1 | tee /tmp/git-push.log
+
+      - name: Upload correction diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apc-typescript-correction-diagnostics
+          path: |
+            /tmp/git-status.log
+            /tmp/git-commit.log
+            /tmp/git-push.log
+          if-no-files-found: warn
