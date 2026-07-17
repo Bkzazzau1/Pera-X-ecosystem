@@ -1,0 +1,62 @@
+diff -ruN a/perax-contracts/programs/perax-core/src/contexts.rs b/perax-contracts/programs/perax-core/src/contexts.rs
+--- a/perax-contracts/programs/perax-core/src/contexts.rs	2026-07-17 14:30:23.252782644 +0000
++++ b/perax-contracts/programs/perax-core/src/contexts.rs	2026-07-17 14:30:24.504121824 +0000
+@@ -636,6 +636,7 @@
+     )]
+     pub counterweight_config: Account<'info, CounterweightConfig>,
+     #[account(
++        mut,
+         constraint = source_owner.key() == counterweight_config.approved_proceeds_owner @ PeraxError::Unauthorized
+     )]
+     pub source_owner: Signer<'info>,
+@@ -677,6 +678,7 @@
+     pub apc_state: Account<'info, ApcState>,
+     #[account(seeds = [b"counterweight-config", apc_config.key().as_ref()], bump = counterweight_config.bump)]
+     pub counterweight_config: Account<'info, CounterweightConfig>,
++    #[account(mut)]
+     pub source_authority: Signer<'info>,
+     #[account(mut, constraint = source_token_account.owner == source_authority.key() @ PeraxError::Unauthorized, constraint = source_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint)]
+     pub source_token_account: Account<'info, TokenAccount>,
+diff -ruN a/perax-contracts/programs/perax-core/src/instructions/counterweight.rs b/perax-contracts/programs/perax-core/src/instructions/counterweight.rs
+--- a/perax-contracts/programs/perax-core/src/instructions/counterweight.rs	2026-07-17 14:30:23.253728786 +0000
++++ b/perax-contracts/programs/perax-core/src/instructions/counterweight.rs	2026-07-17 14:30:24.504990823 +0000
+@@ -171,9 +171,10 @@
+     );
+ 
+     let bump = [ctx.accounts.counterweight_config.deferred_burn_authority_bump];
++    let apc_config_key = ctx.accounts.apc_config.key();
+     let seeds: &[&[u8]] = &[
+         b"deferred-burn-authority",
+-        ctx.accounts.apc_config.key().as_ref(),
++        apc_config_key.as_ref(),
+         &bump,
+     ];
+     let signer: &[&[&[u8]]] = &[seeds];
+diff -ruN a/perax-contracts/programs/perax-core/src/instructions/recovery.rs b/perax-contracts/programs/perax-core/src/instructions/recovery.rs
+--- a/perax-contracts/programs/perax-core/src/instructions/recovery.rs	2026-07-17 14:30:23.253788285 +0000
++++ b/perax-contracts/programs/perax-core/src/instructions/recovery.rs	2026-07-17 14:30:24.505397800 +0000
+@@ -146,9 +146,10 @@
+         data: params.swap_instruction_data,
+     };
+     let bump = [ctx.accounts.counterweight_config.counterweight_authority_bump];
++    let apc_config_key = ctx.accounts.apc_config.key();
+     let signer_seeds: &[&[u8]] = &[
+         b"counterweight-authority",
+-        ctx.accounts.apc_config.key().as_ref(),
++        apc_config_key.as_ref(),
+         &bump,
+     ];
+     invoke_signed(&instruction, &infos, &[signer_seeds])?;
+diff -ruN a/perax-contracts/programs/perax-core/src/validation.rs b/perax-contracts/programs/perax-core/src/validation.rs
+--- a/perax-contracts/programs/perax-core/src/validation.rs	2026-07-17 14:30:23.253260142 +0000
++++ b/perax-contracts/programs/perax-core/src/validation.rs	2026-07-17 14:30:24.504663418 +0000
+@@ -690,6 +690,8 @@
+     let next = current
+         .checked_add(amount)
+         .ok_or(PeraxError::ReleaseCapExceeded)?;
+-    require!(next <= cap, error);
++    if next > cap {
++        return Err(error.into());
++    }
+     Ok(())
+ }
