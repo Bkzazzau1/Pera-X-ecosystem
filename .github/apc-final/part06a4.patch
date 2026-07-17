@@ -1,0 +1,36 @@
+diff --git a/perax-contracts/programs/perax-core/src/lib.rs b/perax-contracts/programs/perax-core/src/lib.rs
+index 01a38f2..897b125 100644
+--- a/perax-contracts/programs/perax-core/src/lib.rs
++++ b/perax-contracts/programs/perax-core/src/lib.rs
+@@ -139,6 +139,20 @@ pub mod perax_core {
+         instructions::execute_conditional_buyback_burn(ctx, params)
+     }
+ 
++    pub fn initialize_recovery_pool(
++        ctx: Context<InitializeRecoveryPool>,
++        params: InitializeRecoveryPoolParams,
++    ) -> Result<()> {
++        instructions::initialize_recovery_pool(ctx, params)
++    }
++
++    pub fn execute_recovery_swap_adapter(
++        ctx: Context<RecoverySwapAdapter>,
++        params: RecoverySwapAdapterParams,
++    ) -> Result<()> {
++        instructions::execute_recovery_swap_adapter(ctx, params)
++    }
++
+     pub fn initialize_apc(ctx: Context<InitializeApc>, params: InitializeApcParams) -> Result<()> {
+         instructions::initialize_apc(ctx, params)
+     }
+@@ -185,6 +199,10 @@ pub mod perax_core {
+         instructions::execute_deferred_burn(ctx, params)
+     }
+ 
++    pub fn confirm_apc_absorption(ctx: Context<ConfirmApcAbsorption>) -> Result<()> {
++        instructions::confirm_apc_absorption(ctx)
++    }
++
+     pub fn enter_apc_recovery(ctx: Context<EnterApcRecovery>) -> Result<()> {
+         instructions::enter_apc_recovery(ctx)
+     }
