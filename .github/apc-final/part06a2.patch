@@ -1,0 +1,64 @@
++pub fn execute_recovery_swap_adapter(
++    ctx: Context<RecoverySwapAdapter>,
++    params: RecoverySwapAdapterParams,
++) -> Result<()> {
++    require!(params.quote_amount > 0, PeraxError::InvalidAmount);
++    require!(
++        ctx.accounts.pool_quote_vault.amount > 0 && ctx.accounts.pool_pex_vault.amount > 0,
++        PeraxError::InvalidRecoveryPool
++    );
++
++    let pex_out = calculate_recovery_pex_out(
++        ctx.accounts.pool_quote_vault.amount,
++        ctx.accounts.pool_pex_vault.amount,
++        params.quote_amount,
++        ctx.accounts.recovery_pool.fee_bps,
++    )?;
++    require!(
++        pex_out > 0 && pex_out >= params.minimum_pex_out,
++        PeraxError::InvalidRecoverySettlement
++    );
++
++    token::transfer_checked(
++        CpiContext::new(
++            ctx.accounts.token_program.to_account_info(),
++            TransferChecked {
++                mint: ctx.accounts.quote_mint.to_account_info(),
++                from: ctx.accounts.counterweight_vault.to_account_info(),
++                to: ctx.accounts.pool_quote_vault.to_account_info(),
++                authority: ctx.accounts.counterweight_authority.to_account_info(),
++            },
++        ),
++        params.quote_amount,
++        ctx.accounts.quote_mint.decimals,
++    )?;
++
++    let bump = [ctx.accounts.recovery_pool.authority_bump];
++    let pool_key = ctx.accounts.recovery_pool.key();
++    let seeds: &[&[u8]] = &[b"recovery-pool-authority", pool_key.as_ref(), &bump];
++    token::transfer_checked(
++        CpiContext::new(
++            ctx.accounts.token_program.to_account_info(),
++            TransferChecked {
++                mint: ctx.accounts.pex_mint.to_account_info(),
++                from: ctx.accounts.pool_pex_vault.to_account_info(),
++                to: ctx.accounts.recovery_vault.to_account_info(),
++                authority: ctx.accounts.pool_authority.to_account_info(),
++            },
++        )
++        .with_signer(&[seeds]),
++        pex_out,
++        ctx.accounts.pex_mint.decimals,
++    )?;
++
++    emit!(RecoverySwapAdapterExecuted {
++        recovery_pool: ctx.accounts.recovery_pool.key(),
++        quote_source: ctx.accounts.counterweight_vault.key(),
++        pex_destination: ctx.accounts.recovery_vault.key(),
++        quote_amount: params.quote_amount,
++        pex_amount: pex_out,
++        executed_at: Clock::get()?.unix_timestamp,
++    });
++    Ok(())
++}
++
