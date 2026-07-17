@@ -1,0 +1,20 @@
+ pub fn calculate_counterweight_requirement(
+     pex_amount: u64,
+     price_scaled: u64,
+@@ -582,6 +621,12 @@ pub(crate) fn validate_apc_release_caps(
+         config.pump_window_release_cap,
+         PeraxError::PumpWindowCapExceeded,
+     )?;
++    require_checked_cap(
++        apc_state.unconfirmed_release_amount,
++        requested_amount,
++        config.pump_window_release_cap,
++        PeraxError::PumpWindowCapExceeded,
++    )?;
+     require_checked_cap(
+         core_state.daily_unlocked_accumulator,
+         requested_amount,
+@@ -597,6 +642,38 @@ pub(crate) fn validate_apc_release_caps(
+     Ok(())
+ }
+ 
