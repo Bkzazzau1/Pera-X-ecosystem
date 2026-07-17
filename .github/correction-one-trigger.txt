@@ -1,2 +1,2 @@
 Validate the exact reserve-cap rule and successful emergency-vault transaction coverage.
-Regenerate dependencies for the declared Rust 1.79 MSRV and run locked checks.
+Use the Solana v1.18.26 blake3 baseline and run locked Rust 1.79 checks.
