@@ -1,0 +1,83 @@
+diff --git a/perax-contracts/programs/perax-core/src/state.rs b/perax-contracts/programs/perax-core/src/state.rs
+index 7c67bb6..59c72da 100644
+--- a/perax-contracts/programs/perax-core/src/state.rs
++++ b/perax-contracts/programs/perax-core/src/state.rs
+@@ -129,6 +129,18 @@ pub enum ApcStatus {
+     Paused,
+ }
+ 
++#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
++pub struct InitializeRecoveryPoolParams {
++    pub pool_id: [u8; 32],
++    pub fee_bps: u16,
++}
++
++#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
++pub struct RecoverySwapAdapterParams {
++    pub quote_amount: u64,
++    pub minimum_pex_out: u64,
++}
++
+ #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+ pub struct InitializeApcParams {
+     pub quote_mint: Pubkey,
+@@ -250,6 +262,22 @@ pub struct PeraxState {
+     pub bump: u8,
+ }
+ 
++#[account]
++#[derive(InitSpace)]
++pub struct RecoveryPoolConfig {
++    pub state: Pubkey,
++    pub pool_id: [u8; 32],
++    pub quote_mint: Pubkey,
++    pub pex_mint: Pubkey,
++    pub pool_authority: Pubkey,
++    pub pool_quote_vault: Pubkey,
++    pub pool_pex_vault: Pubkey,
++    pub fee_bps: u16,
++    pub is_active: bool,
++    pub bump: u8,
++    pub authority_bump: u8,
++}
++
+ #[account]
+ #[derive(InitSpace)]
+ pub struct ApcConfig {
+@@ -292,6 +320,7 @@ pub struct ApcConfig {
+ pub struct ApcState {
+     pub config: Pubkey,
+     pub status: ApcStatus,
++    pub status_before_pause: ApcStatus,
+     pub current_reference_price: u64,
+     pub next_band_price: u64,
+     pub current_band_index: u32,
+@@ -306,7 +335,9 @@ pub struct ApcState {
+     pub last_observation_sequence: u64,
+     pub last_release_timestamp: i64,
+     pub deferred_burn_amount: u64,
++    pub unconfirmed_release_amount: u64,
+     pub last_release_observation_id: [u8; 32],
++    pub recovery_entry_observation_id: [u8; 32],
+     pub cascade_observation_id: [u8; 32],
+     pub cascade_band_count: u32,
+     pub active_risk_tier: u8,
+@@ -333,7 +364,10 @@ pub struct ApcObservation {
+     pub observed_at: i64,
+     pub submitted_at: i64,
+     pub is_consumed_for_release: bool,
++    pub is_consumed_for_confirmation: bool,
++    pub is_consumed_for_recovery: bool,
+     pub consumed_by_release: Pubkey,
++    pub consumed_by_recovery: Pubkey,
+     pub bump: u8,
+ }
+ 
+@@ -368,6 +402,7 @@ pub struct ApcReleaseRecord {
+     pub amount: u64,
+     pub band_released_after: u64,
+     pub pump_window_released_after: u64,
++    pub unconfirmed_release_after: u64,
+     pub counterweight_required_after: u64,
+     pub executed_at: i64,
+     pub bump: u8,
