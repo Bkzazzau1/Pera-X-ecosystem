@@ -56,8 +56,9 @@ jobs:
           git apply --check /tmp/apc.patch
           git apply /tmp/apc.patch
 
+          echo 'e752f07cb5854171cfefb51650f6c1a7604bc4e3a9218b36ce935f0851ebae43  .github/apc-fixes/fix01.patch' | sha256sum --check
+          echo 'ea78ca304ad0a2b28d6098d51618583a6ce9b26e78dc4ad20fbc7c5275070856  .github/apc-fixes/fix02.patch' | sha256sum --check
           cat .github/apc-fixes/fix*.patch > /tmp/apc-fixes.patch
-          echo 'e752f07cb5854171cfefb51650f6c1a7604bc4e3a9218b36ce935f0851ebae43  /tmp/apc-fixes.patch' | sha256sum --check
           git apply --check /tmp/apc-fixes.patch
           git apply /tmp/apc-fixes.patch
           git diff --check
