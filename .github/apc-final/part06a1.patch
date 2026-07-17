@@ -1,0 +1,58 @@
+diff --git a/perax-contracts/programs/perax-core/src/instructions/recovery.rs b/perax-contracts/programs/perax-core/src/instructions/recovery.rs
+index 3d79b7b..d1e8fc4 100644
+--- a/perax-contracts/programs/perax-core/src/instructions/recovery.rs
++++ b/perax-contracts/programs/perax-core/src/instructions/recovery.rs
+@@ -1,14 +1,118 @@
+ use crate::{
+-    calculate_effective_apc_price, validate_apc_observation_fresh, validate_reference,
++    calculate_effective_apc_price, calculate_recovery_pex_out, validate_apc_observation_fresh, validate_reference,
+     ApcRecoveryEntered, ApcStatus, ApcStatusChanged, CounterweightPurchaseExecuted,
+-    EnterApcRecovery, ExecuteCounterweightPurchase, ExecuteCounterweightPurchaseParams, PeraxError,
++    EnterApcRecovery, ExecuteCounterweightPurchase, ExecuteCounterweightPurchaseParams,
++    InitializeRecoveryPool, InitializeRecoveryPoolParams, PeraxError, RecoveryPoolInitialized,
++    RecoverySwapAdapter, RecoverySwapAdapterExecuted, RecoverySwapAdapterParams,
+ };
+ use anchor_lang::prelude::*;
++use anchor_spl::token::{self, TransferChecked};
+ use anchor_lang::solana_program::{
+     instruction::{AccountMeta, Instruction},
+     program::invoke_signed,
+ };
+ 
++pub fn initialize_recovery_pool(
++    ctx: Context<InitializeRecoveryPool>,
++    params: InitializeRecoveryPoolParams,
++) -> Result<()> {
++    validate_reference(params.pool_id)?;
++    require!(params.fee_bps <= 1_000, PeraxError::InvalidRecoveryPool);
++    require!(
++        ctx.accounts.quote_mint.key() != ctx.accounts.pex_mint.key(),
++        PeraxError::InvalidRecoveryPool
++    );
++
++    let pool = &mut ctx.accounts.recovery_pool;
++    pool.state = ctx.accounts.state.key();
++    pool.pool_id = params.pool_id;
++    pool.quote_mint = ctx.accounts.quote_mint.key();
++    pool.pex_mint = ctx.accounts.pex_mint.key();
++    pool.pool_authority = ctx.accounts.pool_authority.key();
++    pool.pool_quote_vault = ctx.accounts.pool_quote_vault.key();
++    pool.pool_pex_vault = ctx.accounts.pool_pex_vault.key();
++    pool.fee_bps = params.fee_bps;
++    pool.is_active = true;
++    pool.bump = ctx.bumps.recovery_pool;
++    pool.authority_bump = ctx.bumps.pool_authority;
++
++    emit!(RecoveryPoolInitialized {
++        recovery_pool: pool.key(),
++        pool_id: pool.pool_id,
++        quote_mint: pool.quote_mint,
++        pex_mint: pool.pex_mint,
++        pool_quote_vault: pool.pool_quote_vault,
++        pool_pex_vault: pool.pool_pex_vault,
++        fee_bps: pool.fee_bps,
++        initialized_at: Clock::get()?.unix_timestamp,
++    });
++    Ok(())
++}
++
