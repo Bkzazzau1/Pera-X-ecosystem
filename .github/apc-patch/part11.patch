@@ -1,0 +1,243 @@
+       ),
++        PeraxError::InvalidApcStatus
++    );
++
++    let now = Clock::get()?.unix_timestamp;
++    validate_apc_observation_fresh(config, &ctx.accounts.observation, now)?;
++    validate_apc_market_gates(config, &ctx.accounts.observation)?;
++
++    let apc_state = &mut ctx.accounts.apc_state;
++    validate_sequential_band_index(apc_state.current_band_index, params.band_index)?;
++
++    let effective_price = calculate_effective_apc_price(
++        ctx.accounts.observation.spot_price,
++        ctx.accounts.observation.twap_price,
++    )?;
++    let trigger_price = if params.band_index == 1 {
++        config.first_activation_price
++    } else {
++        apc_state.next_band_price
++    };
++    require!(
++        effective_price >= trigger_price,
++        PeraxError::ApcPriceGateNotMet
++    );
++
++    let risk_tier = calculate_apc_risk_tier(
++        ctx.accounts.observation.price_velocity_bps,
++        ctx.accounts.observation.volatility_bps,
++        ctx.accounts.observation.estimated_price_impact_bps,
++        config.risk_velocity_thresholds_bps,
++        config.risk_volatility_thresholds_bps,
++        config.risk_price_impact_thresholds_bps,
++    );
++    let interval_bps = calculate_band_interval_bps(config, risk_tier)?;
++
++    let cascade_position = if apc_state.cascade_observation_id
++        == ctx.accounts.observation.observation_id
++    {
++        apc_state
++            .cascade_band_count
++            .checked_add(1)
++            .ok_or(PeraxError::InvalidBandIndex)?
++    } else {
++        1
++    };
++    let maximum_release_amount =
++        calculate_band_release_cap(config, risk_tier, cascade_position)?;
++
++    let band = &mut ctx.accounts.band_record;
++    band.apc_state = apc_state.key();
++    band.band_index = params.band_index;
++    band.trigger_price = trigger_price;
++    band.interval_bps = interval_bps;
++    band.risk_tier = risk_tier;
++    band.maximum_release_amount = maximum_release_amount;
++    band.amount_released = 0;
++    band.activation_observation_id = ctx.accounts.observation.observation_id;
++    band.first_observed_at = ctx.accounts.observation.observed_at;
++    band.last_release_at = 0;
++    band.is_crossed = true;
++    band.is_exhausted = false;
++    band.bump = ctx.bumps.band_record;
++
++    let previous_status = apc_state.status;
++    apc_state.current_band_index = params.band_index;
++    apc_state.highest_crossed_band_index = apc_state
++        .highest_crossed_band_index
++        .max(params.band_index);
++    apc_state.current_reference_price = trigger_price;
++    apc_state.next_band_price = calculate_next_band_price(trigger_price, interval_bps)?;
++    apc_state.cascade_observation_id = ctx.accounts.observation.observation_id;
++    apc_state.cascade_band_count = cascade_position;
++    apc_state.active_risk_tier = risk_tier;
++    apc_state.status = if cascade_position > 1 || risk_tier >= 2 {
++        ApcStatus::PumpControl
++    } else {
++        ApcStatus::Active
++    };
++
++    emit!(ApcBandActivated {
++        apc_state: apc_state.key(),
++        band_record: band.key(),
++        band_index: band.band_index,
++        trigger_price: band.trigger_price,
++        interval_bps: band.interval_bps,
++        risk_tier: band.risk_tier,
++        maximum_release_amount: band.maximum_release_amount,
++        observation_id: band.activation_observation_id,
++        activated_at: now,
++    });
++
++    if apc_state.status == ApcStatus::PumpControl {
++        emit!(ApcPumpControlEntered {
++            apc_state: apc_state.key(),
++            band_index: band.band_index,
++            risk_tier,
++            observation_id: band.activation_observation_id,
++            entered_at: now,
++        });
++    }
++    if previous_status != apc_state.status {
++        emit!(ApcStatusChanged {
++            apc_state: apc_state.key(),
++            previous_status,
++            new_status: apc_state.status,
++            actor: ctx.accounts.oracle_feed.key(),
++            changed_at: now,
++        });
++    }
++
++    Ok(())
++}
++
++pub fn execute_apc_release(
++    ctx: Context<ExecuteApcRelease>,
++    params: ExecuteApcReleaseParams,
++) -> Result<()> {
++    validate_reference(params.release_id)?;
++    validate_reference(params.observation_id)?;
++    require!(params.amount > 0, PeraxError::InvalidAmount);
++    require!(!ctx.accounts.state.is_paused, PeraxError::ProgramPaused);
++    require!(!ctx.accounts.state.emergency_pause, PeraxError::EmergencyPaused);
++
++    let config = &ctx.accounts.apc_config;
++    require!(config.is_active, PeraxError::ApcInactive);
++    require!(!config.is_paused, PeraxError::ApcPaused);
++    require!(
++        !matches!(
++            ctx.accounts.apc_state.status,
++            ApcStatus::Inactive | ApcStatus::Recovery | ApcStatus::Paused
++        ),
++        PeraxError::InvalidApcStatus
++    );
++
++    let now = Clock::get()?.unix_timestamp;
++    validate_apc_observation_fresh(config, &ctx.accounts.observation, now)?;
++    validate_apc_market_gates(config, &ctx.accounts.observation)?;
++    require!(
++        !ctx.accounts.observation.is_consumed_for_release,
++        PeraxError::ObservationAlreadyUsed
++    );
++    require!(ctx.accounts.band_record.is_crossed, PeraxError::BandNotActivated);
++    require!(
++        !ctx.accounts.band_record.is_exhausted,
++        PeraxError::BandAlreadyExhausted
++    );
++    let effective_price = calculate_effective_apc_price(
++        ctx.accounts.observation.spot_price,
++        ctx.accounts.observation.twap_price,
++    )?;
++    require!(
++        effective_price >= ctx.accounts.band_record.trigger_price,
++        PeraxError::ApcPriceGateNotMet
++    );
++
++    let vault = &ctx.accounts.reserve_vault_config;
++    require!(vault.is_active, PeraxError::VaultInactive);
++    require!(!vault.is_paused, PeraxError::VaultPaused);
++    require!(
++        is_apc_releasable_vault_class(vault.vault_class),
++        PeraxError::VaultClassNotMarketReleasable
++    );
++    require!(
++        ctx.accounts.destination_token_account.key() == vault.approved_destination_token_account
++            && ctx.accounts.destination_token_account.owner == vault.approved_destination_owner,
++        PeraxError::InvalidApprovedDestination
++    );
++    require!(
++        !is_program_derived_destination(ctx.accounts.destination_token_account.owner),
++        PeraxError::DestinationIsReserveVault
++    );
++
++    let available_amount = calculate_vault_available_amount(
++        vault,
++        ctx.accounts.vault_token_account.amount,
++    )?;
++    require!(params.amount <= available_amount, PeraxError::InsufficientVaultBalance);
++
++    reset_release_windows_if_needed(&mut ctx.accounts.state, now);
++    reset_apc_windows_if_needed(config, &mut ctx.accounts.apc_state, now);
++    validate_apc_release_caps(
++        config,
++        &ctx.accounts.apc_state,
++        &ctx.accounts.state,
++        ctx.accounts.band_record.amount_released,
++        ctx.accounts.band_record.maximum_release_amount,
++        params.amount,
++    )?;
++
++    let tracked_counterweight_available = ctx
++        .accounts
++        .apc_state
++        .total_counterweight_credited
++        .checked_sub(ctx.accounts.apc_state.total_counterweight_spent)
++        .ok_or(PeraxError::InvalidCounterweightVault)?;
++    require!(
++        ctx.accounts.counterweight_vault.amount >= tracked_counterweight_available,
++        PeraxError::InvalidCounterweightVault
++    );
++    let counterweight_required_before = calculate_counterweight_requirement(
++        ctx.accounts.apc_state.total_apc_released,
++        ctx.accounts.observation.twap_price,
++        config.price_scale,
++        config.minimum_counterweight_coverage_bps,
++    )?;
++    require!(
++        tracked_counterweight_available >= counterweight_required_before,
++        PeraxError::CounterweightCoverageNotMet
++    );
++
++    let remaining_vault_balance = ctx
++        .accounts
++        .vault_token_account
++        .amount
++        .checked_sub(params.amount)
++        .ok_or(PeraxError::InsufficientVaultBalance)?;
++    require!(
++        remaining_vault_balance >= vault.unsolicited_balance,
++        PeraxError::VaultAccountingMismatch
++    );
++
++    let allocation_id = vault.allocation_id;
++    let authority_bump = [vault.authority_bump];
++    let authority_seeds: &[&[u8]] = &[
++        b"reserve-authority",
++        allocation_id.as_ref(),
++        &authority_bump,
++    ];
++    let signer_seeds: &[&[&[u8]]] = &[authority_seeds];
++    let transfer_accounts = TransferChecked {
++        mint: ctx.accounts.token_mint.to_account_info(),
++        from: ctx.accounts.vault_token_account.to_account_info(),
++        to: ctx.accounts.destination_token_account.to_account_info(),
++        authority: ctx.accounts.vault_authority.to_account_info(),
++    };
++    token::transfer_checked(
++        CpiContext::new(
++            ctx.accounts.token_program.to_account_info(),
++            transfer_accounts,
++        )
++        .with_signer(signer_seeds),
++        params.amount,
++        ctx.accounts.token_mint.decimals,
