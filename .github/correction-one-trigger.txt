@@ -1,1 +1,2 @@
 Validate the exact reserve-cap rule and successful emergency-vault transaction coverage.
+Diagnostic rerun with full cargo-test output.
