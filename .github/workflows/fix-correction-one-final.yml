@@ -48,18 +48,25 @@ jobs:
           cargo fmt --all
           cargo fmt --all -- --check
 
-      - name: Run Rust unit tests
+      - name: Trace incompatible dependency with inspection toolchain
+        working-directory: perax-contracts
+        shell: bash
+        run: |
+          rustup toolchain install 1.85.0 --profile minimal
+          cargo +1.85.0 tree --locked -i hybrid-array 2>&1 | tee /tmp/correction-one-cargo-tree.log
+
+      - name: Run Rust unit tests with pinned toolchain
         working-directory: perax-contracts
         shell: bash
         run: |
           set +e
-          cargo test --all-targets 2>&1 | tee /tmp/correction-one-cargo-test.log
+          cargo +1.79.0 test --locked --all-targets 2>&1 | tee /tmp/correction-one-cargo-test.log
           status=${PIPESTATUS[0]}
           exit "$status"
 
       - name: Check Rust contracts
         working-directory: perax-contracts
-        run: cargo check --all-targets
+        run: cargo +1.79.0 check --locked --all-targets
 
       - name: Upload validation files and diagnostics
         if: always()
@@ -69,5 +76,6 @@ jobs:
           path: |
             perax-contracts/programs/perax-core/src/instructions/vault.rs
             perax-contracts/tests/perax-core.ts
+            /tmp/correction-one-cargo-tree.log
             /tmp/correction-one-cargo-test.log
           if-no-files-found: error
