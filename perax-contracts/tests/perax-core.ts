@@ -32,6 +32,7 @@ type AllocationDefinition = {
   key: string;
   vaultClass: Record<string, Record<string, never>>;
   releasable: boolean;
+  approvedCapPex: number;
 };
 
 type InitializationOverrides = Partial<{
@@ -45,6 +46,7 @@ type InitializationOverrides = Partial<{
 }>;
 
 type ReserveVaultConfigAccount = {
+  allocationCap: anchor.BN;
   authorizedDeposited: anchor.BN;
   unsolicitedBalance: anchor.BN;
   totalReleased: anchor.BN;
@@ -52,46 +54,88 @@ type ReserveVaultConfigAccount = {
 
 type ReserveReleaseRecordAccount = {
   destinationTokenAccount: anchor.web3.PublicKey;
+  requestedAmount: anchor.BN;
 };
 
 const ALLOCATIONS: AllocationDefinition[] = [
-  { key: "liquidity_pool", vaultClass: { liquidity: {} }, releasable: false },
+  {
+    key: "liquidity_pool",
+    vaultClass: { liquidity: {} },
+    releasable: false,
+    approvedCapPex: 380_000_000,
+  },
   {
     key: "community_utility_rewards",
     vaultClass: { communityRewards: {} },
     releasable: true,
+    approvedCapPex: 170_000_000,
   },
-  { key: "treasury", vaultClass: { marketReserve: {} }, releasable: true },
+  {
+    key: "treasury",
+    vaultClass: { marketReserve: {} },
+    releasable: true,
+    approvedCapPex: 120_000_000,
+  },
   {
     key: "ecosystem_marketing",
     vaultClass: { marketReserve: {} },
     releasable: true,
+    approvedCapPex: 120_000_000,
   },
   {
     key: "trading_company_operations",
     vaultClass: { operations: {} },
     releasable: true,
+    approvedCapPex: 70_000_000,
   },
-  { key: "development_team", vaultClass: { vesting: {} }, releasable: false },
-  { key: "founder", vaultClass: { vesting: {} }, releasable: false },
+  {
+    key: "development_team",
+    vaultClass: { vesting: {} },
+    releasable: false,
+    approvedCapPex: 20_000_000,
+  },
+  {
+    key: "founder",
+    vaultClass: { vesting: {} },
+    releasable: false,
+    approvedCapPex: 20_000_000,
+  },
   {
     key: "future_team_incentives",
     vaultClass: { marketReserve: {} },
     releasable: true,
+    approvedCapPex: 10_000_000,
   },
   {
     key: "team_emergency_reserve",
     vaultClass: { emergencyReserve: {} },
     releasable: true,
+    approvedCapPex: 10_000_000,
   },
   {
     key: "private_strategic_investors",
     vaultClass: { vesting: {} },
     releasable: false,
+    approvedCapPex: 50_000_000,
   },
-  { key: "advisor_wallet_1", vaultClass: { vesting: {} }, releasable: false },
-  { key: "advisor_wallet_2", vaultClass: { vesting: {} }, releasable: false },
-  { key: "advisor_wallet_3", vaultClass: { vesting: {} }, releasable: false },
+  {
+    key: "advisor_wallet_1",
+    vaultClass: { vesting: {} },
+    releasable: false,
+    approvedCapPex: 10_000_000,
+  },
+  {
+    key: "advisor_wallet_2",
+    vaultClass: { vesting: {} },
+    releasable: false,
+    approvedCapPex: 10_000_000,
+  },
+  {
+    key: "advisor_wallet_3",
+    vaultClass: { vesting: {} },
+    releasable: false,
+    approvedCapPex: 10_000_000,
+  },
 ];
 
 describe("perax-core reserve vault custody", () => {
@@ -205,7 +249,8 @@ describe("perax-core reserve vault custody", () => {
       allocationId,
       vaultClass: overrides.vaultClass ?? allocation.vaultClass,
       allocationCap:
-        overrides.allocationCap ?? new anchor.BN(1_000 * BASE_UNITS),
+        overrides.allocationCap ??
+        new anchor.BN(allocation.approvedCapPex).mul(new anchor.BN(BASE_UNITS)),
       authorizedSourceOwner:
         overrides.authorizedSourceOwner ?? sourceOwner.publicKey,
       authorizedSourceTokenAccount:
@@ -430,6 +475,7 @@ describe("perax-core reserve vault custody", () => {
       key: "unknown_allocation",
       vaultClass: { marketReserve: {} },
       releasable: true,
+      approvedCapPex: 1,
     };
     const built = await buildInitialization(definition);
     await expectFailure(() =>
@@ -496,6 +542,29 @@ describe("perax-core reserve vault custody", () => {
     );
   });
 
+  it("rejects an allocation cap below the approved amount", async () => {
+    const treasury = ALLOCATIONS.find((item) => item.key === "treasury")!;
+    const built = await buildInitialization(treasury, {
+      allocationCap: new anchor.BN(119_000_000 * BASE_UNITS),
+    });
+    await expectFailure(() =>
+      program.methods
+        .initializeReserveVault(built.params)
+        .accounts({
+          state,
+          authority,
+          reserveVaultConfig: built.config,
+          vaultAuthority: built.vaultAuthority,
+          vaultTokenAccount: built.tokenAccount,
+          tokenMint: mint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .rpc()
+    );
+  });
+
   it("rejects a configured destination owned by any reserve-authority PDA", async () => {
     const treasury = ALLOCATIONS.find((item) => item.key === "treasury")!;
     const liquidityAuthority = deriveVault(fixedId("liquidity_pool")).vaultAuthority;
@@ -532,7 +601,14 @@ describe("perax-core reserve vault custody", () => {
 
   it("initializes all 13 approved allocation vaults with separate identities", async () => {
     for (const allocation of ALLOCATIONS) {
-      await initializeVault(allocation);
+      const initialized = await initializeVault(allocation);
+      const config = await programAccounts.reserveVaultConfig.fetch(
+        initialized.config
+      );
+      const approvedCap = new anchor.BN(allocation.approvedCapPex).mul(
+        new anchor.BN(BASE_UNITS)
+      );
+      expect(config.allocationCap.toString()).to.equal(approvedCap.toString());
     }
 
     const configs = await programAccounts.reserveVaultConfig.all();
@@ -604,22 +680,34 @@ describe("perax-core reserve vault custody", () => {
     expect(config.unsolicitedBalance.toString()).to.equal("0");
   });
 
-  it("rejects an authorized deposit above the configured cap", async () => {
-    const community = vaults.get("community_utility_rewards")!;
+  it("rejects an authorized deposit above the full approved allocation cap", async () => {
+    const treasury = vaults.get("treasury")!;
+    const excessiveAmount = 120_000_001n * BigInt(BASE_UNITS);
+    await mintTo(
+      provider.connection,
+      payer,
+      mint,
+      treasury.sourceTokenAccount,
+      payer,
+      excessiveAmount
+    );
     await expectFailure(() =>
       program.methods
-        .depositIntoReserveVault(community.allocationId, new anchor.BN(1))
+        .depositIntoReserveVault(
+          treasury.allocationId,
+          new anchor.BN(excessiveAmount.toString())
+        )
         .accounts({
           state,
-          reserveVaultConfig: community.config,
-          vaultAuthority: community.authority,
-          sourceOwner: community.sourceOwner.publicKey,
-          sourceTokenAccount: community.sourceTokenAccount,
-          vaultTokenAccount: community.tokenAccount,
+          reserveVaultConfig: treasury.config,
+          vaultAuthority: treasury.authority,
+          sourceOwner: treasury.sourceOwner.publicKey,
+          sourceTokenAccount: treasury.sourceTokenAccount,
+          vaultTokenAccount: treasury.tokenAccount,
           tokenMint: mint,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
-        .signers([community.sourceOwner])
+        .signers([treasury.sourceOwner])
         .rpc()
     );
   });
@@ -920,6 +1008,107 @@ describe("perax-core reserve vault custody", () => {
           "team_emergency_reserve",
           10,
           emergency.destinationTokenAccount,
+          1
+        )
+      )
+    );
+  });
+
+  it("successfully releases from the emergency vault without counting unsolicited PEX", async () => {
+    const emergency = vaults.get("team_emergency_reserve")!;
+    await mintTo(
+      provider.connection,
+      payer,
+      mint,
+      emergency.sourceTokenAccount,
+      payer,
+      1_000n * BigInt(BASE_UNITS)
+    );
+    await program.methods
+      .depositIntoReserveVault(
+        emergency.allocationId,
+        new anchor.BN(1_000 * BASE_UNITS)
+      )
+      .accounts({
+        state,
+        reserveVaultConfig: emergency.config,
+        vaultAuthority: emergency.authority,
+        sourceOwner: emergency.sourceOwner.publicKey,
+        sourceTokenAccount: emergency.sourceTokenAccount,
+        vaultTokenAccount: emergency.tokenAccount,
+        tokenMint: mint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([emergency.sourceOwner])
+      .rpc();
+
+    await transfer(
+      provider.connection,
+      payer,
+      wrongSourceTokenAccount,
+      emergency.tokenAccount,
+      wrongSourceOwner,
+      50n * BigInt(BASE_UNITS)
+    );
+    await program.methods
+      .reconcileReserveVault(emergency.allocationId)
+      .accounts({
+        state,
+        authority,
+        reserveVaultConfig: emergency.config,
+        vaultTokenAccount: emergency.tokenAccount,
+      })
+      .rpc();
+
+    const params = emergencyRelease(
+      "team_emergency_reserve",
+      12,
+      emergency.destinationTokenAccount,
+      1_000 * BASE_UNITS,
+      5 * BASE_UNITS
+    );
+    await executeRelease("team_emergency_reserve", params);
+
+    const vault = await getAccount(provider.connection, emergency.tokenAccount);
+    const destination = await getAccount(
+      provider.connection,
+      emergency.destinationTokenAccount
+    );
+    const config = await programAccounts.reserveVaultConfig.fetch(
+      emergency.config
+    );
+    const [recordPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("vault-release"), Buffer.from(params.releaseId)],
+      program.programId
+    );
+    const record = await programAccounts.reserveReleaseRecord.fetch(recordPda);
+
+    expect(vault.amount).to.equal(1_045n * BigInt(BASE_UNITS));
+    expect(destination.amount).to.equal(5n * BigInt(BASE_UNITS));
+    expect(config.authorizedDeposited.toString()).to.equal(
+      String(1_000 * BASE_UNITS)
+    );
+    expect(config.unsolicitedBalance.toString()).to.equal(
+      String(50 * BASE_UNITS)
+    );
+    expect(config.totalReleased.toString()).to.equal(
+      String(5 * BASE_UNITS)
+    );
+    expect(record.destinationTokenAccount.toBase58()).to.equal(
+      emergency.destinationTokenAccount.toBase58()
+    );
+    expect(record.requestedAmount.toString()).to.equal(
+      String(5 * BASE_UNITS)
+    );
+
+    await expectFailure(() =>
+      executeRelease(
+        "team_emergency_reserve",
+        emergencyRelease(
+          "team_emergency_reserve",
+          13,
+          emergency.destinationTokenAccount,
+          1_045 * BASE_UNITS,
           1
         )
       )
