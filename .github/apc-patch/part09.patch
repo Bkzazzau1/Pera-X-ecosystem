@@ -1,0 +1,219 @@
+indows_if_needed(&mut state, 2_592_001);
+-
+     assert_eq!(state.daily_unlocked_accumulator, 0);
+     assert_eq!(state.monthly_unlocked_accumulator, 0);
+ }
+ 
+ #[test]
+-fn market_burn_uses_market_health_rate_before_conservation() {
++fn market_burn_policy_remains_enforced() {
+     let state = test_state(0);
+     let params = market_burn_params(1_000_000 * PEX_DECIMALS, DEFAULT_BURN_RATE_BPS, 50);
+-
+     assert!(validate_market_condition_burn(&state, &params, PEX_TOTAL_SUPPLY).is_ok());
+-}
+ 
+-#[test]
+-fn market_burn_uses_conservation_rate_at_threshold() {
+-    let state = test_state(0);
+-    let conservation_threshold =
+-        amount_bps(PEX_TOTAL_SUPPLY, CONSERVATION_SUPPLY_THRESHOLD_BPS).unwrap();
+-    let params = market_burn_params(1_000_000 * PEX_DECIMALS, CONSERVATION_BURN_RATE_BPS, 50);
+-
+-    assert!(validate_market_condition_burn(&state, &params, conservation_threshold).is_ok());
+-}
+-
+-#[test]
+-fn market_burn_rejects_market_health_rate_during_conservation() {
+-    let state = test_state(0);
+-    let conservation_threshold =
+-        amount_bps(PEX_TOTAL_SUPPLY, CONSERVATION_SUPPLY_THRESHOLD_BPS).unwrap();
+-    let params = market_burn_params(1_000_000 * PEX_DECIMALS, DEFAULT_BURN_RATE_BPS, 50);
+-
+-    assert!(validate_market_condition_burn(&state, &params, conservation_threshold).is_err());
+-}
+-
+-#[test]
+-fn market_burn_enforces_daily_cap() {
+-    let mut state = test_state(0);
+-    state.daily_burn_accumulator = amount_bps(PEX_TOTAL_SUPPLY, EARLY_DAILY_BURN_CAP_BPS).unwrap();
+-    let params = market_burn_params(10, DEFAULT_BURN_RATE_BPS, 50);
+-
+-    assert!(validate_market_condition_burn(&state, &params, PEX_TOTAL_SUPPLY).is_err());
++    let conservation_threshold = amount_bps(PEX_TOTAL_SUPPLY, CONSERVATION_SUPPLY_THRESHOLD_BPS).unwrap();
++    let conservation = market_burn_params(
++        1_000_000 * PEX_DECIMALS,
++        CONSERVATION_BURN_RATE_BPS,
++        50,
++    );
++    assert!(validate_market_condition_burn(&state, &conservation, conservation_threshold).is_ok());
+ }
+--- a/perax-contracts/programs/perax-core/src/instructions/mod.rs
++++ b/perax-contracts/programs/perax-core/src/instructions/mod.rs
+@@ -1,9 +1,15 @@
++mod apc;
+ mod burn;
+ mod config;
++mod counterweight;
+ mod payments;
++mod recovery;
+ mod vault;
+ 
++pub use apc::*;
+ pub use burn::*;
+ pub use config::*;
++pub use counterweight::*;
+ pub use payments::*;
++pub use recovery::*;
+ pub use vault::*;
+--- a/perax-contracts/programs/perax-core/src/instructions/config.rs
++++ b/perax-contracts/programs/perax-core/src/instructions/config.rs
+@@ -144,12 +144,8 @@
+         state.oracle_feed = oracle_feed;
+     }
+ 
+-    if let Some(current_stepped_floor) = params.current_stepped_floor {
+-        require!(
+-            current_stepped_floor > 0,
+-            PeraxError::InvalidMarketParameter
+-        );
+-        state.current_stepped_floor = current_stepped_floor;
++    if params.current_stepped_floor.is_some() {
++        return err!(PeraxError::UseApcRelease);
+     }
+ 
+     if let Some(daily_release_cap) = params.daily_release_cap {
+--- a/perax-contracts/programs/perax-core/src/instructions/vault.rs
++++ b/perax-contracts/programs/perax-core/src/instructions/vault.rs
+@@ -1,7 +1,7 @@
+ use crate::{
+     approved_allocation, calculate_vault_available_amount, is_market_releasable_vault_class,
+     is_program_derived_destination, reset_release_windows_if_needed,
+-    validate_emergency_release_fields, validate_growth_release_fields, validate_oracle_snapshot,
++    validate_emergency_release_fields, validate_oracle_snapshot,
+     validate_reference, validate_vault_class_for_release, DepositIntoReserveVault,
+     ExecuteMarketConditionalRelease, InitializeReserveVault, InitializeReserveVaultParams,
+     MarketConditionalReleaseParams, PeraxError, ReconcileReserveVault,
+@@ -238,6 +238,9 @@
+     params: VaultMarketConditionalReleaseParams,
+ ) -> Result<()> {
+     require!(params.requested_amount > 0, PeraxError::InvalidAmount);
++    if params.release_type == ReleaseType::Growth {
++        return err!(PeraxError::UseApcRelease);
++    }
+     validate_reference(params.release_id)?;
+     validate_reference(params.market_observation_id)?;
+     require!(
+@@ -272,17 +275,16 @@
+         PeraxError::InsufficientVaultBalance
+     );
+ 
++    let now = Clock::get()?.unix_timestamp;
+     {
+         let state = &mut ctx.accounts.state;
+         require!(!state.is_paused, PeraxError::ProgramPaused);
+         require!(!state.emergency_pause, PeraxError::EmergencyPaused);
+         validate_oracle_snapshot(state, &params.snapshot)?;
+-        reset_release_windows_if_needed(state, params.snapshot.observed_at);
++        reset_release_windows_if_needed(state, now);
+ 
+         match params.release_type {
+-            ReleaseType::Growth => {
+-                validate_growth_release_fields(state, params.requested_amount, &params.snapshot)?
+-            }
++            ReleaseType::Growth => return err!(PeraxError::UseApcRelease),
+             ReleaseType::Emergency => validate_emergency_release_fields(
+                 state,
+                 params.requested_amount,
+@@ -330,7 +332,7 @@
+         ctx.accounts.token_mint.decimals,
+     )?;
+ 
+-    let executed_at = Clock::get()?.unix_timestamp;
++    let executed_at = now;
+     let state = &mut ctx.accounts.state;
+     state.daily_unlocked_accumulator = state
+         .daily_unlocked_accumulator
+@@ -340,7 +342,7 @@
+         .monthly_unlocked_accumulator
+         .checked_add(params.requested_amount)
+         .ok_or(PeraxError::ReleaseCapExceeded)?;
+-    state.last_release_timestamp = params.snapshot.observed_at;
++    state.last_release_timestamp = executed_at;
+ 
+     let config = &mut ctx.accounts.reserve_vault_config;
+     config.total_released = config
+--- a/perax-contracts/programs/perax-core/src/instructions/burn.rs
++++ b/perax-contracts/programs/perax-core/src/instructions/burn.rs
+@@ -1,5 +1,5 @@
+ use crate::{
+-    reset_burn_window_if_needed, validate_market_condition_burn, validate_reference,
++    reset_burn_window_if_needed, validate_apc_burn_allowed, validate_market_condition_burn, validate_reference,
+     BurnExecutionRecord, BurnFromTradingCompany, BurnFulfillmentSource,
+     ConditionalBuybackBurnExecuted, ConditionalBuybackBurnParams, ExecuteConditionalBuybackBurn,
+     ExecuteMarketConditionBurn, MarketConditionBurnExecuted, MarketConditionBurnParams, PeraxError,
+@@ -20,6 +20,18 @@
+     ctx: Context<ExecuteMarketConditionBurn>,
+     params: MarketConditionBurnParams,
+ ) -> Result<()> {
++    validate_apc_burn_allowed(&ctx.accounts.apc_state)?;
++    let now = Clock::get()?.unix_timestamp;
++    require!(
++        params.observed_at
++            <= now.saturating_add(ctx.accounts.apc_config.maximum_future_clock_skew_seconds),
++        PeraxError::ObservationFromFuture
++    );
++    require!(
++        now.saturating_sub(params.observed_at)
++            <= ctx.accounts.apc_config.maximum_observation_age_seconds,
++        PeraxError::ObservationStale
++    );
+     let burn_params = ConditionalBuybackBurnParams {
+         amount: params.amount,
+         eligible_revenue_amount: params.eligible_revenue_amount,
+@@ -58,6 +70,18 @@
+     ctx: Context<ExecuteConditionalBuybackBurn>,
+     params: ConditionalBuybackBurnParams,
+ ) -> Result<()> {
++    validate_apc_burn_allowed(&ctx.accounts.apc_state)?;
++    let now = Clock::get()?.unix_timestamp;
++    require!(
++        params.observed_at
++            <= now.saturating_add(ctx.accounts.apc_config.maximum_future_clock_skew_seconds),
++        PeraxError::ObservationFromFuture
++    );
++    require!(
++        now.saturating_sub(params.observed_at)
++            <= ctx.accounts.apc_config.maximum_observation_age_seconds,
++        PeraxError::ObservationStale
++    );
+     let state = &ctx.accounts.state;
+ 
+     match params.burn_source {
+@@ -118,7 +142,8 @@
+     require!(params.observed_at > 0, PeraxError::InvalidMarketParameter);
+     validate_reference(params.decision_id)?;
+ 
+-    reset_burn_window_if_needed(state, params.observed_at);
++    let executed_at = Clock::get()?.unix_timestamp;
++    reset_burn_window_if_needed(state, executed_at);
+     validate_market_condition_burn(state, &params, current_mint_supply)?;
+ 
+     token::burn(burn_ctx, params.amount)?;
+@@ -128,8 +153,6 @@
+         .checked_add(params.amount)
+         .ok_or(PeraxError::DailyBurnCapExceeded)?;
+ 
+-    let executed_at = Clock::get()?.unix_timestamp;
+-
+     burn_record.decision_id = params.decision_id;
+     burn_record.authority = authority;
+     burn_record.trading_company_authority = source_authority;
+--- /dev/null
++++ b/perax-contracts/programs/perax-core/src/instructions/apc.rs
+@@ -0,0 +1,586 @@
++use crate::{
++    calculate_apc_risk_tier, calculate_band_interval_bps, calculate_band_release_cap,
++    calculate_counterweight_requirement, calculate_effective_apc_price, calculate_next_band_price,
++    calculate_vault_available_amount, is_apc_releasable_vault_class,
++    is_program_derived_destination, reset_apc_windows_if_needed, reset_release_win
