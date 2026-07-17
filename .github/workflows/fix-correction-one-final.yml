@@ -52,7 +52,8 @@ jobs:
           rm Cargo.lock
           CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback \
             cargo +1.85.0 generate-lockfile
-          cargo +1.85.0 tree --locked -i solana-program > /tmp/correction-one-cargo-tree.log
+          cargo +1.85.0 update -p blake3 --precise 1.5.0
+          cargo +1.85.0 tree --locked -i blake3 > /tmp/correction-one-cargo-tree.log
 
       - name: Install TypeScript dependencies
         working-directory: perax-contracts
