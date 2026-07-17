@@ -1,4 +1,4 @@
-  const observations = apc.observationPolicy;
++  const observations = apc.observationPolicy;
 +  assert(observations.permanentObservationPda === true, 'Permanent observation PDAs are required.');
 +  assert(observations.strictlyIncreasingSequence === true, 'Observation sequence must be strictly increasing.');
 +  assert(observations.freshObservationPerRelease === true, 'Every release must use a fresh observation.');
