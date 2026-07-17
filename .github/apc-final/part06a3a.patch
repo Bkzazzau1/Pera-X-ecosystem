@@ -1,0 +1,24 @@
+ pub fn enter_apc_recovery(ctx: Context<EnterApcRecovery>) -> Result<()> {
+     require!(!ctx.accounts.state.is_paused, PeraxError::ProgramPaused);
+     require!(ctx.accounts.apc_config.is_active, PeraxError::ApcInactive);
+@@ -20,6 +124,12 @@ pub fn enter_apc_recovery(ctx: Context<EnterApcRecovery>) -> Result<()> {
+ 
+     let now = Clock::get()?.unix_timestamp;
+     validate_apc_observation_fresh(&ctx.accounts.apc_config, &ctx.accounts.observation, now)?;
++    require!(
++        !ctx.accounts.observation.is_consumed_for_release
++            && !ctx.accounts.observation.is_consumed_for_confirmation
++            && !ctx.accounts.observation.is_consumed_for_recovery,
++        PeraxError::ObservationAlreadyUsed
++    );
+     let observed_price = calculate_effective_apc_price(
+         ctx.accounts.observation.spot_price,
+         ctx.accounts.observation.twap_price,
+@@ -31,6 +141,10 @@ pub fn enter_apc_recovery(ctx: Context<EnterApcRecovery>) -> Result<()> {
+ 
+     let previous_status = ctx.accounts.apc_state.status;
+     ctx.accounts.apc_state.status = ApcStatus::Recovery;
++    ctx.accounts.apc_state.recovery_entry_observation_id =
++        ctx.accounts.observation.observation_id;
++    ctx.accounts.observation.is_consumed_for_recovery = true;
++    ctx.accounts.observation.consumed_by_recovery = ctx.accounts.apc_state.key();
