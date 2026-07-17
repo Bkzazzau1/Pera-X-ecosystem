@@ -1,0 +1,180 @@
+t<'info, ApcState>,
++    #[account(seeds = [b"counterweight-config", apc_config.key().as_ref()], bump = counterweight_config.bump)]
++    pub counterweight_config: Account<'info, CounterweightConfig>,
++    /// CHECK: PDA authority constrained by configured seeds.
++    #[account(seeds = [b"deferred-burn-authority", apc_config.key().as_ref()], bump = counterweight_config.deferred_burn_authority_bump)]
++    pub deferred_burn_authority: UncheckedAccount<'info>,
++    #[account(mut, address = counterweight_config.deferred_burn_vault @ PeraxError::InvalidCounterweightVault, constraint = deferred_burn_vault.owner == deferred_burn_authority.key() @ PeraxError::InvalidCounterweightVault, constraint = deferred_burn_vault.mint == token_mint.key() @ PeraxError::InvalidTokenMint)]
++    pub deferred_burn_vault: Account<'info, TokenAccount>,
++    #[account(mut)]
++    pub deferred_burn_record: Account<'info, DeferredBurnRecord>,
++    #[account(mut)]
++    pub token_mint: Account<'info, Mint>,
++    pub oracle_feed: Signer<'info>,
++    pub token_program: Program<'info, Token>,
++}
++
++#[derive(Accounts)]
++pub struct EnterApcRecovery<'info> {
++    #[account(seeds = [b"perax-state"], bump = state.bump)]
++    pub state: Account<'info, PeraxState>,
++    #[account(seeds = [b"apc-config", state.key().as_ref()], bump = apc_config.bump, has_one = oracle_feed @ PeraxError::Unauthorized)]
++    pub apc_config: Account<'info, ApcConfig>,
++    #[account(mut, seeds = [b"apc-state", apc_config.key().as_ref()], bump = apc_state.bump)]
++    pub apc_state: Account<'info, ApcState>,
++    #[account(seeds = [b"apc-observation", observation.observation_id.as_ref()], bump = observation.bump)]
++    pub observation: Account<'info, ApcObservation>,
++    pub oracle_feed: Signer<'info>,
++}
++
++#[derive(Accounts)]
++#[instruction(params: ExecuteCounterweightPurchaseParams)]
++pub struct ExecuteCounterweightPurchase<'info> {
++    #[account(seeds = [b"perax-state"], bump = state.bump, constraint = pex_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint)]
++    pub state: Account<'info, PeraxState>,
++    #[account(seeds = [b"apc-config", state.key().as_ref()], bump = apc_config.bump, has_one = oracle_feed @ PeraxError::Unauthorized)]
++    pub apc_config: Account<'info, ApcConfig>,
++    #[account(mut, seeds = [b"apc-state", apc_config.key().as_ref()], bump = apc_state.bump)]
++    pub apc_state: Account<'info, ApcState>,
++    #[account(seeds = [b"apc-observation", params.observation_id.as_ref()], bump = observation.bump)]
++    pub observation: Account<'info, ApcObservation>,
++    #[account(seeds = [b"counterweight-config", apc_config.key().as_ref()], bump = counterweight_config.bump)]
++    pub counterweight_config: Account<'info, CounterweightConfig>,
++    /// CHECK: PDA authority used by the approved atomic recovery adapter.
++    #[account(seeds = [b"counterweight-authority", apc_config.key().as_ref()], bump = counterweight_config.counterweight_authority_bump)]
++    pub counterweight_authority: UncheckedAccount<'info>,
++    #[account(mut, address = counterweight_config.counterweight_vault @ PeraxError::InvalidCounterweightVault, constraint = counterweight_vault.owner == counterweight_authority.key() @ PeraxError::InvalidCounterweightVault, constraint = counterweight_vault.mint == quote_mint.key() @ PeraxError::InvalidCounterweightMint)]
++    pub counterweight_vault: Account<'info, TokenAccount>,
++    #[account(mut, address = counterweight_config.recovery_vault @ PeraxError::InvalidCounterweightVault, constraint = recovery_vault.mint == pex_mint.key() @ PeraxError::InvalidTokenMint)]
++    pub recovery_vault: Account<'info, TokenAccount>,
++    #[account(address = counterweight_config.quote_mint @ PeraxError::InvalidCounterweightMint)]
++    pub quote_mint: Account<'info, Mint>,
++    pub pex_mint: Account<'info, Mint>,
++    /// CHECK: Address is constrained to the immutable approved market pool.
++    #[account(address = apc_config.approved_pool @ PeraxError::InvalidApcPool)]
++    pub approved_pool: UncheckedAccount<'info>,
++    /// CHECK: Executable adapter is constrained to the immutable approved recovery program.
++    #[account(address = apc_config.approved_recovery_program @ PeraxError::InvalidRecoveryProgram, executable)]
++    pub recovery_program: UncheckedAccount<'info>,
++    #[account(
++        init,
++        payer = oracle_feed,
++        space = 8 + ApcRecoveryRecord::INIT_SPACE,
++        seeds = [b"apc-recovery", params.recovery_id.as_ref()],
++        bump
++    )]
++    pub recovery_record: Account<'info, ApcRecoveryRecord>,
++    #[account(mut)]
++    pub oracle_feed: Signer<'info>,
++    pub token_program: Program<'info, Token>,
++    pub system_program: Program<'info, System>,
++}
++
++#[derive(Accounts)]
++pub struct PauseApc<'info> {
++    #[account(seeds = [b"perax-state"], bump = state.bump)]
++    pub state: Account<'info, PeraxState>,
++    #[account(mut, seeds = [b"apc-config", state.key().as_ref()], bump = apc_config.bump)]
++    pub apc_config: Account<'info, ApcConfig>,
++    #[account(mut, seeds = [b"apc-state", apc_config.key().as_ref()], bump = apc_state.bump)]
++    pub apc_state: Account<'info, ApcState>,
++    pub actor: Signer<'info>,
++}
+--- a/perax-contracts/programs/perax-core/src/errors.rs
++++ b/perax-contracts/programs/perax-core/src/errors.rs
+@@ -106,4 +106,65 @@
+     InvalidApprovedDestination,
+     #[msg("A program-derived account, including another reserve vault, cannot receive a market release.")]
+     DestinationIsReserveVault,
++    #[msg("Growth releases must use the Adaptive Price Control release route.")]
++    UseApcRelease,
++    #[msg("Adaptive Price Control has not been initialized.")]
++    ApcNotInitialized,
++    #[msg("Adaptive Price Control is inactive.")]
++    ApcInactive,
++    #[msg("Adaptive Price Control is paused.")]
++    ApcPaused,
++    #[msg("The requested action is not valid for the current APC status.")]
++    InvalidApcStatus,
++    #[msg("The APC band index is invalid.")]
++    InvalidBandIndex,
++    #[msg("The APC band has already been activated.")]
++    BandAlreadyActivated,
++    #[msg("The APC band has not been activated.")]
++    BandNotActivated,
++    #[msg("The APC band release cap would be exceeded.")]
++    BandReleaseCapExceeded,
++    #[msg("The APC band is already exhausted.")]
++    BandAlreadyExhausted,
++    #[msg("APC bands must be activated sequentially.")]
++    NonSequentialBand,
++    #[msg("The calculated APC band interval is outside the immutable policy bounds.")]
++    InvalidBandInterval,
++    #[msg("The effective APC price has not reached the next band trigger.")]
++    ApcPriceGateNotMet,
++    #[msg("The APC observation has already been consumed by a release.")]
++    ObservationAlreadyUsed,
++    #[msg("The APC observation is stale.")]
++    ObservationStale,
++    #[msg("The APC observation timestamp is too far in the future.")]
++    ObservationFromFuture,
++    #[msg("The APC observation sequence must increase strictly.")]
++    ObservationSequenceInvalid,
++    #[msg("The APC observation does not use the approved market pool.")]
++    InvalidApcPool,
++    #[msg("The APC pump-window release cap would be exceeded.")]
++    PumpWindowCapExceeded,
++    #[msg("The APC hourly release cap would be exceeded.")]
++    HourlyApcCapExceeded,
++    #[msg("The Counterweight Vault does not meet the required coverage.")]
++    CounterweightCoverageNotMet,
++    #[msg("The counterweight quote mint is invalid.")]
++    InvalidCounterweightMint,
++    #[msg("The Counterweight Vault is invalid.")]
++    InvalidCounterweightVault,
++    #[msg("Immediate burn is disabled while APC pump protection is active.")]
++    BurnDeferredDuringPump,
++    #[msg("The deferred burn cannot execute in the current APC state.")]
++    DeferredBurnNotExecutable,
++    #[msg("APC recovery is not active.")]
++    RecoveryNotActive,
++    #[msg("The APC recovery spending cap would be exceeded.")]
++    RecoveryCapExceeded,
++    #[msg("The atomic recovery swap did not settle the required quote spend and PEX receipt.")]
++    InvalidRecoverySettlement,
++    #[msg("The configured recovery adapter program is invalid.")]
++    InvalidRecoveryProgram,
++    #[msg("The immutable APC policy is invalid.")]
++    InvalidApcPolicy,
++
+ }
+--- a/perax-contracts/programs/perax-core/src/events.rs
++++ b/perax-contracts/programs/perax-core/src/events.rs
+@@ -1,4 +1,4 @@
+-use crate::{BurnFulfillmentSource, ReleaseType, VaultClass};
++use crate::{ApcStatus, BurnFulfillmentSource, ReleaseType, VaultClass};
+ use anchor_lang::prelude::*;
+ 
+ #[event]
+@@ -219,3 +219,137 @@
+     pub observed_at: i64,
+     pub executed_at: i64,
+ }
++
++
++#[event]
++pub struct ApcInitialized {
++    pub state: Pubkey,
++    pub apc_config: Pubkey,
++    pub apc_state: Pubkey,
++    pub oracle_feed: Pubkey,
++    pub quote_mint: Pubkey,
++    pub approved_pool: Pubkey,
++    pub first_activation_price: u64,
++    pub initialized_at: i64,
++}
++
++#[event]
++pub struct ApcObservationSubmitted {
++    pub observation: Pubkey,
++    pub observation_id: [u8; 
