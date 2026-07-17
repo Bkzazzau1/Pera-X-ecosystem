@@ -1,0 +1,140 @@
+diff --git a/perax-contracts/tests/perax-core.ts b/perax-contracts/tests/perax-core.ts
+index 13b8c48..a06f272 100644
+--- a/perax-contracts/tests/perax-core.ts
++++ b/perax-contracts/tests/perax-core.ts
+@@ -1144,4 +1144,715 @@ describe("perax-core reserve vault custody", () => {
+         .rpc()
+     );
+   });
++
++  it("executes the complete APC custody, cascade, burn, recovery, and rollback flow", async () => {
++    const treasury = vaults.get("treasury")!;
++    const proceedsOwner = anchor.web3.Keypair.generate();
++    const proceedsAirdrop = await provider.connection.requestAirdrop(
++      proceedsOwner.publicKey,
++      3 * anchor.web3.LAMPORTS_PER_SOL
++    );
++    await provider.connection.confirmTransaction(proceedsAirdrop, "confirmed");
++
++    const quoteMint = await createMint(
++      provider.connection,
++      payer,
++      payer.publicKey,
++      null,
++      6
++    );
++    const proceedsTokenAccount = (
++      await getOrCreateAssociatedTokenAccount(
++        provider.connection,
++        payer,
++        quoteMint,
++        proceedsOwner.publicKey
++      )
++    ).address;
++    await mintTo(
++      provider.connection,
++      payer,
++      quoteMint,
++      proceedsTokenAccount,
++      payer,
++      5_000_000n
++    );
++
++    const recoveryPoolId = uniqueId(50_001);
++    const [recoveryPool] = anchor.web3.PublicKey.findProgramAddressSync(
++      [Buffer.from("recovery-pool"), Buffer.from(recoveryPoolId)],
++      program.programId
++    );
++    const [poolAuthority] = anchor.web3.PublicKey.findProgramAddressSync(
++      [Buffer.from("recovery-pool-authority"), recoveryPool.toBuffer()],
++      program.programId
++    );
++    const poolQuoteVault = getAssociatedTokenAddressSync(
++      quoteMint,
++      poolAuthority,
++      true,
++      TOKEN_PROGRAM_ID,
++      ASSOCIATED_TOKEN_PROGRAM_ID
++    );
++    const poolPexVault = getAssociatedTokenAddressSync(
++      mint,
++      poolAuthority,
++      true,
++      TOKEN_PROGRAM_ID,
++      ASSOCIATED_TOKEN_PROGRAM_ID
++    );
++
++    await program.methods
++      .initializeRecoveryPool({ poolId: recoveryPoolId, feeBps: 300 })
++      .accounts({
++        state,
++        authority,
++        recoveryPool,
++        poolAuthority,
++        poolQuoteVault,
++        poolPexVault,
++        quoteMint,
++        pexMint: mint,
++        tokenProgram: TOKEN_PROGRAM_ID,
++        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
++        systemProgram: anchor.web3.SystemProgram.programId,
++      })
++      .rpc();
++
++    await mintTo(
++      provider.connection,
++      payer,
++      quoteMint,
++      poolQuoteVault,
++      payer,
++      1_000_000_000n
++    );
++    await mintTo(
++      provider.connection,
++      payer,
++      mint,
++      poolPexVault,
++      payer,
++      1_000_000n * BigInt(BASE_UNITS)
++    );
++
++    const [apcConfig] = anchor.web3.PublicKey.findProgramAddressSync(
++      [Buffer.from("apc-config"), state.toBuffer()],
++      program.programId
++    );
++    const [apcState] = anchor.web3.PublicKey.findProgramAddressSync(
++      [Buffer.from("apc-state"), apcConfig.toBuffer()],
++      program.programId
++    );
++    const [counterweightConfig] = anchor.web3.PublicKey.findProgramAddressSync(
++      [Buffer.from("counterweight-config"), apcConfig.toBuffer()],
++      program.programId
++    );
++    const [counterweightAuthority] = anchor.web3.PublicKey.findProgramAddressSync(
++      [Buffer.from("counterweight-authority"), apcConfig.toBuffer()],
++      program.programId
++    );
++    const counterweightVault = getAssociatedTokenAddressSync(
++      quoteMint,
++      counterweightAuthority,
++      true,
++      TOKEN_PROGRAM_ID,
++      ASSOCIATED_TOKEN_PROGRAM_ID
++    );
++    const [deferredBurnAuthority] = anchor.web3.PublicKey.findProgramAddressSync(
++      [Buffer.from("deferred-burn-authority"), apcConfig.toBuffer()],
++      program.programId
++    );
++    const deferredBurnVault = getAssociatedTokenAddressSync(
++      mint,
++      deferredBurnAuthority,
++      true,
++      TOKEN_PROGRAM_ID,
++      ASSOCIATED_TOKEN_PROGRAM_ID
++    );
++    const [recoveryAuthority] = anchor.web3.PublicKey.findProgramAddressSync(
++      [Buffer.from("recovery-authority"), apcConfig.toBuffer()],
++      program.programId
++    );
++    const recoveryVault = getAssociatedTokenAddressSync(
++      mint,
