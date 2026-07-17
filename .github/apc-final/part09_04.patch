@@ -1,0 +1,138 @@
++      [Buffer.from("counterweight-deposit"), Buffer.from(depositId)],
++      program.programId
++    );
++    const counterweightBefore = await getAccount(
++      provider.connection,
++      counterweightVault
++    );
++    await program.methods
++      .depositCounterweightProceeds({
++        depositId,
++        amount: new anchor.BN(1_000_000),
++      })
++      .accounts({
++        state,
++        apcConfig,
++        apcState,
++        counterweightConfig,
++        sourceOwner: proceedsOwner.publicKey,
++        sourceTokenAccount: proceedsTokenAccount,
++        counterweightVault,
++        quoteMint,
++        depositRecord,
++        tokenProgram: TOKEN_PROGRAM_ID,
++        systemProgram: anchor.web3.SystemProgram.programId,
++      })
++      .signers([proceedsOwner])
++      .rpc();
++    const counterweightAfter = await getAccount(
++      provider.connection,
++      counterweightVault
++    );
++    expect(counterweightAfter.amount - counterweightBefore.amount).to.equal(
++      1_000_000n
++    );
++
++    const secondReleaseObservation = await submitObservation(50_013, 10_000);
++    await releaseFromBand(
++      50_103,
++      2,
++      secondBand,
++      secondReleaseObservation.observationId,
++      secondReleaseObservation.observation,
++      5
++    );
++    await expectFailure(() =>
++      releaseFromBand(
++        50_104,
++        2,
++        secondBand,
++        secondReleaseObservation.observationId,
++        secondReleaseObservation.observation,
++        1
++      )
++    );
++
++    const burnDecisionId = uniqueId(50_301);
++    const [deferredBurnRecord] = anchor.web3.PublicKey.findProgramAddressSync(
++      [Buffer.from("deferred-burn"), Buffer.from(burnDecisionId)],
++      program.programId
++    );
++    await program.methods
++      .recordDeferredBurn({
++        decisionId: burnDecisionId,
++        amount: new anchor.BN(BASE_UNITS),
++        observedAt: new anchor.BN(await currentChainTime()),
++      })
++      .accounts({
++        state,
++        apcConfig,
++        apcState,
++        counterweightConfig,
++        sourceAuthority: wrongSourceOwner.publicKey,
++        sourceTokenAccount: wrongSourceTokenAccount,
++        deferredBurnVault,
++        tokenMint: mint,
++        deferredBurnRecord,
++        tokenProgram: TOKEN_PROGRAM_ID,
++        systemProgram: anchor.web3.SystemProgram.programId,
++      })
++      .signers([wrongSourceOwner])
++      .rpc();
++    await expectFailure(() =>
++      program.methods
++        .executeDeferredBurn({ amount: new anchor.BN(BASE_UNITS) })
++        .accounts({
++          state,
++          apcConfig,
++          apcState,
++          counterweightConfig,
++          deferredBurnAuthority,
++          deferredBurnVault,
++          deferredBurnRecord,
++          tokenMint: mint,
++          oracleFeed: oracle.publicKey,
++          tokenProgram: TOKEN_PROGRAM_ID,
++        })
++        .signers([oracle])
++        .rpc()
++    );
++
++    const confirmationObservation = await submitObservation(50_014, 10_000);
++    await program.methods
++      .confirmApcAbsorption()
++      .accounts({
++        state,
++        apcConfig,
++        apcState,
++        observation: confirmationObservation.observation,
++        oracleFeed: oracle.publicKey,
++      })
++      .signers([oracle])
++      .rpc();
++    const confirmedState = await program.account.apcState.fetch(apcState);
++    expect(confirmedState.unconfirmedReleaseAmount.toString()).to.equal("0");
++
++    await program.methods
++      .executeDeferredBurn({ amount: new anchor.BN(BASE_UNITS) })
++      .accounts({
++        state,
++        apcConfig,
++        apcState,
++        counterweightConfig,
++        deferredBurnAuthority,
++        deferredBurnVault,
++        deferredBurnRecord,
++        tokenMint: mint,
++        oracleFeed: oracle.publicKey,
++        tokenProgram: TOKEN_PROGRAM_ID,
++      })
++      .signers([oracle])
++      .rpc();
++    expect((await getAccount(provider.connection, deferredBurnVault)).amount).to.equal(0n);
++
++    const rollbackObservation = await submitObservation(50_015, 10_000);
++    const rollbackReleaseOne = uniqueId(50_401);
++    const rollbackReleaseTwo = uniqueId(50_402);
++    const [rollbackRecordOne] = anchor.web3.PublicKey.findProgramAddressSync(
++      [Buffer.from("apc-release"), Buffer.from(rollbackReleaseOne)],
