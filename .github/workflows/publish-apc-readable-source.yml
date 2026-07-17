@@ -152,6 +152,7 @@ jobs:
           rm -rf perax-market-engine/node_modules
           git status --short | tee /tmp/git-status.log
           tar --exclude=.git --exclude=target --exclude=node_modules -czf /tmp/apc-readable-source.tar.gz .
+          git checkout origin/agent/adaptive-price-control -- .github/workflows/perax-contracts-ci.yml .github/workflows/fix-correction-one-final.yml
 
       - name: Commit readable APC source
         shell: bash
