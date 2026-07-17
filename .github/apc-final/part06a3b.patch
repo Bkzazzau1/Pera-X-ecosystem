@@ -1,0 +1,35 @@
+ 
+     emit!(ApcRecoveryEntered {
+         apc_state: ctx.accounts.apc_state.key(),
+@@ -83,6 +197,22 @@ pub fn execute_counterweight_purchase<'info>(
+ 
+     let now = Clock::get()?.unix_timestamp;
+     validate_apc_observation_fresh(&ctx.accounts.apc_config, &ctx.accounts.observation, now)?;
++    require!(
++        ctx.accounts.observation.observation_id
++            != ctx.accounts.apc_state.recovery_entry_observation_id
++            && !ctx.accounts.observation.is_consumed_for_release
++            && !ctx.accounts.observation.is_consumed_for_confirmation
++            && !ctx.accounts.observation.is_consumed_for_recovery,
++        PeraxError::ObservationAlreadyUsed
++    );
++    let observed_price = calculate_effective_apc_price(
++        ctx.accounts.observation.spot_price,
++        ctx.accounts.observation.twap_price,
++    )?;
++    require!(
++        observed_price < ctx.accounts.apc_state.current_reference_price,
++        PeraxError::RecoveryNotActive
++    );
+ 
+     let tracked_available = ctx
+         .accounts
+@@ -186,6 +316,8 @@ pub fn execute_counterweight_purchase<'info>(
+     record.pex_received = pex_received;
+     record.executed_at = now;
+     record.bump = ctx.bumps.recovery_record;
++    ctx.accounts.observation.is_consumed_for_recovery = true;
++    ctx.accounts.observation.consumed_by_recovery = record.key();
+ 
+     emit!(CounterweightPurchaseExecuted {
+         recovery_record: record.key(),
