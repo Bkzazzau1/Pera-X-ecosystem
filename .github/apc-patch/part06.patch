@@ -1,0 +1,273 @@
+ation_age_seconds,
++        PeraxError::ObservationStale
++    );
++    Ok(())
++}
++
++pub(crate) fn validate_apc_market_gates(
++    config: &ApcConfig,
++    observation: &ApcObservation,
++) -> Result<()> {
++    require!(
++        observation.twap_minutes >= config.minimum_twap_minutes,
++        PeraxError::TwapGateNotMet
++    );
++    require!(
++        observation.liquidity_usd >= config.minimum_liquidity_usd,
++        PeraxError::LiquidityGateNotMet
++    );
++    require!(
++        observation.volume_usd >= config.minimum_volume_usd,
++        PeraxError::LiquidityGateNotMet
++    );
++    require!(
++        observation.net_buy_pressure_bps >= config.minimum_buy_pressure_bps,
++        PeraxError::BuyPressureGateNotMet
++    );
++    Ok(())
++}
++
++
++pub fn validate_sequential_band_index(current_band_index: u32, requested_band_index: u32) -> Result<()> {
++    let expected = current_band_index
++        .checked_add(1)
++        .ok_or(PeraxError::InvalidBandIndex)?;
++    require!(requested_band_index == expected, PeraxError::NonSequentialBand);
++    Ok(())
++}
++
++pub fn calculate_apc_risk_tier(
++    velocity_bps: u32,
++    volatility_bps: u32,
++    impact_bps: u32,
++    velocity_thresholds: [u32; 3],
++    volatility_thresholds: [u32; 3],
++    impact_thresholds: [u32; 3],
++) -> u8 {
++    let velocity_tier = threshold_tier(velocity_bps, velocity_thresholds);
++    let volatility_tier = threshold_tier(volatility_bps, volatility_thresholds);
++    let impact_tier = threshold_tier(impact_bps, impact_thresholds);
++    velocity_tier.max(volatility_tier).max(impact_tier)
++}
++
++pub fn calculate_effective_apc_price(spot_price: u64, twap_price: u64) -> Result<u64> {
++    require!(spot_price > 0 && twap_price > 0, PeraxError::InvalidMarketParameter);
++    Ok(spot_price.min(twap_price))
++}
++
++pub fn calculate_band_interval_bps(config: &ApcConfig, risk_tier: u8) -> Result<u16> {
++    let index = usize::from(risk_tier);
++    require!(index < config.band_interval_bps_by_risk.len(), PeraxError::InvalidApcPolicy);
++    let interval = config.band_interval_bps_by_risk[index];
++    require!(
++        interval >= config.minimum_band_interval_bps
++            && interval <= config.maximum_band_interval_bps,
++        PeraxError::InvalidBandInterval
++    );
++    Ok(interval)
++}
++
++pub fn calculate_next_band_price(reference_price: u64, interval_bps: u16) -> Result<u64> {
++    require!(reference_price > 0, PeraxError::InvalidMarketParameter);
++    let numerator = (reference_price as u128)
++        .checked_mul(APC_BPS_DENOMINATOR + u128::from(interval_bps))
++        .ok_or(PeraxError::InvalidMarketParameter)?
++        .checked_add(APC_BPS_DENOMINATOR - 1)
++        .ok_or(PeraxError::InvalidMarketParameter)?;
++    let next = numerator
++        .checked_div(APC_BPS_DENOMINATOR)
++        .ok_or(PeraxError::InvalidMarketParameter)?;
++    u64::try_from(next).map_err(|_| PeraxError::InvalidMarketParameter.into())
++}
++
++pub fn calculate_cascade_reduction(config: &ApcConfig, cascade_position: u32) -> Result<u16> {
++    require!(cascade_position > 0, PeraxError::InvalidBandIndex);
++    let index = usize::try_from(cascade_position.saturating_sub(1))
++        .map_err(|_| PeraxError::InvalidBandIndex)?
++        .min(config.cascade_reduction_bps.len() - 1);
++    Ok(config.cascade_reduction_bps[index])
++}
++
++pub fn calculate_band_release_cap(
++    config: &ApcConfig,
++    risk_tier: u8,
++    cascade_position: u32,
++) -> Result<u64> {
++    let risk_index = usize::from(risk_tier);
++    require!(
++        risk_index < config.band_release_bps_by_risk.len(),
++        PeraxError::InvalidApcPolicy
++    );
++    let risk_bps = config.band_release_bps_by_risk[risk_index];
++    let cascade_bps = calculate_cascade_reduction(config, cascade_position)?;
++    let amount = (config.base_band_release_cap as u128)
++        .checked_mul(u128::from(risk_bps))
++        .ok_or(PeraxError::InvalidMarketParameter)?
++        .checked_div(APC_BPS_DENOMINATOR)
++        .ok_or(PeraxError::InvalidMarketParameter)?
++        .checked_mul(u128::from(cascade_bps))
++        .ok_or(PeraxError::InvalidMarketParameter)?
++        .checked_div(APC_BPS_DENOMINATOR)
++        .ok_or(PeraxError::InvalidMarketParameter)?;
++    let amount = u64::try_from(amount).map_err(|_| PeraxError::InvalidMarketParameter)?;
++    require!(amount > 0, PeraxError::InvalidApcPolicy);
++    Ok(amount.min(config.hourly_release_cap))
++}
++
++pub fn calculate_counterweight_requirement(
++    pex_amount: u64,
++    price_scaled: u64,
++    price_scale: u64,
++    coverage_bps: u16,
++) -> Result<u64> {
++    require!(price_scale > 0, PeraxError::InvalidApcPolicy);
++    let quote_scale = 10u128
++        .checked_pow(u32::from(APC_QUOTE_DECIMALS))
++        .ok_or(PeraxError::InvalidApcPolicy)?;
++    let quote_value = (pex_amount as u128)
++        .checked_mul(price_scaled as u128)
++        .ok_or(PeraxError::InvalidMarketParameter)?
++        .checked_mul(quote_scale)
++        .ok_or(PeraxError::InvalidMarketParameter)?
++        .checked_div(PEX_DECIMALS as u128)
++        .ok_or(PeraxError::InvalidMarketParameter)?
++        .checked_div(price_scale as u128)
++        .ok_or(PeraxError::InvalidMarketParameter)?;
++    let required = quote_value
++        .checked_mul(u128::from(coverage_bps))
++        .ok_or(PeraxError::InvalidMarketParameter)?
++        .checked_div(APC_BPS_DENOMINATOR)
++        .ok_or(PeraxError::InvalidMarketParameter)?;
++    u64::try_from(required).map_err(|_| PeraxError::InvalidMarketParameter.into())
++}
++
++pub(crate) fn reset_apc_windows_if_needed(
++    config: &ApcConfig,
++    apc_state: &mut ApcState,
++    now: i64,
++) {
++    if apc_state.hourly_window_started_at == 0
++        || now >= apc_state.hourly_window_started_at.saturating_add(3_600)
++    {
++        apc_state.hourly_window_started_at = now;
++        apc_state.hourly_released = 0;
++    }
++    if apc_state.pump_window_started_at == 0
++        || now
++            >= apc_state
++                .pump_window_started_at
++                .saturating_add(config.pump_window_seconds)
++    {
++        apc_state.pump_window_started_at = now;
++        apc_state.pump_window_released = 0;
++    }
++}
++
++pub(crate) fn validate_apc_release_caps(
++    config: &ApcConfig,
++    apc_state: &ApcState,
++    core_state: &PeraxState,
++    band_released: u64,
++    band_cap: u64,
++    requested_amount: u64,
++) -> Result<()> {
++    require_checked_cap(
++        band_released,
++        requested_amount,
++        band_cap,
++        PeraxError::BandReleaseCapExceeded,
++    )?;
++    require_checked_cap(
++        apc_state.hourly_released,
++        requested_amount,
++        config.hourly_release_cap,
++        PeraxError::HourlyApcCapExceeded,
++    )?;
++    require_checked_cap(
++        apc_state.pump_window_released,
++        requested_amount,
++        config.pump_window_release_cap,
++        PeraxError::PumpWindowCapExceeded,
++    )?;
++    require_checked_cap(
++        core_state.daily_unlocked_accumulator,
++        requested_amount,
++        core_state.daily_release_cap,
++        PeraxError::DailyReleaseCapExceeded,
++    )?;
++    require_checked_cap(
++        core_state.monthly_unlocked_accumulator,
++        requested_amount,
++        core_state.monthly_release_cap,
++        PeraxError::MonthlyReleaseCapExceeded,
++    )?;
++    Ok(())
++}
++
++pub(crate) fn validate_apc_burn_allowed(apc_state: &ApcState) -> Result<()> {
++    require!(
++        !matches!(
++            apc_state.status,
++            ApcStatus::PumpControl | ApcStatus::AwaitingAbsorption | ApcStatus::Recovery
++        ),
++        PeraxError::BurnDeferredDuringPump
++    );
++    require!(apc_state.status != ApcStatus::Paused, PeraxError::ApcPaused);
++    Ok(())
++}
++
+ pub(crate) fn validate_market_condition_burn(
+     state: &PeraxState,
+     params: &ConditionalBuybackBurnParams,
+@@ -303,10 +628,12 @@
+     };
+     let daily_cap_amount = amount_bps(PEX_TOTAL_SUPPLY, daily_cap_bps)?;
+ 
+-    require!(
+-        state.daily_burn_accumulator.saturating_add(params.amount) <= daily_cap_amount,
+-        PeraxError::DailyBurnCapExceeded
+-    );
++    require_checked_cap(
++        state.daily_burn_accumulator,
++        params.amount,
++        daily_cap_amount,
++        PeraxError::DailyBurnCapExceeded,
++    )?;
+ 
+     Ok(())
+ }
+@@ -333,3 +660,36 @@
+     };
+     Ok(rate)
+ }
++
++fn threshold_tier(value: u32, thresholds: [u32; 3]) -> u8 {
++    if value >= thresholds[2] {
++        3
++    } else if value >= thresholds[1] {
++        2
++    } else if value >= thresholds[0] {
++        1
++    } else {
++        0
++    }
++}
++
++fn validate_strictly_increasing_u32(values: [u32; 3]) -> Result<()> {
++    require!(
++        values[0] > 0 && values[0] < values[1] && values[1] < values[2],
++        PeraxError::InvalidApcPolicy
++    );
++    Ok(())
++}
++
++fn require_checked_cap(
++    current: u64,
++    amount: u64,
++    cap: u64,
++    error: PeraxError,
++) -> Result<()> {
++    let next = current
++        .checked_add(amount)
++        .ok_or(PeraxError::ReleaseCapExceeded)?;
++    require!(next 
