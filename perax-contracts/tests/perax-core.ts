@@ -1819,11 +1819,12 @@ describe("perax-core reserve vault custody", () => {
     );
     const pexAfterRecovery = await getAccount(provider.connection, recoveryVault);
     expect(quoteBeforeRecovery.amount - quoteAfterRecovery.amount).to.equal(100_000n);
-    expect(pexAfterRecovery.amount).to.be.greaterThan(pexBeforeRecovery.amount);
+    expect(pexAfterRecovery.amount > pexBeforeRecovery.amount).to.equal(true);
     expect(pexAfterRecovery.owner.toBase58()).to.equal(recoveryAuthority.toBase58());
 
     const wrongPoolObservationId = uniqueId(50_018);
     const wrongPoolObservation = observationPda(wrongPoolObservationId);
+    const wrongPoolObservedAt = await currentChainTime();
     await expectFailure(() =>
       program.methods
         .submitApcObservation({
@@ -1840,7 +1841,7 @@ describe("perax-core reserve vault custody", () => {
           priceVelocityBps: 100,
           volatilityBps: 100,
           estimatedPriceImpactBps: 10,
-          observedAt: new anchor.BN(await currentChainTime()),
+          observedAt: new anchor.BN(wrongPoolObservedAt),
         })
         .accounts({
           state,
