@@ -1,0 +1,119 @@
++      program.programId
++    );
++    const [rollbackRecordTwo] = anchor.web3.PublicKey.findProgramAddressSync(
++      [Buffer.from("apc-release"), Buffer.from(rollbackReleaseTwo)],
++      program.programId
++    );
++    const rollbackParams = (releaseId: number[]) => ({
++      releaseId,
++      allocationId: treasury.allocationId,
++      bandIndex: 2,
++      observationId: rollbackObservation.observationId,
++      amount: new anchor.BN(BASE_UNITS),
++      destinationTokenAccount: treasury.destinationTokenAccount,
++    });
++    const rollbackAccounts = (releaseRecord: anchor.web3.PublicKey) => ({
++      state,
++      apcConfig,
++      apcState,
++      observation: rollbackObservation.observation,
++      bandRecord: secondBand,
++      reserveVaultConfig: treasury.config,
++      vaultAuthority: treasury.authority,
++      vaultTokenAccount: treasury.tokenAccount,
++      destinationTokenAccount: treasury.destinationTokenAccount,
++      counterweightConfig,
++      counterweightVault,
++      releaseRecord,
++      oracleFeed: oracle.publicKey,
++      tokenMint: mint,
++      tokenProgram: TOKEN_PROGRAM_ID,
++      systemProgram: anchor.web3.SystemProgram.programId,
++    });
++    const rollbackIxOne = await program.methods
++      .executeApcRelease(rollbackParams(rollbackReleaseOne))
++      .accounts(rollbackAccounts(rollbackRecordOne))
++      .instruction();
++    const rollbackIxTwo = await program.methods
++      .executeApcRelease(rollbackParams(rollbackReleaseTwo))
++      .accounts(rollbackAccounts(rollbackRecordTwo))
++      .instruction();
++    const destinationBeforeRollback = await getAccount(
++      provider.connection,
++      treasury.destinationTokenAccount
++    );
++    await expectFailure(() =>
++      provider.sendAndConfirm(
++        new anchor.web3.Transaction().add(rollbackIxOne, rollbackIxTwo),
++        [oracle]
++      )
++    );
++    const destinationAfterRollback = await getAccount(
++      provider.connection,
++      treasury.destinationTokenAccount
++    );
++    expect(destinationAfterRollback.amount).to.equal(
++      destinationBeforeRollback.amount
++    );
++    expect(await provider.connection.getAccountInfo(rollbackRecordOne)).to.equal(null);
++    expect(await provider.connection.getAccountInfo(rollbackRecordTwo)).to.equal(null);
++
++    const referenceBeforeRecovery = (
++      await program.account.apcState.fetch(apcState)
++    ).currentReferencePrice.toString();
++    const recoveryEntryObservation = await submitObservation(50_016, 2_000, {
++      buyPressure: 0,
++    });
++    await program.methods
++      .enterApcRecovery()
++      .accounts({
++        state,
++        apcConfig,
++        apcState,
++        observation: recoveryEntryObservation.observation,
++        oracleFeed: oracle.publicKey,
++      })
++      .signers([oracle])
++      .rpc();
++    expect(
++      (await program.account.apcState.fetch(apcState)).currentReferencePrice.toString()
++    ).to.equal(referenceBeforeRecovery);
++
++    const recoveryPurchaseObservation = await submitObservation(50_017, 2_000, {
++      buyPressure: 0,
++    });
++    const adapterParams = {
++      quoteAmount: new anchor.BN(100_000),
++      minimumPexOut: new anchor.BN(1),
++    };
++    const adapterInstruction = await program.methods
++      .executeRecoverySwapAdapter(adapterParams)
++      .accounts({
++        counterweightVault,
++        recoveryVault,
++        counterweightAuthority,
++        recoveryPool,
++        tokenProgram: TOKEN_PROGRAM_ID,
++        quoteMint,
++        pexMint: mint,
++        poolAuthority,
++        poolQuoteVault,
++        poolPexVault,
++      })
++      .instruction();
++    const recoveryId = uniqueId(50_501);
++    const [recoveryRecord] = anchor.web3.PublicKey.findProgramAddressSync(
++      [Buffer.from("apc-recovery"), Buffer.from(recoveryId)],
++      program.programId
++    );
++    const quoteBeforeRecovery = await getAccount(
++      provider.connection,
++      counterweightVault
++    );
++    const pexBeforeRecovery = await getAccount(provider.connection, recoveryVault);
++    await program.methods
++      .executeCounterweightPurchase({
++        recoveryId,
++        observationId: recoveryPurchaseObservation.observationId,
++        maximumQuoteAmount: new anchor.BN(100_000),
++        minimumPexOut: new anchor.BN(1),
