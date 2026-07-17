@@ -1,0 +1,231 @@
+diff --git a/perax-contracts/programs/perax-core/src/instructions/apc.rs b/perax-contracts/programs/perax-core/src/instructions/apc.rs
+index 149274b..84954cc 100644
+--- a/perax-contracts/programs/perax-core/src/instructions/apc.rs
++++ b/perax-contracts/programs/perax-core/src/instructions/apc.rs
+@@ -3,13 +3,14 @@ use crate::{
+     calculate_counterweight_requirement, calculate_effective_apc_price, calculate_next_band_price,
+     calculate_vault_available_amount, is_apc_releasable_vault_class,
+     is_program_derived_destination, reset_apc_windows_if_needed, reset_release_windows_if_needed,
+-    validate_apc_market_gates, validate_apc_observation_fresh, validate_apc_observation_submission,
+-    validate_apc_policy, validate_apc_release_caps, validate_reference,
++    validate_apc_absorption_confirmation, validate_apc_market_gates,
++    validate_apc_observation_fresh, validate_apc_observation_submission, validate_apc_policy,
++    validate_apc_release_caps, validate_reference,
+     validate_sequential_band_index, ActivateApcBandParams, ActivateNextApcBand, ApcBandActivated,
+-    ApcInitialized, ApcObservationSubmitted, ApcPaused, ApcPumpControlEntered, ApcReleaseExecuted,
+-    ApcStatus, ApcStatusChanged, ExecuteApcRelease, ExecuteApcReleaseParams, InitializeApc,
+-    InitializeApcParams, PauseApc, PeraxError, SubmitApcObservation, SubmitApcObservationParams,
+-    PEX_MINT_DECIMALS,
++    ApcAbsorptionConfirmed, ApcInitialized, ApcObservationSubmitted, ApcPaused,
++    ApcPumpControlEntered, ApcReleaseExecuted, ApcStatus, ApcStatusChanged, ConfirmApcAbsorption,
++    ExecuteApcRelease, ExecuteApcReleaseParams, InitializeApc, InitializeApcParams, PauseApc,
++    PeraxError, SubmitApcObservation, SubmitApcObservationParams, PEX_MINT_DECIMALS,
+ };
+ use anchor_lang::prelude::*;
+ use anchor_spl::token::{self, TransferChecked};
+@@ -66,6 +67,7 @@ pub fn initialize_apc(ctx: Context<InitializeApc>, params: InitializeApcParams)
+     let apc_state = &mut ctx.accounts.apc_state;
+     apc_state.config = config.key();
+     apc_state.status = ApcStatus::Armed;
++    apc_state.status_before_pause = ApcStatus::Armed;
+     apc_state.current_reference_price = ctx.accounts.state.launch_price;
+     apc_state.next_band_price = config.first_activation_price;
+     apc_state.current_band_index = 0;
+@@ -80,7 +82,9 @@ pub fn initialize_apc(ctx: Context<InitializeApc>, params: InitializeApcParams)
+     apc_state.last_observation_sequence = 0;
+     apc_state.last_release_timestamp = 0;
+     apc_state.deferred_burn_amount = 0;
++    apc_state.unconfirmed_release_amount = 0;
+     apc_state.last_release_observation_id = [0u8; 32];
++    apc_state.recovery_entry_observation_id = [0u8; 32];
+     apc_state.cascade_observation_id = [0u8; 32];
+     apc_state.cascade_band_count = 0;
+     apc_state.active_risk_tier = 0;
+@@ -159,7 +163,10 @@ pub fn submit_apc_observation(
+     observation.observed_at = params.observed_at;
+     observation.submitted_at = now;
+     observation.is_consumed_for_release = false;
++    observation.is_consumed_for_confirmation = false;
++    observation.is_consumed_for_recovery = false;
+     observation.consumed_by_release = Pubkey::default();
++    observation.consumed_by_recovery = Pubkey::default();
+     observation.bump = ctx.bumps.observation;
+ 
+     ctx.accounts.apc_state.last_observation_sequence = params.sequence;
+@@ -197,6 +204,12 @@ pub fn activate_next_apc_band(
+     let now = Clock::get()?.unix_timestamp;
+     validate_apc_observation_fresh(config, &ctx.accounts.observation, now)?;
+     validate_apc_market_gates(config, &ctx.accounts.observation)?;
++    require!(
++        !ctx.accounts.observation.is_consumed_for_release
++            && !ctx.accounts.observation.is_consumed_for_confirmation
++            && !ctx.accounts.observation.is_consumed_for_recovery,
++        PeraxError::ObservationAlreadyUsed
++    );
+ 
+     let apc_state = &mut ctx.accounts.apc_state;
+     validate_sequential_band_index(apc_state.current_band_index, params.band_index)?;
+@@ -260,8 +273,13 @@ pub fn activate_next_apc_band(
+     apc_state.cascade_observation_id = ctx.accounts.observation.observation_id;
+     apc_state.cascade_band_count = cascade_position;
+     apc_state.active_risk_tier = risk_tier;
+-    apc_state.status = if cascade_position > 1 || risk_tier >= 2 {
++    apc_state.status = if previous_status == ApcStatus::PumpControl
++        || cascade_position > 1
++        || risk_tier >= 2
++    {
+         ApcStatus::PumpControl
++    } else if previous_status == ApcStatus::AwaitingAbsorption {
++        ApcStatus::AwaitingAbsorption
+     } else {
+         ApcStatus::Active
+     };
+@@ -328,7 +346,9 @@ pub fn execute_apc_release(
+     validate_apc_observation_fresh(config, &ctx.accounts.observation, now)?;
+     validate_apc_market_gates(config, &ctx.accounts.observation)?;
+     require!(
+-        !ctx.accounts.observation.is_consumed_for_release,
++        !ctx.accounts.observation.is_consumed_for_release
++            && !ctx.accounts.observation.is_consumed_for_confirmation
++            && !ctx.accounts.observation.is_consumed_for_recovery,
+         PeraxError::ObservationAlreadyUsed
+     );
+     require!(
+@@ -463,6 +483,12 @@ pub fn execute_apc_release(
+         .total_apc_released
+         .checked_add(params.amount)
+         .ok_or(PeraxError::ReleaseCapExceeded)?;
++    let unconfirmed_release_after = ctx
++        .accounts
++        .apc_state
++        .unconfirmed_release_amount
++        .checked_add(params.amount)
++        .ok_or(PeraxError::PumpWindowCapExceeded)?;
+     let counterweight_required_after = calculate_counterweight_requirement(
+         total_apc_released_after,
+         ctx.accounts.observation.twap_price,
+@@ -487,10 +513,18 @@ pub fn execute_apc_release(
+     ctx.accounts.apc_state.hourly_released = hourly_released_after;
+     ctx.accounts.apc_state.pump_window_released = pump_window_released_after;
+     ctx.accounts.apc_state.total_apc_released = total_apc_released_after;
++    ctx.accounts.apc_state.unconfirmed_release_amount = unconfirmed_release_after;
+     ctx.accounts.apc_state.last_release_timestamp = now;
+     ctx.accounts.apc_state.last_release_observation_id = params.observation_id;
+     let previous_status = ctx.accounts.apc_state.status;
+-    ctx.accounts.apc_state.status = ApcStatus::AwaitingAbsorption;
++    ctx.accounts.apc_state.status = if previous_status == ApcStatus::PumpControl
++        || ctx.accounts.apc_state.active_risk_tier >= 2
++        || ctx.accounts.apc_state.cascade_band_count > 1
++    {
++        ApcStatus::PumpControl
++    } else {
++        ApcStatus::AwaitingAbsorption
++    };
+ 
+     ctx.accounts.band_record.amount_released = band_released_after;
+     ctx.accounts.band_record.last_release_at = now;
+@@ -520,6 +554,7 @@ pub fn execute_apc_release(
+     record.amount = params.amount;
+     record.band_released_after = band_released_after;
+     record.pump_window_released_after = pump_window_released_after;
++    record.unconfirmed_release_after = unconfirmed_release_after;
+     record.counterweight_required_after = counterweight_required_after;
+     record.executed_at = now;
+     record.bump = ctx.bumps.release_record;
+@@ -538,6 +573,7 @@ pub fn execute_apc_release(
+         amount: record.amount,
+         band_released_after,
+         pump_window_released_after,
++        unconfirmed_release_after,
+         counterweight_required_after,
+         executed_at: now,
+     });
+@@ -555,6 +591,42 @@ pub fn execute_apc_release(
+     Ok(())
+ }
+ 
++pub fn confirm_apc_absorption(ctx: Context<ConfirmApcAbsorption>) -> Result<()> {
++    require!(!ctx.accounts.state.is_paused, PeraxError::ProgramPaused);
++    require!(ctx.accounts.apc_config.is_active, PeraxError::ApcInactive);
++    require!(!ctx.accounts.apc_config.is_paused, PeraxError::ApcPaused);
++    let now = Clock::get()?.unix_timestamp;
++    let confirmed_price = validate_apc_absorption_confirmation(
++        &ctx.accounts.apc_config,
++        &ctx.accounts.apc_state,
++        &ctx.accounts.observation,
++        now,
++    )?;
++
++    let previous_status = ctx.accounts.apc_state.status;
++    ctx.accounts.apc_state.status = ApcStatus::Active;
++    ctx.accounts.apc_state.unconfirmed_release_amount = 0;
++    ctx.accounts.observation.is_consumed_for_confirmation = true;
++
++    emit!(ApcAbsorptionConfirmed {
++        apc_state: ctx.accounts.apc_state.key(),
++        band_index: ctx.accounts.apc_state.current_band_index,
++        observation_id: ctx.accounts.observation.observation_id,
++        reference_price: ctx.accounts.apc_state.current_reference_price,
++        confirmed_price,
++        confirmed_at: now,
++    });
++    emit!(ApcStatusChanged {
++        apc_state: ctx.accounts.apc_state.key(),
++        previous_status,
++        new_status: ApcStatus::Active,
++        actor: ctx.accounts.oracle_feed.key(),
++        changed_at: now,
++    });
++
++    Ok(())
++}
++
+ pub fn pause_apc(ctx: Context<PauseApc>, is_paused: bool) -> Result<()> {
+     let actor = ctx.accounts.actor.key();
+     require!(
+@@ -562,14 +634,22 @@ pub fn pause_apc(ctx: Context<PauseApc>, is_paused: bool) -> Result<()> {
+         PeraxError::Unauthorized
+     );
+     let previous_status = ctx.accounts.apc_state.status;
+-    ctx.accounts.apc_config.is_paused = is_paused;
+-    ctx.accounts.apc_state.status = if is_paused {
+-        ApcStatus::Paused
+-    } else if ctx.accounts.apc_state.current_band_index == 0 {
+-        ApcStatus::Armed
++    if is_paused {
++        require!(previous_status != ApcStatus::Paused, PeraxError::ApcPaused);
++        ctx.accounts.apc_state.status_before_pause = previous_status;
++        ctx.accounts.apc_state.status = ApcStatus::Paused;
+     } else {
+-        ApcStatus::Active
+-    };
++        require!(
++            previous_status == ApcStatus::Paused,
++            PeraxError::InvalidApcStatus
++        );
++        require!(
++            ctx.accounts.apc_state.status_before_pause != ApcStatus::Paused,
++            PeraxError::InvalidApcStatus
++        );
++        ctx.accounts.apc_state.status = ctx.accounts.apc_state.status_before_pause;
++    }
++    ctx.accounts.apc_config.is_paused = is_paused;
+     let now = Clock::get()?.unix_timestamp;
+     emit!(ApcPaused {
+         apc_state: ctx.accounts.apc_state.key(),
+diff --git a/perax-contracts/programs/perax-core/src/instructions/counterweight.rs b/perax-contracts/programs/perax-core/src/instructions/counterweight.rs
+index 65a34c6..d8224a8 100644
+--- a/perax-contracts/programs/perax-core/src/instructions/counterweight.rs
++++ b/perax-contracts/programs/perax-core/src/instructions/counterweight.rs
+@@ -87,6 +87,11 @@ pub fn record_deferred_burn(
+             <= now.saturating_add(ctx.accounts.apc_config.maximum_future_clock_skew_seconds),
+         PeraxError::ObservationFromFuture
+     );
++    require!(
++        now.saturating_sub(params.observed_at)
++            <= ctx.accounts.apc_config.maximum_observation_age_seconds,
++        PeraxError::ObservationStale
++    );
+ 
+     let total_deferred_after = ctx
+         .accounts
