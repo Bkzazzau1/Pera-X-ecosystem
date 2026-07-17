@@ -1,0 +1,35 @@
++pub(crate) fn validate_apc_absorption_confirmation(
++    config: &ApcConfig,
++    apc_state: &ApcState,
++    observation: &ApcObservation,
++    now: i64,
++) -> Result<u64> {
++    require!(
++        matches!(
++            apc_state.status,
++            ApcStatus::AwaitingAbsorption | ApcStatus::PumpControl | ApcStatus::Recovery
++        ),
++        PeraxError::InvalidApcStatus
++    );
++    validate_apc_observation_fresh(config, observation, now)?;
++    validate_apc_market_gates(config, observation)?;
++    require!(
++        observation.observation_id != apc_state.last_release_observation_id,
++        PeraxError::ObservationAlreadyUsed
++    );
++    require!(
++        !observation.is_consumed_for_release && !observation.is_consumed_for_confirmation,
++        PeraxError::ObservationAlreadyUsed
++    );
++    let confirmed_price =
++        calculate_effective_apc_price(observation.spot_price, observation.twap_price)?;
++    require!(
++        confirmed_price >= apc_state.current_reference_price,
++        PeraxError::ApcPriceGateNotMet
++    );
++    Ok(confirmed_price)
++}
++
+ pub(crate) fn validate_apc_burn_allowed(apc_state: &ApcState) -> Result<()> {
+     require!(
+         !matches!(
