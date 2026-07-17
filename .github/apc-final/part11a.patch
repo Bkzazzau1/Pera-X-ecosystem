@@ -1,0 +1,148 @@
+diff --git a/docs/APC_LOGIC_SPECIFICATION.md b/docs/APC_LOGIC_SPECIFICATION.md
+new file mode 100644
+index 0000000..dc4bc90
+--- /dev/null
++++ b/docs/APC_LOGIC_SPECIFICATION.md
+@@ -0,0 +1,58 @@
++# APC Logic Specification
++
++## Accounts and seeds
++
++| Account | Seed |
++|---|---|
++| `ApcConfig` | `apc-config`, core state |
++| `ApcState` | `apc-state`, APC config |
++| `ApcObservation` | `apc-observation`, observation ID |
++| `ApcBandRecord` | `apc-band`, APC state, band index |
++| `ApcReleaseRecord` | `apc-release`, release ID |
++| `CounterweightConfig` | `counterweight-config`, APC config |
++| `CounterweightDepositRecord` | `counterweight-deposit`, deposit ID |
++| `DeferredBurnRecord` | `deferred-burn`, decision ID |
++| `ApcRecoveryRecord` | `apc-recovery`, recovery ID |
++| `RecoveryPoolConfig` | `recovery-pool`, pool ID |
++
++## State machine
++
++```text
++Inactive → Armed → Active
++                    ├─ PumpControl
++                    ├─ AwaitingAbsorption
++                    └─ Recovery
++Any live state → Paused → exact previous state
++```
++
++`confirm_apc_absorption` uses a distinct fresh observation at or above the current reference price. It clears unconfirmed release exposure and returns Pump Control, Awaiting Absorption, or Recovery to Active.
++
++## Deterministic band calculation
++
++Band 1 trigger is exactly three times launch price. Every later trigger is the previous immutable trigger plus the contract-calculated interval. The effective price is the lower of spot and TWAP.
++
++Risk tier is the maximum tier reached by velocity, volatility, or estimated impact. The contract selects the interval and base release percentage from immutable arrays and applies the monotonic cascade reduction. All multiplication and division uses checked `u128` arithmetic and explicit rounding.
++
++## Observation lifecycle
++
++An observation PDA is permanent. Sequence increases globally. Multi-band activation may reuse one unconsumed observation. Release, absorption confirmation, recovery entry, and recovery purchase consume observations for their respective safety purpose; a consumed observation cannot authorize a later release or recovery settlement.
++
++## APC release transaction
++
++1. Validate APC, vault, destination, mint, pool, signer, observation, and band.
++2. Reset hourly, pump, daily, and monthly windows from `Clock::get()`.
++3. Calculate all caps and counterweight coverage.
++4. Transfer PEX atomically from the Correction 1 reserve PDA.
++5. Update core, APC, band, and vault accounting with checked arithmetic.
++6. Consume the observation and create the permanent release record.
++7. Enter Awaiting Absorption or remain in Pump Control.
++
++## Counterweight and recovery
++
++USDC credit follows a real SPL transfer. Recovery invokes only the immutable approved executable adapter. Before and after balances are reloaded; a recovery record is created only when USDC actually decreased and the locked PEX vault actually increased within the permitted limits.
++
++The built-in adapter is a constant-product exact-input swap with a bounded fee and minimum-output check. Its PEX pool vault is controlled by a program PDA.
++
++## Legacy compatibility
++
++`ReleaseType::Growth` always returns `UseApcRelease`. Emergency release remains unchanged. `current_stepped_floor` cannot be updated and is never read by APC.
+diff --git a/docs/APC_VALIDATION_STATUS.md b/docs/APC_VALIDATION_STATUS.md
+new file mode 100644
+index 0000000..6ac520d
+--- /dev/null
++++ b/docs/APC_VALIDATION_STATUS.md
+@@ -0,0 +1,27 @@
++# APC Validation Status
++
++## Source scope
++
++Correction 2 implements separate APC state, permanent observations and bands, APC release records, old-growth-route shutdown, real USDC counterweight custody, deferred-burn custody, atomic recovery settlement, a locked Recovery Vault, machine-readable policy validation, initialization planning, and an off-chain market-engine service.
++
++## Required checks
++
++The implementation is accepted only when all of the following succeed on the final branch:
++
++```text
++npm run validate:tokenomics
++npm run typecheck
++cargo test --locked --all-targets
++cargo check --locked --all-targets
++anchor build
++anchor test --provider.cluster localnet
++npm --prefix ../perax-market-engine install
++npm --prefix ../perax-market-engine run typecheck
++npm --prefix ../perax-market-engine test
++```
++
++## Deployment status
++
++No program deployment, migration, mint, authority change, APC initialization, reserve transfer, counterweight transfer, or recovery swap is performed by this source correction.
++
++The machine-readable APC numerical policy remains pending formal approval. Deployment and initialization scripts must refuse execution while that status remains pending.
+diff --git a/perax-contracts/scripts/initialize-apc-program.js b/perax-contracts/scripts/initialize-apc-program.js
+new file mode 100644
+index 0000000..cc03a73
+--- /dev/null
++++ b/perax-contracts/scripts/initialize-apc-program.js
+@@ -0,0 +1,11 @@
++const fs = require("fs");
++const path = require("path");
++const config = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../config/pex-tokenomics.json"), "utf8"));
++if (!process.argv.includes("--execute")) {
++  console.log("Dry run only. Use plan-apc-initialize.js to review the initialization gate.");
++  process.exit(0);
++}
++if (config.adaptivePriceControl?.policyStatus !== "approved") {
++  throw new Error("APC initialization blocked: numerical policy is not formally approved.");
++}
++throw new Error("Execution intentionally postponed until reviewed addresses and approved numerical values are supplied.");
+diff --git a/perax-contracts/scripts/plan-apc-initialize.js b/perax-contracts/scripts/plan-apc-initialize.js
+new file mode 100644
+index 0000000..678263e
+--- /dev/null
++++ b/perax-contracts/scripts/plan-apc-initialize.js
+@@ -0,0 +1,15 @@
++const fs = require("fs");
++const path = require("path");
++const config = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../config/pex-tokenomics.json"), "utf8"));
++const apc = config.adaptivePriceControl;
++if (!apc) throw new Error("adaptivePriceControl policy is missing");
++console.log(JSON.stringify({
++  action: "initialize_apc",
++  executable: apc.policyStatus === "approved",
++  policyStatus: apc.policyStatus,
++  firstActivationPriceScaled: apc.firstActivationPriceScaled,
++  unresolvedNumericalPolicies: apc.unresolvedNumericalPolicies,
++}, null, 2));
++if (apc.policyStatus !== "approved") {
++  console.log("BLOCKED: formal APC numerical approval is required before initialization.");
++}
+diff --git a/perax-contracts/scripts/verify-apc-state.js b/perax-contracts/scripts/verify-apc-state.js
+new file mode 100644
+index 0000000..71c76ea
+--- /dev/null
++++ b/perax-contracts/scripts/verify-apc-state.js
+@@ -0,0 +1,7 @@
++const required = ["ANCHOR_PROVIDER_URL", "PERAX_CORE_PROGRAM_ID", "PEX_MINT_ADDRESS"];
++const missing = required.filter((name) => !process.env[name]);
++if (missing.length) {
++  console.log(`APC state verification not executed. Missing: ${missing.join(", ")}`);
++  process.exit(0);
++}
++console.log("APC verification inputs are present. On-chain verification remains a post-deployment operation.");
