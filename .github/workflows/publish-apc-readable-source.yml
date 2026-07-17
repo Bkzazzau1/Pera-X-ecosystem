@@ -145,16 +145,29 @@ jobs:
           npm run typecheck 2>&1 | tee /tmp/market-engine-typecheck.log
           npm test 2>&1 | tee /tmp/market-engine-tests.log
 
-      - name: Commit readable APC source
+      - name: Package validated readable source
         shell: bash
         run: |
           set -euo pipefail
+          rm -rf perax-market-engine/node_modules
+          git status --short | tee /tmp/git-status.log
+          tar --exclude=.git --exclude=target --exclude=node_modules -czf /tmp/apc-readable-source.tar.gz .
+
+      - name: Commit readable APC source
+        shell: bash
+        run: |
+          set -o pipefail
           git diff --check
           git add -A
           git config user.name "Pera-X APC automation"
           git config user.email "actions@github.com"
-          git commit -m "Implement adaptive price control"
-          git push origin agent/adaptive-price-control
+          git commit -m "Implement adaptive price control" 2>&1 | tee /tmp/git-commit.log
+
+      - name: Push readable APC source
+        shell: bash
+        run: |
+          set -o pipefail
+          git push origin agent/adaptive-price-control 2>&1 | tee /tmp/git-push.log
 
       - name: Upload publisher diagnostics
         if: always()
@@ -162,6 +175,7 @@ jobs:
         with:
           name: apc-publisher-diagnostics
           path: |
+            /tmp/apc-readable-source.tar.gz
             /tmp/apc-base.patch
             /tmp/apc-fix01.patch
             /tmp/apc-final.patch
@@ -175,4 +189,7 @@ jobs:
             /tmp/market-engine-install.log
             /tmp/market-engine-typecheck.log
             /tmp/market-engine-tests.log
+            /tmp/git-status.log
+            /tmp/git-commit.log
+            /tmp/git-push.log
           if-no-files-found: warn
