@@ -1,0 +1,31 @@
+diff --git a/perax-market-engine/test/metrics.test.ts b/perax-market-engine/test/metrics.test.ts
+new file mode 100644
+index 0000000..8b39c04
+--- /dev/null
++++ b/perax-market-engine/test/metrics.test.ts
+@@ -0,0 +1,3 @@
++import test from "node:test"; import assert from "node:assert/strict"; import { calculateTwap, calculateVelocityBps, calculateVolatilityBps } from "../src/metrics.js";
++const samples=[{price:100n,liquidityUsd:1n,quoteLiquidityUsd:1n,volumeUsd:1n,netBuyPressureBps:5000,observedAt:0},{price:200n,liquidityUsd:1n,quoteLiquidityUsd:1n,volumeUsd:1n,netBuyPressureBps:5000,observedAt:60}];
++test("metrics are deterministic",()=>{assert.equal(calculateTwap(samples),150n);assert.equal(calculateVelocityBps(samples),10000);assert.equal(calculateVolatilityBps(samples,150n),3333);});
+diff --git a/perax-market-engine/tsconfig.json b/perax-market-engine/tsconfig.json
+new file mode 100644
+index 0000000..e8dd848
+--- /dev/null
++++ b/perax-market-engine/tsconfig.json
+@@ -0,0 +1,16 @@
++{
++  "compilerOptions": {
++    "target": "ES2022",
++    "module": "NodeNext",
++    "moduleResolution": "NodeNext",
++    "strict": true,
++    "noUncheckedIndexedAccess": true,
++    "exactOptionalPropertyTypes": true,
++    "skipLibCheck": true,
++    "outDir": "dist"
++  },
++  "include": [
++    "src/**/*.ts",
++    "test/**/*.ts"
++  ]
++}
