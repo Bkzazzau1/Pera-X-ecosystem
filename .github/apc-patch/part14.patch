@@ -1,0 +1,105 @@
+);
++    let maximum_total_spend = ctx
++        .accounts
++        .apc_state
++        .total_counterweight_spent
++        .checked_add(params.maximum_quote_amount)
++        .ok_or(PeraxError::RecoveryCapExceeded)?;
++    require!(
++        maximum_total_spend <= ctx.accounts.apc_config.recovery_spending_cap,
++        PeraxError::RecoveryCapExceeded
++    );
++
++    let quote_before = ctx.accounts.counterweight_vault.amount;
++    let pex_before = ctx.accounts.recovery_vault.amount;
++
++    let mut metas = vec![
++        AccountMeta::new(ctx.accounts.counterweight_vault.key(), false),
++        AccountMeta::new(ctx.accounts.recovery_vault.key(), false),
++        AccountMeta::new_readonly(ctx.accounts.counterweight_authority.key(), true),
++        AccountMeta::new(ctx.accounts.approved_pool.key(), false),
++        AccountMeta::new_readonly(ctx.accounts.token_program.key(), false),
++    ];
++    let mut infos = vec![
++        ctx.accounts.counterweight_vault.to_account_info(),
++        ctx.accounts.recovery_vault.to_account_info(),
++        ctx.accounts.counterweight_authority.to_account_info(),
++        ctx.accounts.approved_pool.to_account_info(),
++        ctx.accounts.token_program.to_account_info(),
++    ];
++    for account in ctx.remaining_accounts {
++        let meta = if account.is_writable {
++            AccountMeta::new(account.key(), account.is_signer)
++        } else {
++            AccountMeta::new_readonly(account.key(), account.is_signer)
++        };
++        metas.push(meta);
++        infos.push(account.clone());
++    }
++    infos.push(ctx.accounts.recovery_program.to_account_info());
++
++    let instruction = Instruction {
++        program_id: ctx.accounts.recovery_program.key(),
++        accounts: metas,
++        data: params.swap_instruction_data,
++    };
++    let bump = [ctx.accounts.counterweight_config.counterweight_authority_bump];
++    let signer_seeds: &[&[u8]] = &[
++        b"counterweight-authority",
++        ctx.accounts.apc_config.key().as_ref(),
++        &bump,
++    ];
++    invoke_signed(&instruction, &infos, &[signer_seeds])?;
++
++    ctx.accounts.counterweight_vault.reload()?;
++    ctx.accounts.recovery_vault.reload()?;
++    let quote_spent = quote_before
++        .checked_sub(ctx.accounts.counterweight_vault.amount)
++        .ok_or(PeraxError::InvalidRecoverySettlement)?;
++    let pex_received = ctx
++        .accounts
++        .recovery_vault
++        .amount
++        .checked_sub(pex_before)
++        .ok_or(PeraxError::InvalidRecoverySettlement)?;
++    require!(
++        quote_spent > 0
++            && quote_spent <= params.maximum_quote_amount
++            && pex_received >= params.minimum_pex_out,
++        PeraxError::InvalidRecoverySettlement
++    );
++
++    ctx.accounts.apc_state.total_counterweight_spent = ctx
++        .accounts
++        .apc_state
++        .total_counterweight_spent
++        .checked_add(quote_spent)
++        .ok_or(PeraxError::RecoveryCapExceeded)?;
++    require!(
++        ctx.accounts.apc_state.total_counterweight_spent
++            <= ctx.accounts.apc_config.recovery_spending_cap,
++        PeraxError::RecoveryCapExceeded
++    );
++
++    let record = &mut ctx.accounts.recovery_record;
++    record.recovery_id = params.recovery_id;
++    record.observation_id = params.observation_id;
++    record.apc_state = ctx.accounts.apc_state.key();
++    record.counterweight_config = ctx.accounts.counterweight_config.key();
++    record.quote_spent = quote_spent;
++    record.pex_received = pex_received;
++    record.executed_at = now;
++    record.bump = ctx.bumps.recovery_record;
++
++    emit!(CounterweightPurchaseExecuted {
++        recovery_record: record.key(),
++        recovery_id: record.recovery_id,
++        observation_id: record.observation_id,
++        quote_spent,
++        pex_received,
++        recovery_vault: ctx.accounts.recovery_vault.key(),
++        executed_at: now,
++    });
++
++    Ok(())
++}
