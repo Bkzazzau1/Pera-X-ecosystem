@@ -1,0 +1,206 @@
+--- a/perax-contracts/programs/perax-core/src/constants.rs
++++ b/perax-contracts/programs/perax-core/src/constants.rs
+@@ -2,7 +2,11 @@
+ pub const PEX_MINT_DECIMALS: u8 = 6;
+ pub const PEX_TOTAL_SUPPLY: u64 = 1_000_000_000 * PEX_DECIMALS;
+ pub const PEX_LAUNCH_PRICE_SCALED: u64 = 1_200;
+-pub const GROWTH_PRICE_MULTIPLIER: u64 = 3;
++pub const APC_FIRST_ACTIVATION_MULTIPLIER: u64 = 3;
++pub const APC_RISK_TIER_COUNT: usize = 4;
++pub const APC_THRESHOLD_COUNT: usize = 3;
++pub const APC_BPS_DENOMINATOR: u128 = 10_000;
++pub const APC_QUOTE_DECIMALS: u8 = 6;
+ pub const MIN_GROWTH_TWAP_MINUTES: u64 = 60;
+ pub const INITIAL_LIQUIDITY_USD: u64 = 4_560;
+ pub const MIN_GROWTH_LIQUIDITY_USD: u64 = INITIAL_LIQUIDITY_USD * 3;
+--- a/perax-contracts/programs/perax-core/src/contexts.rs
++++ b/perax-contracts/programs/perax-core/src/contexts.rs
+@@ -1,8 +1,12 @@
+ use crate::{
+-    BurnExecutionRecord, ConditionalBuybackBurnParams, InitializeReserveVaultParams,
+-    MarketConditionBurnParams, MarketConditionalReleaseParams, PaymentRecord, PeraxError,
+-    PeraxState, ReleaseRecord, ReserveReleaseRecord, ReserveVaultConfig,
+-    VaultMarketConditionalReleaseParams,
++    ActivateApcBandParams, ApcBandRecord, ApcConfig, ApcObservation, ApcRecoveryRecord,
++    ApcReleaseRecord, ApcState, BurnExecutionRecord, ConditionalBuybackBurnParams,
++    CounterweightConfig, CounterweightDepositRecord, DeferredBurnRecord,
++    DepositCounterweightParams, ExecuteApcReleaseParams, ExecuteCounterweightPurchaseParams,
++    InitializeApcParams, InitializeReserveVaultParams, MarketConditionBurnParams,
++    MarketConditionalReleaseParams, PaymentRecord, PeraxError, PeraxState,
++    RecordDeferredBurnParams, ReleaseRecord, ReserveReleaseRecord, ReserveVaultConfig,
++    SubmitApcObservationParams, VaultMarketConditionalReleaseParams,
+ };
+ use anchor_lang::prelude::*;
+ use anchor_spl::{
+@@ -314,6 +318,10 @@
+ pub struct ExecuteMarketConditionBurn<'info> {
+     #[account(mut, seeds = [b"perax-state"], bump = state.bump, has_one = authority @ PeraxError::Unauthorized, constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint, constraint = trading_company_revenue_token_account.key() == state.trading_company_revenue_token_account @ PeraxError::InvalidTradingCompanyRevenueAccount)]
+     pub state: Account<'info, PeraxState>,
++    #[account(seeds = [b"apc-config", state.key().as_ref()], bump = apc_config.bump, has_one = state @ PeraxError::ApcNotInitialized)]
++    pub apc_config: Account<'info, ApcConfig>,
++    #[account(seeds = [b"apc-state", apc_config.key().as_ref()], bump = apc_state.bump, constraint = apc_state.config == apc_config.key() @ PeraxError::ApcNotInitialized)]
++    pub apc_state: Account<'info, ApcState>,
+     #[account(mut)]
+     pub authority: Signer<'info>,
+     pub trading_company_authority: Signer<'info>,
+@@ -344,6 +352,10 @@
+         constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint
+     )]
+     pub state: Account<'info, PeraxState>,
++    #[account(seeds = [b"apc-config", state.key().as_ref()], bump = apc_config.bump, has_one = state @ PeraxError::ApcNotInitialized)]
++    pub apc_config: Account<'info, ApcConfig>,
++    #[account(seeds = [b"apc-state", apc_config.key().as_ref()], bump = apc_state.bump, constraint = apc_state.config == apc_config.key() @ PeraxError::ApcNotInitialized)]
++    pub apc_state: Account<'info, ApcState>,
+     #[account(mut)]
+     pub authority: Signer<'info>,
+     pub source_authority: Signer<'info>,
+@@ -366,3 +378,409 @@
+     pub token_program: Program<'info, Token>,
+     pub system_program: Program<'info, System>,
+ }
++
++#[derive(Accounts)]
++#[instruction(params: InitializeApcParams)]
++pub struct InitializeApc<'info> {
++    #[account(
++        seeds = [b"perax-state"],
++        bump = state.bump,
++        has_one = authority @ PeraxError::Unauthorized,
++        constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint
++    )]
++    pub state: Account<'info, PeraxState>,
++    #[account(mut)]
++    pub authority: Signer<'info>,
++    #[account(
++        init,
++        payer = authority,
++        space = 8 + ApcConfig::INIT_SPACE,
++        seeds = [b"apc-config", state.key().as_ref()],
++        bump
++    )]
++    pub apc_config: Account<'info, ApcConfig>,
++    #[account(
++        init,
++        payer = authority,
++        space = 8 + ApcState::INIT_SPACE,
++        seeds = [b"apc-state", apc_config.key().as_ref()],
++        bump
++    )]
++    pub apc_state: Account<'info, ApcState>,
++    #[account(
++        init,
++        payer = authority,
++        space = 8 + CounterweightConfig::INIT_SPACE,
++        seeds = [b"counterweight-config", apc_config.key().as_ref()],
++        bump
++    )]
++    pub counterweight_config: Account<'info, CounterweightConfig>,
++    /// CHECK: PDA-only authority for the quote counterweight vault.
++    #[account(seeds = [b"counterweight-authority", apc_config.key().as_ref()], bump)]
++    pub counterweight_authority: UncheckedAccount<'info>,
++    #[account(
++        init,
++        payer = authority,
++        associated_token::mint = quote_mint,
++        associated_token::authority = counterweight_authority
++    )]
++    pub counterweight_vault: Account<'info, TokenAccount>,
++    /// CHECK: PDA-only authority for deferred burn custody.
++    #[account(seeds = [b"deferred-burn-authority", apc_config.key().as_ref()], bump)]
++    pub deferred_burn_authority: UncheckedAccount<'info>,
++    #[account(
++        init,
++        payer = authority,
++        associated_token::mint = token_mint,
++        associated_token::authority = deferred_burn_authority
++    )]
++    pub deferred_burn_vault: Account<'info, TokenAccount>,
++    /// CHECK: PDA-only authority for locked recovery inventory.
++    #[account(seeds = [b"recovery-authority", apc_config.key().as_ref()], bump)]
++    pub recovery_authority: UncheckedAccount<'info>,
++    #[account(
++        init,
++        payer = authority,
++        associated_token::mint = token_mint,
++        associated_token::authority = recovery_authority
++    )]
++    pub recovery_vault: Account<'info, TokenAccount>,
++    #[account(address = params.quote_mint @ PeraxError::InvalidCounterweightMint)]
++    pub quote_mint: Account<'info, Mint>,
++    pub token_mint: Account<'info, Mint>,
++    pub token_program: Program<'info, Token>,
++    pub associated_token_program: Program<'info, AssociatedToken>,
++    pub system_program: Program<'info, System>,
++}
++
++#[derive(Accounts)]
++#[instruction(params: SubmitApcObservationParams)]
++pub struct SubmitApcObservation<'info> {
++    #[account(seeds = [b"perax-state"], bump = state.bump)]
++    pub state: Account<'info, PeraxState>,
++    #[account(
++        seeds = [b"apc-config", state.key().as_ref()],
++        bump = apc_config.bump,
++        has_one = state @ PeraxError::ApcNotInitialized,
++        has_one = oracle_feed @ PeraxError::Unauthorized
++    )]
++    pub apc_config: Account<'info, ApcConfig>,
++    #[account(
++        mut,
++        seeds = [b"apc-state", apc_config.key().as_ref()],
++        bump = apc_state.bump,
++        constraint = apc_state.config == apc_config.key() @ PeraxError::ApcNotInitialized
++    )]
++    pub apc_state: Account<'info, ApcState>,
++    #[account(
++        init,
++        payer = oracle_feed,
++        space = 8 + ApcObservation::INIT_SPACE,
++        seeds = [b"apc-observation", params.observation_id.as_ref()],
++        bump
++    )]
++    pub observation: Account<'info, ApcObservation>,
++    #[account(mut)]
++    pub oracle_feed: Signer<'info>,
++    pub system_program: Program<'info, System>,
++}
++
++#[derive(Accounts)]
++#[instruction(params: ActivateApcBandParams)]
++pub struct ActivateNextApcBand<'info> {
++    #[account(seeds = [b"perax-state"], bump = state.bump)]
++    pub state: Account<'info, PeraxState>,
++    #[account(
++        seeds = [b"apc-config", state.key().as_ref()],
++        bump = apc_config.bump,
++        has_one = oracle_feed @ PeraxError::Unauthorized
++    )]
++    pub apc_config: Account<'info, ApcConfig>,
++    #[account(
++        mut,
++        seeds = [b"apc-state", apc_config.key().as_ref()],
++        bump = apc_state.bump,
++        constraint = apc_state.config == apc_config.key() @ PeraxError::ApcNotInitialized
++    )]
++    pub apc_state: Account<'info, ApcState>,
++    #[account(
++        seeds = [b"apc-observation", observation.observation_id.as_ref()],
++        bump = observation.bump,
++        constraint = observation.oracle_feed == oracle_feed.key() @ PeraxError::Unauthorized
++    )]
++    pub observation: Account<'info, ApcObservation>,
++    #[account(
++        init,
++        payer = oracle_feed,
++        space = 8 + ApcBandRecord::INIT_SPACE,
++        seeds = [b"apc-band", apc_state.key().as_ref(), params.band_index.to_le_bytes().as_ref()],
++        bump
++    )]
++    pub band_record: Account<'info, ApcBandRecord>,
++    #[account(mut)]
++    pub oracle_feed: Signer<'info>,
++    pub system_program: Program<'info, System>,
++}
++
++#[derive(Accounts)]
++#[in
