@@ -1,0 +1,83 @@
+diff --git a/perax-market-engine/package.json b/perax-market-engine/package.json
+new file mode 100644
+index 0000000..c603e42
+--- /dev/null
++++ b/perax-market-engine/package.json
+@@ -0,0 +1,15 @@
++{
++  "name": "perax-market-engine",
++  "private": true,
++  "version": "0.1.0",
++  "type": "module",
++  "scripts": {
++    "typecheck": "tsc --noEmit",
++    "test": "node --test --import tsx test/*.test.ts"
++  },
++  "devDependencies": {
++    "@types/node": "^22.10.2",
++    "tsx": "^4.19.2",
++    "typescript": "^5.5.4"
++  }
++}
+diff --git a/perax-market-engine/src/engine.ts b/perax-market-engine/src/engine.ts
+new file mode 100644
+index 0000000..d7cf4f2
+--- /dev/null
++++ b/perax-market-engine/src/engine.ts
+@@ -0,0 +1,25 @@
++import { randomBytes } from "node:crypto";
++import { calculateTwap, calculateVelocityBps, calculateVolatilityBps, effectivePrice } from "./metrics.js";
++import type { ApcProgramClient, ApcSnapshot, ExecutionVenue, MarketDataSource } from "./types.js";
++export class ApcMarketEngine {
++  constructor(private readonly market: MarketDataSource, private readonly program: ApcProgramClient, private readonly venue: ExecutionVenue, private readonly maxBandsPerCycle=32) {}
++  async runCycle(sequence: bigint): Promise<void> {
++    const market=await this.market.readApprovedPool();
++    if (!market.samples.length) throw new Error("approved pool returned no samples");
++    const latest=market.samples[market.samples.length-1]!;
++    const twap=calculateTwap(market.samples);
++    const snapshot:ApcSnapshot={observationId:randomBytes(32),sequence,pool:market.pool,spotPrice:latest.price,twapPrice:twap,twapMinutes:BigInt(Math.max(1,Math.floor((latest.observedAt-market.samples[0]!.observedAt)/60))),liquidityUsd:latest.liquidityUsd,quoteLiquidityUsd:latest.quoteLiquidityUsd,volumeUsd:latest.volumeUsd,netBuyPressureBps:latest.netBuyPressureBps,priceVelocityBps:calculateVelocityBps(market.samples),volatilityBps:calculateVolatilityBps(market.samples,twap),estimatedPriceImpactBps:market.estimatedPriceImpactBps,observedAt:BigInt(latest.observedAt)};
++    await this.program.submitObservation(snapshot);
++    let state=await this.program.readState();
++    for(let activated=0;activated<this.maxBandsPerCycle && effectivePrice(snapshot.spotPrice,snapshot.twapPrice)>=state.nextBandPrice;activated++){
++      await this.program.activateNextBand(snapshot.observationId,state.currentBandIndex+1);
++      state=await this.program.readState();
++    }
++    if(state.status==="recovery"){await this.program.executeRecoveryPurchase(snapshot.observationId);return;}
++    const amount=await this.program.readPermittedReleaseAmount(state.currentBandIndex,snapshot.observationId);
++    if(amount<=0n)return;
++    await this.program.executePermittedRelease(state.currentBandIndex,snapshot.observationId,amount);
++    const settlement=await this.venue.placeControlledSell(amount);
++    if(settlement.actualUsdcProceeds>0n)await this.program.depositCounterweightProceeds(settlement.actualUsdcProceeds,settlement.settlementReference);
++  }
++}
+diff --git a/perax-market-engine/src/index.ts b/perax-market-engine/src/index.ts
+new file mode 100644
+index 0000000..b417ada
+--- /dev/null
++++ b/perax-market-engine/src/index.ts
+@@ -0,0 +1 @@
++export * from "./types.js"; export * from "./metrics.js"; export * from "./engine.js";
+diff --git a/perax-market-engine/src/metrics.ts b/perax-market-engine/src/metrics.ts
+new file mode 100644
+index 0000000..dadf68b
+--- /dev/null
++++ b/perax-market-engine/src/metrics.ts
+@@ -0,0 +1,6 @@
++import type { PriceSample } from "./types.js";
++const BPS = 10_000n;
++export function effectivePrice(spot: bigint, twap: bigint): bigint { if (spot <= 0n || twap <= 0n) throw new Error("prices must be positive"); return spot < twap ? spot : twap; }
++export function calculateTwap(samples: PriceSample[]): bigint { if (!samples.length) throw new Error("samples required"); return samples.reduce((sum, sample) => sum + sample.price, 0n) / BigInt(samples.length); }
++export function calculateVelocityBps(samples: PriceSample[]): number { if (samples.length < 2) return 0; const first=samples[0]!.price; const last=samples[samples.length-1]!.price; if (first<=0n) throw new Error("invalid first price"); const value=((last-first)*BPS)/first; return Number(value < 0n ? -value : value); }
++export function calculateVolatilityBps(samples: PriceSample[], twap: bigint): number { if (!samples.length || twap<=0n) return 0; const maxDeviation=samples.reduce((max,s)=>{const d=s.price>twap?s.price-twap:twap-s.price;return d>max?d:max;},0n); return Number((maxDeviation*BPS)/twap); }
+diff --git a/perax-market-engine/src/types.ts b/perax-market-engine/src/types.ts
+new file mode 100644
+index 0000000..81a60a1
+--- /dev/null
++++ b/perax-market-engine/src/types.ts
+@@ -0,0 +1,6 @@
++export type PriceSample = { price: bigint; liquidityUsd: bigint; quoteLiquidityUsd: bigint; volumeUsd: bigint; netBuyPressureBps: number; observedAt: number };
++export type ApcSnapshot = { observationId: Uint8Array; sequence: bigint; pool: string; spotPrice: bigint; twapPrice: bigint; twapMinutes: bigint; liquidityUsd: bigint; quoteLiquidityUsd: bigint; volumeUsd: bigint; netBuyPressureBps: number; priceVelocityBps: number; volatilityBps: number; estimatedPriceImpactBps: number; observedAt: bigint };
++export type ApcStateView = { status: "inactive"|"armed"|"active"|"pumpControl"|"awaitingAbsorption"|"recovery"|"paused"; currentBandIndex: number; nextBandPrice: bigint };
++export interface MarketDataSource { readApprovedPool(): Promise<{ pool: string; samples: PriceSample[]; estimatedPriceImpactBps: number }>; }
++export interface ApcProgramClient { readState(): Promise<ApcStateView>; submitObservation(snapshot: ApcSnapshot): Promise<void>; activateNextBand(observationId: Uint8Array, bandIndex: number): Promise<void>; readPermittedReleaseAmount(bandIndex: number, observationId: Uint8Array): Promise<bigint>; executePermittedRelease(bandIndex: number, observationId: Uint8Array, amount: bigint): Promise<void>; depositCounterweightProceeds(amount: bigint, settlementReference: Uint8Array): Promise<void>; enterRecovery(observationId: Uint8Array): Promise<void>; executeRecoveryPurchase(observationId: Uint8Array): Promise<void>; }
++export interface ExecutionVenue { placeControlledSell(amount: bigint): Promise<{ actualUsdcProceeds: bigint; settlementReference: Uint8Array }>; }
