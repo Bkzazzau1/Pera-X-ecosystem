@@ -5,13 +5,19 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/fix-correction-one-final.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/correction-one-trigger.txt"
+      - ".github/scripts/fix-correction-one-final.py"
+      - ".github/workflows/fix-correction-one-final.yml"
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout main
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install pinned Rust
