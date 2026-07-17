@@ -1,0 +1,72 @@
++        swapInstructionData: adapterInstruction.data,
++      })
++      .accounts({
++        state,
++        apcConfig,
++        apcState,
++        observation: recoveryPurchaseObservation.observation,
++        counterweightConfig,
++        counterweightAuthority,
++        counterweightVault,
++        recoveryVault,
++        quoteMint,
++        pexMint: mint,
++        approvedPool: recoveryPool,
++        recoveryProgram: program.programId,
++        recoveryRecord,
++        oracleFeed: oracle.publicKey,
++        tokenProgram: TOKEN_PROGRAM_ID,
++        systemProgram: anchor.web3.SystemProgram.programId,
++      })
++      .remainingAccounts([
++        { pubkey: quoteMint, isWritable: false, isSigner: false },
++        { pubkey: mint, isWritable: false, isSigner: false },
++        { pubkey: poolAuthority, isWritable: false, isSigner: false },
++        { pubkey: poolQuoteVault, isWritable: true, isSigner: false },
++        { pubkey: poolPexVault, isWritable: true, isSigner: false },
++      ])
++      .signers([oracle])
++      .rpc();
++    const quoteAfterRecovery = await getAccount(
++      provider.connection,
++      counterweightVault
++    );
++    const pexAfterRecovery = await getAccount(provider.connection, recoveryVault);
++    expect(quoteBeforeRecovery.amount - quoteAfterRecovery.amount).to.equal(100_000n);
++    expect(pexAfterRecovery.amount).to.be.greaterThan(pexBeforeRecovery.amount);
++    expect(pexAfterRecovery.owner.toBase58()).to.equal(recoveryAuthority.toBase58());
++
++    const wrongPoolObservationId = uniqueId(50_018);
++    const wrongPoolObservation = observationPda(wrongPoolObservationId);
++    await expectFailure(() =>
++      program.methods
++        .submitApcObservation({
++          observationId: wrongPoolObservationId,
++          sequence: new anchor.BN(sequence++),
++          pool: outsider.publicKey,
++          spotPrice: new anchor.BN(10_000),
++          twapPrice: new anchor.BN(10_000),
++          twapMinutes: new anchor.BN(60),
++          liquidityUsd: new anchor.BN(1_000_000),
++          quoteLiquidityUsd: new anchor.BN(500_000),
++          volumeUsd: new anchor.BN(2_000_000),
++          netBuyPressureBps: 6_000,
++          priceVelocityBps: 100,
++          volatilityBps: 100,
++          estimatedPriceImpactBps: 10,
++          observedAt: new anchor.BN(await currentChainTime()),
++        })
++        .accounts({
++          state,
++          apcConfig,
++          apcState,
++          observation: wrongPoolObservation,
++          oracleFeed: oracle.publicKey,
++          systemProgram: anchor.web3.SystemProgram.programId,
++        })
++        .signers([oracle])
++        .rpc()
++    );
++  });
++
+ });
