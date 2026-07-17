@@ -54,4 +54,4 @@
 +  console.log(`✅ APC numerical policy status: ${config.adaptivePriceControl.policyStatus}`);
    console.log('✅ Allocation wallet template is valid.');
  }
- 
+
