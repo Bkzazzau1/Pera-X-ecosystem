@@ -6,6 +6,11 @@ on:
     paths:
       - ".github/apc-final/**"
       - ".github/workflows/publish-apc-readable-source.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/apc-final/**"
+      - ".github/workflows/publish-apc-readable-source.yml"
   workflow_dispatch:
 
 permissions:
