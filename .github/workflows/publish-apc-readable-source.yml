@@ -141,7 +141,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          npm ci 2>&1 | tee /tmp/market-engine-install.log
+          npm install 2>&1 | tee /tmp/market-engine-install.log
           npm run typecheck 2>&1 | tee /tmp/market-engine-typecheck.log
           npm test 2>&1 | tee /tmp/market-engine-tests.log
 
