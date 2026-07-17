@@ -1,0 +1,117 @@
++      recoveryAuthority,
++      true,
++      TOKEN_PROGRAM_ID,
++      ASSOCIATED_TOKEN_PROGRAM_ID
++    );
++
++    await program.methods
++      .initializeApc({
++        quoteMint,
++        approvedPool: recoveryPool,
++        approvedProceedsOwner: proceedsOwner.publicKey,
++        approvedProceedsTokenAccount: proceedsTokenAccount,
++        approvedRecoveryProgram: program.programId,
++        priceScale: new anchor.BN(100_000_000),
++        firstActivationPrice: new anchor.BN(3_600),
++        minimumBandIntervalBps: 1_000,
++        maximumBandIntervalBps: 4_000,
++        maximumObservationAgeSeconds: new anchor.BN(600),
++        maximumFutureClockSkewSeconds: new anchor.BN(15),
++        hourlyReleaseCap: new anchor.BN(300 * BASE_UNITS),
++        pumpWindowReleaseCap: new anchor.BN(300 * BASE_UNITS),
++        pumpWindowSeconds: new anchor.BN(21_600),
++        minimumCounterweightCoverageBps: 2_500,
++        baseBandReleaseCap: new anchor.BN(100 * BASE_UNITS),
++        minimumTwapMinutes: new anchor.BN(15),
++        minimumLiquidityUsd: new anchor.BN(13_680),
++        minimumVolumeUsd: new anchor.BN(50_000),
++        minimumBuyPressureBps: 5_000,
++        riskVelocityThresholdsBps: [2_000, 5_000, 10_000],
++        riskVolatilityThresholdsBps: [1_000, 2_500, 5_000],
++        riskPriceImpactThresholdsBps: [100, 300, 800],
++        bandIntervalBpsByRisk: [1_000, 1_500, 2_500, 4_000],
++        bandReleaseBpsByRisk: [10_000, 8_000, 6_000, 4_000],
++        cascadeReductionBps: [10_000, 7_000, 4_500, 2_500],
++        recoverySpendingCap: new anchor.BN(1_000_000),
++      })
++      .accounts({
++        state,
++        authority,
++        apcConfig,
++        apcState,
++        counterweightConfig,
++        counterweightAuthority,
++        counterweightVault,
++        deferredBurnAuthority,
++        deferredBurnVault,
++        recoveryAuthority,
++        recoveryVault,
++        quoteMint,
++        tokenMint: mint,
++        tokenProgram: TOKEN_PROGRAM_ID,
++        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
++        systemProgram: anchor.web3.SystemProgram.programId,
++      })
++      .rpc();
++
++    const currentChainTime = async () => {
++      const slot = await provider.connection.getSlot("confirmed");
++      return (
++        (await provider.connection.getBlockTime(slot)) ??
++        Math.floor(Date.now() / 1000)
++      );
++    };
++    const observationPda = (id: number[]) =>
++      anchor.web3.PublicKey.findProgramAddressSync(
++        [Buffer.from("apc-observation"), Buffer.from(id)],
++        program.programId
++      )[0];
++    const bandPda = (index: number) => {
++      const encoded = Buffer.alloc(4);
++      encoded.writeUInt32LE(index);
++      return anchor.web3.PublicKey.findProgramAddressSync(
++        [Buffer.from("apc-band"), apcState.toBuffer(), encoded],
++        program.programId
++      )[0];
++    };
++    let sequence = 1;
++    const submitObservation = async (
++      idValue: number,
++      price: number,
++      overrides: Partial<{
++        buyPressure: number;
++        velocity: number;
++        volatility: number;
++        impact: number;
++      }> = {}
++    ) => {
++      const observationId = uniqueId(idValue);
++      const observation = observationPda(observationId);
++      const observedAt = await currentChainTime();
++      const params = {
++        observationId,
++        sequence: new anchor.BN(sequence++),
++        pool: recoveryPool,
++        spotPrice: new anchor.BN(price),
++        twapPrice: new anchor.BN(price),
++        twapMinutes: new anchor.BN(60),
++        liquidityUsd: new anchor.BN(1_000_000),
++        quoteLiquidityUsd: new anchor.BN(500_000),
++        volumeUsd: new anchor.BN(2_000_000),
++        netBuyPressureBps: overrides.buyPressure ?? 6_000,
++        priceVelocityBps: overrides.velocity ?? 100,
++        volatilityBps: overrides.volatility ?? 100,
++        estimatedPriceImpactBps: overrides.impact ?? 10,
++        observedAt: new anchor.BN(observedAt),
++      };
++      await program.methods
++        .submitApcObservation(params)
++        .accounts({
++          state,
++          apcConfig,
++          apcState,
++          observation,
++          oracleFeed: oracle.publicKey,
++          systemProgram: anchor.web3.SystemProgram.programId,
++        })
++        .signers([oracle])
