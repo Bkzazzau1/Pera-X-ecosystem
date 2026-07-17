@@ -1,15 +1,15 @@
-name: Publish APC readable source
+name: Apply APC TypeScript corrections
 
 on:
   push:
     branches: [agent/apc-source-snapshot]
     paths:
-      - ".github/apc-final/**"
+      - ".github/scripts/fix-apc-typescript.py"
       - ".github/workflows/publish-apc-readable-source.yml"
   pull_request:
     branches: [main]
     paths:
-      - ".github/apc-final/**"
+      - ".github/scripts/fix-apc-typescript.py"
       - ".github/workflows/publish-apc-readable-source.yml"
   workflow_dispatch:
 
@@ -17,180 +17,39 @@ permissions:
   contents: write
 
 jobs:
-  publish:
+  fix:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
     steps:
-      - name: Checkout validation source
+      - name: Checkout correction source
         uses: actions/checkout@v4
         with:
           ref: agent/apc-source-snapshot
           fetch-depth: 0
 
-      - name: Install pinned Rust
-        uses: dtolnay/rust-toolchain@1.79.0
-        with:
-          components: rustfmt
+      - name: Preserve correction script
+        run: cp .github/scripts/fix-apc-typescript.py /tmp/fix-apc-typescript.py
 
-      - name: Preserve and verify source patches
-        shell: bash
+      - name: Switch to APC implementation branch
         run: |
-          set -euo pipefail
-          cat .github/apc-patch/part*.patch > /tmp/apc-base.patch
-          cp .github/apc-fixes/fix01.patch /tmp/apc-fix01.patch
-          cat .github/apc-final/part*.patch > /tmp/apc-final.patch
-          python3 - <<'PY'
-          from pathlib import Path
-          import hashlib
-
-          path = Path('/tmp/apc-base.patch')
-          data = path.read_bytes()
-          replacements = [
-              (b'pub last _release_timestamp', b'pub last_release_timestamp'),
-              (b'require!(next  <= cap', b'require!(next <= cap'),
-              (
-                  b'+       ),\n+        PeraxError::InvalidApcStatus',
-                  b'+        ),\n+        PeraxError::InvalidApcStatus',
-              ),
-          ]
-          for old, new in replacements:
-              if data.count(old) != 1:
-                  raise SystemExit(f'unexpected APC base-patch boundary: {old!r}')
-              data = data.replace(old, new)
-          expected = 'b61d4f0a0c732f40aaa31d0b15b682dc4b058bee964e948f50f09aecc4a3230c'
-          actual = hashlib.sha256(data).hexdigest()
-          if actual != expected:
-              raise SystemExit(f'base patch digest mismatch: {actual}')
-          path.write_bytes(data)
-          PY
-          echo 'e752f07cb5854171cfefb51650f6c1a7604bc4e3a9218b36ce935f0851ebae43  /tmp/apc-fix01.patch' | sha256sum --check
-          echo "Final multipart patch digest: $(sha256sum /tmp/apc-final.patch | cut -d' ' -f1)"
-
-      - name: Switch to clean implementation branch
-        shell: bash
-        run: |
-          set -euo pipefail
           git fetch origin agent/adaptive-price-control
           git switch -C agent/adaptive-price-control origin/agent/adaptive-price-control
-          test "$(git rev-parse HEAD)" = "67036d6a2bbabb9801359dc627f5c1a5bd913507"
+          test "$(git rev-parse HEAD)" = "8780ed6b4d486d54470db77ca15e8e6973b1c8e1"
 
-      - name: Apply base APC source
-        shell: bash
-        run: |
-          set -o pipefail
-          git apply --check --verbose /tmp/apc-base.patch 2>&1 | tee /tmp/apply-base.log
-          git apply /tmp/apc-base.patch
+      - name: Apply guarded TypeScript corrections
+        run: python3 /tmp/fix-apc-typescript.py
 
-      - name: Apply validated correction fixes
-        shell: bash
+      - name: Validate TypeScript
+        working-directory: perax-contracts
         run: |
-          set -o pipefail
-          git apply --check --verbose /tmp/apc-fix01.patch 2>&1 | tee /tmp/apply-fix01.log
-          git apply /tmp/apc-fix01.patch
-          (cd perax-contracts && cargo +1.79.0 fmt --all)
+          npm install
+          npm run typecheck
 
-      - name: Apply final APC source
-        shell: bash
+      - name: Commit and push corrections
         run: |
-          set -o pipefail
-          git apply --check --verbose /tmp/apc-final.patch 2>&1 | tee /tmp/apply-final.log
-          git apply /tmp/apc-final.patch
           git diff --check
-
-      - name: Generate Rust 1.79-compatible lockfile
-        working-directory: perax-contracts
-        shell: bash
-        run: |
-          set -euo pipefail
-          rustup toolchain install 1.85.0 --profile minimal
-          rm -f Cargo.lock
-          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +1.85.0 generate-lockfile
-          cargo +1.85.0 update -p blake3 --precise 1.5.0
-
-      - name: Validate tokenomics policy
-        working-directory: perax-contracts
-        shell: bash
-        run: |
-          set -o pipefail
-          node scripts/validate-tokenomics.js 2>&1 | tee /tmp/tokenomics-validation.log
-
-      - name: Verify Rust formatting
-        working-directory: perax-contracts
-        shell: bash
-        run: |
-          set -o pipefail
-          cargo +1.79.0 fmt --all
-          cargo +1.79.0 fmt --all -- --check 2>&1 | tee /tmp/rust-format.log
-
-      - name: Run Rust unit tests
-        working-directory: perax-contracts
-        shell: bash
-        run: |
-          set -o pipefail
-          cargo +1.79.0 test --locked --all-targets 2>&1 | tee /tmp/rust-tests.log
-
-      - name: Check Rust contracts
-        working-directory: perax-contracts
-        shell: bash
-        run: |
-          set -o pipefail
-          cargo +1.79.0 check --locked --all-targets 2>&1 | tee /tmp/rust-check.log
-
-      - name: Validate APC market engine
-        working-directory: perax-market-engine
-        shell: bash
-        run: |
-          set -o pipefail
-          npm install 2>&1 | tee /tmp/market-engine-install.log
-          npm run typecheck 2>&1 | tee /tmp/market-engine-typecheck.log
-          npm test 2>&1 | tee /tmp/market-engine-tests.log
-
-      - name: Package validated readable source
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf perax-market-engine/node_modules
-          git status --short | tee /tmp/git-status.log
-          tar --exclude=.git --exclude=target --exclude=node_modules -czf /tmp/apc-readable-source.tar.gz .
-          git checkout origin/agent/adaptive-price-control -- .github/workflows/perax-contracts-ci.yml .github/workflows/fix-correction-one-final.yml
-
-      - name: Commit readable APC source
-        shell: bash
-        run: |
-          set -o pipefail
-          git diff --check
-          git add -A
+          git add perax-contracts/tests/perax-core.ts
           git config user.name "Pera-X APC automation"
           git config user.email "actions@github.com"
-          git commit -m "Implement adaptive price control" 2>&1 | tee /tmp/git-commit.log
-
-      - name: Push readable APC source
-        shell: bash
-        run: |
-          set -o pipefail
-          git push origin agent/adaptive-price-control 2>&1 | tee /tmp/git-push.log
-
-      - name: Upload publisher diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: apc-publisher-diagnostics
-          path: |
-            /tmp/apc-readable-source.tar.gz
-            /tmp/apc-base.patch
-            /tmp/apc-fix01.patch
-            /tmp/apc-final.patch
-            /tmp/apply-base.log
-            /tmp/apply-fix01.log
-            /tmp/apply-final.log
-            /tmp/tokenomics-validation.log
-            /tmp/rust-format.log
-            /tmp/rust-tests.log
-            /tmp/rust-check.log
-            /tmp/market-engine-install.log
-            /tmp/market-engine-typecheck.log
-            /tmp/market-engine-tests.log
-            /tmp/git-status.log
-            /tmp/git-commit.log
-            /tmp/git-push.log
-          if-no-files-found: warn
+          git commit -m "Fix APC transaction test typing"
+          git push origin agent/adaptive-price-control
