@@ -1,0 +1,212 @@
+sert!(calculate_band_interval_bps(&config, 0).is_err());
+ 
+-    assert!(validate_growth_release(&state, &params).is_ok());
++    let mut config = test_apc_config();
++    config.band_interval_bps_by_risk[3] = config.maximum_band_interval_bps + 1;
++    assert!(calculate_band_interval_bps(&config, 3).is_err());
+ }
+ 
+ #[test]
+-fn growth_release_rejects_when_price_is_below_3x_launch() {
+-    let state = test_state(0);
+-    let mut params = growth_release_params(1_000_000 * PEX_DECIMALS, 1_000_000);
+-    params.snapshot.observed_price = (PEX_LAUNCH_PRICE_SCALED * GROWTH_PRICE_MULTIPLIER) - 1;
++fn risk_and_interval_calculation_is_deterministic() {
++    let config = test_apc_config();
++    let tier = calculate_apc_risk_tier(
++        5_000,
++        1_100,
++        120,
++        config.risk_velocity_thresholds_bps,
++        config.risk_volatility_thresholds_bps,
++        config.risk_price_impact_thresholds_bps,
++    );
++    assert_eq!(tier, 2);
++    assert_eq!(calculate_band_interval_bps(&config, tier).unwrap(), 2_500);
++}
+ 
+-    assert!(validate_growth_release(&state, &params).is_err());
++#[test]
++fn band_price_math_uses_checked_ceil_rounding() {
++    assert_eq!(calculate_next_band_price(3_600, 1_000).unwrap(), 3_960);
++    assert_eq!(calculate_next_band_price(1, 1).unwrap(), 2);
++    assert!(calculate_next_band_price(u64::MAX, 10_000).is_err());
+ }
+ 
+ #[test]
+-fn growth_release_rejects_when_twap_is_under_60_minutes() {
+-    let state = test_state(0);
+-    let mut params = growth_release_params(1_000_000 * PEX_DECIMALS, 1_000_000);
+-    params.snapshot.twap_minutes = MIN_GROWTH_TWAP_MINUTES - 1;
++fn high_price_can_cross_multiple_sequential_bands_without_skipping() {
++    let config = test_apc_config();
++    let effective_price = 100_000;
++    let mut trigger = config.first_activation_price;
++    for index in 1..=6 {
++        assert!(effective_price >= trigger);
++        assert!(validate_sequential_band_index(index - 1, index).is_ok());
++        trigger = calculate_next_band_price(trigger, config.band_interval_bps_by_risk[0]).unwrap();
++    }
++    assert!(validate_sequential_band_index(1, 3).is_err());
++    assert!(validate_sequential_band_index(1, 1).is_err());
++}
+ 
+-    assert!(validate_growth_release(&state, &params).is_err());
++#[test]
++fn cascade_tranches_decrease_and_never_restore() {
++    let config = test_apc_config();
++    let first = calculate_band_release_cap(&config, 0, 1).unwrap();
++    let second = calculate_band_release_cap(&config, 0, 2).unwrap();
++    let third = calculate_band_release_cap(&config, 0, 3).unwrap();
++    let fourth = calculate_band_release_cap(&config, 0, 4).unwrap();
++    let later = calculate_band_release_cap(&config, 0, 20).unwrap();
++    assert!(first > second && second > third && third > fourth);
++    assert_eq!(later, fourth);
+ }
+ 
+ #[test]
+-fn growth_release_rejects_when_liquidity_is_below_3x_initial() {
+-    let state = test_state(0);
+-    let mut params = growth_release_params(1_000_000 * PEX_DECIMALS, 1_000_000);
+-    params.snapshot.liquidity_usd = MIN_GROWTH_LIQUIDITY_USD - 1;
++fn apc_caps_use_checked_addition() {
++    let config = test_apc_config();
++    let mut apc_state = test_apc_state(config.state);
++    let mut core_state = test_state(0);
++    let amount = 1_000;
++    assert!(validate_apc_release_caps(&config, &apc_state, &core_state, 0, 2_000, amount).is_ok());
+ 
+-    assert!(validate_growth_release(&state, &params).is_err());
++    apc_state.hourly_released = config.hourly_release_cap;
++    assert!(validate_apc_release_caps(&config, &apc_state, &core_state, 0, 2_000, amount).is_err());
++
++    apc_state.hourly_released = 0;
++    apc_state.pump_window_released = config.pump_window_release_cap;
++    assert!(validate_apc_release_caps(&config, &apc_state, &core_state, 0, 2_000, amount).is_err());
++
++    apc_state.pump_window_released = 0;
++    core_state.daily_unlocked_accumulator = core_state.daily_release_cap;
++    assert!(validate_apc_release_caps(&config, &apc_state, &core_state, 0, 2_000, amount).is_err());
+ }
+ 
+ #[test]
+-fn growth_release_rejects_when_buy_pressure_is_below_50_percent() {
+-    let state = test_state(0);
+-    let mut params = growth_release_params(1_000_000 * PEX_DECIMALS, 1_000_000);
+-    params.snapshot.net_buy_volume_bps = MIN_NET_BUY_VOLUME_BPS - 1;
++fn observation_clock_and_sequence_security_is_enforced() {
++    let config = test_apc_config();
++    let mut state = test_apc_state(config.state);
++    let now = 10_000;
++    let valid = observation_params(&config, 1, now - 10);
++    assert!(validate_apc_observation_submission(&config, &state, &valid, now).is_ok());
+ 
+-    assert!(validate_growth_release(&state, &params).is_err());
++    let stale = observation_params(&config, 1, now - config.maximum_observation_age_seconds - 1);
++    assert!(validate_apc_observation_submission(&config, &state, &stale, now).is_err());
++
++    let future = observation_params(&config, 1, now + config.maximum_future_clock_skew_seconds + 1);
++    assert!(validate_apc_observation_submission(&config, &state, &future, now).is_err());
++
++    state.last_observation_sequence = 1;
++    let repeated = observation_params(&config, 1, now);
++    assert!(validate_apc_observation_submission(&config, &state, &repeated, now).is_err());
+ }
+ 
+ #[test]
+-fn growth_release_rejects_during_24_hour_cooldown() {
+-    let mut state = test_state(0);
+-    state.last_release_timestamp = 1_000_000;
+-    let params = growth_release_params(
++fn counterweight_requirement_uses_real_quote_units() {
++    let required = calculate_counterweight_requirement(
+         1_000_000 * PEX_DECIMALS,
+-        1_000_000 + RELEASE_COOLDOWN_SECONDS - 1,
+-    );
+-
+-    assert!(validate_growth_release(&state, &params).is_err());
++        3_600,
++        100_000_000,
++        2_500,
++    )
++    .unwrap();
++    assert_eq!(required, 9_000_000); // $9.00 in six-decimal USDC units.
+ }
+ 
+ #[test]
+-fn growth_release_rejects_above_daily_cap() {
+-    let state = test_state(0);
+-    let params = growth_release_params(DAILY_RELEASE_CAP + 1, 1_000_000);
+-
+-    assert!(validate_growth_release(&state, &params).is_err());
++fn burn_is_deferred_during_pump_absorption_and_recovery() {
++    let config = Pubkey::new_unique();
++    let mut state = test_apc_state(config);
++    for status in [
++        ApcStatus::PumpControl,
++        ApcStatus::AwaitingAbsorption,
++        ApcStatus::Recovery,
++    ] {
++        state.status = status;
++        assert!(validate_apc_burn_allowed(&state).is_err());
++    }
++    state.status = ApcStatus::Active;
++    assert!(validate_apc_burn_allowed(&state).is_ok());
+ }
+ 
+ #[test]
+-fn emergency_release_passes_when_stress_gates_and_hourly_cap_are_met() {
++fn emergency_release_still_succeeds_independently() {
+     let state = test_state(0);
+     let reserve_amount = 10_000_000 * PEX_DECIMALS;
+-    let requested_amount =
+-        amount_bps(reserve_amount, EMERGENCY_HOURLY_RESERVE_RELEASE_BPS).unwrap();
++    let requested_amount = amount_bps(reserve_amount, EMERGENCY_HOURLY_RESERVE_RELEASE_BPS).unwrap();
+     let params = emergency_release_params(requested_amount, reserve_amount, 1_000_000);
+-
+     assert!(validate_emergency_release(&state, &params).is_ok());
+ }
+ 
+ #[test]
+-fn emergency_release_rejects_when_downside_trigger_is_not_met() {
++fn emergency_release_rejects_bad_stress_or_excess_amount() {
+     let state = test_state(0);
+     let reserve_amount = 10_000_000 * PEX_DECIMALS;
+-    let requested_amount =
+-        amount_bps(reserve_amount, EMERGENCY_HOURLY_RESERVE_RELEASE_BPS).unwrap();
+-    let mut params = emergency_release_params(requested_amount, reserve_amount, 1_000_000);
+-    params.snapshot.downside_move_bps = EMERGENCY_DOWNSIDE_TRIGGER_BPS - 1;
+-
+-    assert!(validate_emergency_release(&state, &params).is_err());
++    let cap = amount_bps(reserve_amount, EMERGENCY_HOURLY_RESERVE_RELEASE_BPS).unwrap();
++    let mut bad = emergency_release_params(cap, reserve_amount, 1_000_000);
++    bad.snapshot.downside_move_bps = EMERGENCY_DOWNSIDE_TRIGGER_BPS - 1;
++    assert!(validate_emergency_release(&state, &bad).is_err());
++    assert!(validate_emergency_release(
++        &state,
++        &emergency_release_params(cap + 1, reserve_amount, 1_000_000)
++    )
++    .is_err());
+ }
+ 
+ #[test]
+-fn emergency_release_rejects_above_hourly_cap() {
+-    let state = test_state(0);
+-    let reserve_amount = 10_000_000 * PEX_DECIMALS;
+-    let requested_amount =
+-        amount_bps(reserve_amount, EMERGENCY_HOURLY_RESERVE_RELEASE_BPS).unwrap() + 1;
+-    let params = emergency_release_params(requested_amount, reserve_amount, 1_000_000);
+-
+-    assert!(validate_emergency_release(&state, &params).is_err());
+-}
+-
+-#[test]
+-fn release_windows_reset_after_day_and_month_boundaries() {
++fn release_windows_reset_from_trusted_clock_input() {
+     let mut state = test_state(0);
+     state.daily_window_start = 1;
+     state.monthly_window_start = 1;
+     state.daily_unlocked_accumulator = 100;
+     state.monthly_unlocked_accumulator = 100;
+-
+     reset_release_w
