@@ -1144,4 +1144,716 @@ describe("perax-core reserve vault custody", () => {
         .rpc()
     );
   });
+
+  it("executes the complete APC custody, cascade, burn, recovery, and rollback flow", async () => {
+    const treasury = vaults.get("treasury")!;
+    const proceedsOwner = anchor.web3.Keypair.generate();
+    const proceedsAirdrop = await provider.connection.requestAirdrop(
+      proceedsOwner.publicKey,
+      3 * anchor.web3.LAMPORTS_PER_SOL
+    );
+    await provider.connection.confirmTransaction(proceedsAirdrop, "confirmed");
+
+    const quoteMint = await createMint(
+      provider.connection,
+      payer,
+      payer.publicKey,
+      null,
+      6
+    );
+    const proceedsTokenAccount = (
+      await getOrCreateAssociatedTokenAccount(
+        provider.connection,
+        payer,
+        quoteMint,
+        proceedsOwner.publicKey
+      )
+    ).address;
+    await mintTo(
+      provider.connection,
+      payer,
+      quoteMint,
+      proceedsTokenAccount,
+      payer,
+      5_000_000n
+    );
+
+    const recoveryPoolId = uniqueId(50_001);
+    const [recoveryPool] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("recovery-pool"), Buffer.from(recoveryPoolId)],
+      program.programId
+    );
+    const [poolAuthority] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("recovery-pool-authority"), recoveryPool.toBuffer()],
+      program.programId
+    );
+    const poolQuoteVault = getAssociatedTokenAddressSync(
+      quoteMint,
+      poolAuthority,
+      true,
+      TOKEN_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID
+    );
+    const poolPexVault = getAssociatedTokenAddressSync(
+      mint,
+      poolAuthority,
+      true,
+      TOKEN_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID
+    );
+
+    await program.methods
+      .initializeRecoveryPool({ poolId: recoveryPoolId, feeBps: 300 })
+      .accounts({
+        state,
+        authority,
+        recoveryPool,
+        poolAuthority,
+        poolQuoteVault,
+        poolPexVault,
+        quoteMint,
+        pexMint: mint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+
+    await mintTo(
+      provider.connection,
+      payer,
+      quoteMint,
+      poolQuoteVault,
+      payer,
+      1_000_000_000n
+    );
+    await mintTo(
+      provider.connection,
+      payer,
+      mint,
+      poolPexVault,
+      payer,
+      1_000_000n * BigInt(BASE_UNITS)
+    );
+
+    const [apcConfig] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("apc-config"), state.toBuffer()],
+      program.programId
+    );
+    const [apcState] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("apc-state"), apcConfig.toBuffer()],
+      program.programId
+    );
+    const [counterweightConfig] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("counterweight-config"), apcConfig.toBuffer()],
+      program.programId
+    );
+    const [counterweightAuthority] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("counterweight-authority"), apcConfig.toBuffer()],
+      program.programId
+    );
+    const counterweightVault = getAssociatedTokenAddressSync(
+      quoteMint,
+      counterweightAuthority,
+      true,
+      TOKEN_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID
+    );
+    const [deferredBurnAuthority] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("deferred-burn-authority"), apcConfig.toBuffer()],
+      program.programId
+    );
+    const deferredBurnVault = getAssociatedTokenAddressSync(
+      mint,
+      deferredBurnAuthority,
+      true,
+      TOKEN_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID
+    );
+    const [recoveryAuthority] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("recovery-authority"), apcConfig.toBuffer()],
+      program.programId
+    );
+    const recoveryVault = getAssociatedTokenAddressSync(
+      mint,
+      recoveryAuthority,
+      true,
+      TOKEN_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID
+    );
+
+    await program.methods
+      .initializeApc({
+        quoteMint,
+        approvedPool: recoveryPool,
+        approvedProceedsOwner: proceedsOwner.publicKey,
+        approvedProceedsTokenAccount: proceedsTokenAccount,
+        approvedRecoveryProgram: program.programId,
+        priceScale: new anchor.BN(100_000_000),
+        firstActivationPrice: new anchor.BN(3_600),
+        minimumBandIntervalBps: 1_000,
+        maximumBandIntervalBps: 4_000,
+        maximumObservationAgeSeconds: new anchor.BN(600),
+        maximumFutureClockSkewSeconds: new anchor.BN(15),
+        hourlyReleaseCap: new anchor.BN(300 * BASE_UNITS),
+        pumpWindowReleaseCap: new anchor.BN(300 * BASE_UNITS),
+        pumpWindowSeconds: new anchor.BN(21_600),
+        minimumCounterweightCoverageBps: 2_500,
+        baseBandReleaseCap: new anchor.BN(100 * BASE_UNITS),
+        minimumTwapMinutes: new anchor.BN(15),
+        minimumLiquidityUsd: new anchor.BN(13_680),
+        minimumVolumeUsd: new anchor.BN(50_000),
+        minimumBuyPressureBps: 5_000,
+        riskVelocityThresholdsBps: [2_000, 5_000, 10_000],
+        riskVolatilityThresholdsBps: [1_000, 2_500, 5_000],
+        riskPriceImpactThresholdsBps: [100, 300, 800],
+        bandIntervalBpsByRisk: [1_000, 1_500, 2_500, 4_000],
+        bandReleaseBpsByRisk: [10_000, 8_000, 6_000, 4_000],
+        cascadeReductionBps: [10_000, 7_000, 4_500, 2_500],
+        recoverySpendingCap: new anchor.BN(1_000_000),
+      })
+      .accounts({
+        state,
+        authority,
+        apcConfig,
+        apcState,
+        counterweightConfig,
+        counterweightAuthority,
+        counterweightVault,
+        deferredBurnAuthority,
+        deferredBurnVault,
+        recoveryAuthority,
+        recoveryVault,
+        quoteMint,
+        tokenMint: mint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+
+    const currentChainTime = async () => {
+      const slot = await provider.connection.getSlot("confirmed");
+      return (
+        (await provider.connection.getBlockTime(slot)) ??
+        Math.floor(Date.now() / 1000)
+      );
+    };
+    const observationPda = (id: number[]) =>
+      anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("apc-observation"), Buffer.from(id)],
+        program.programId
+      )[0];
+    const bandPda = (index: number) => {
+      const encoded = Buffer.alloc(4);
+      encoded.writeUInt32LE(index);
+      return anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("apc-band"), apcState.toBuffer(), encoded],
+        program.programId
+      )[0];
+    };
+    let sequence = 1;
+    const submitObservation = async (
+      idValue: number,
+      price: number,
+      overrides: Partial<{
+        buyPressure: number;
+        velocity: number;
+        volatility: number;
+        impact: number;
+      }> = {}
+    ) => {
+      const observationId = uniqueId(idValue);
+      const observation = observationPda(observationId);
+      const observedAt = await currentChainTime();
+      const params = {
+        observationId,
+        sequence: new anchor.BN(sequence++),
+        pool: recoveryPool,
+        spotPrice: new anchor.BN(price),
+        twapPrice: new anchor.BN(price),
+        twapMinutes: new anchor.BN(60),
+        liquidityUsd: new anchor.BN(1_000_000),
+        quoteLiquidityUsd: new anchor.BN(500_000),
+        volumeUsd: new anchor.BN(2_000_000),
+        netBuyPressureBps: overrides.buyPressure ?? 6_000,
+        priceVelocityBps: overrides.velocity ?? 100,
+        volatilityBps: overrides.volatility ?? 100,
+        estimatedPriceImpactBps: overrides.impact ?? 10,
+        observedAt: new anchor.BN(observedAt),
+      };
+      await program.methods
+        .submitApcObservation(params)
+        .accounts({
+          state,
+          apcConfig,
+          apcState,
+          observation,
+          oracleFeed: oracle.publicKey,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .signers([oracle])
+        .rpc();
+      return { observationId, observation, params };
+    };
+
+    const pumpObservation = await submitObservation(50_010, 10_000);
+    const firstBand = bandPda(1);
+    const secondBand = bandPda(2);
+    await program.methods
+      .activateNextApcBand({ bandIndex: 1 })
+      .accounts({
+        state,
+        apcConfig,
+        apcState,
+        observation: pumpObservation.observation,
+        bandRecord: firstBand,
+        oracleFeed: oracle.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([oracle])
+      .rpc();
+    await program.methods
+      .activateNextApcBand({ bandIndex: 2 })
+      .accounts({
+        state,
+        apcConfig,
+        apcState,
+        observation: pumpObservation.observation,
+        bandRecord: secondBand,
+        oracleFeed: oracle.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([oracle])
+      .rpc();
+    expect(firstBand.equals(secondBand)).to.equal(false);
+    const firstBandAccount = await program.account.apcBandRecord.fetch(firstBand);
+    const secondBandAccount = await program.account.apcBandRecord.fetch(secondBand);
+    expect(firstBandAccount.maximumReleaseAmount.gt(secondBandAccount.maximumReleaseAmount)).to.equal(true);
+
+    await mintTo(
+      provider.connection,
+      payer,
+      mint,
+      treasury.sourceTokenAccount,
+      payer,
+      1_000n * BigInt(BASE_UNITS)
+    );
+    await program.methods
+      .depositIntoReserveVault(
+        treasury.allocationId,
+        new anchor.BN(1_000 * BASE_UNITS)
+      )
+      .accounts({
+        state,
+        reserveVaultConfig: treasury.config,
+        vaultAuthority: treasury.authority,
+        sourceOwner: treasury.sourceOwner.publicKey,
+        sourceTokenAccount: treasury.sourceTokenAccount,
+        vaultTokenAccount: treasury.tokenAccount,
+        tokenMint: mint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([treasury.sourceOwner])
+      .rpc();
+
+    const releaseFromBand = async (
+      releaseIdValue: number,
+      bandIndex: number,
+      bandRecord: anchor.web3.PublicKey,
+      observationId: number[],
+      observation: anchor.web3.PublicKey,
+      amountPex: number
+    ) => {
+      const releaseId = uniqueId(releaseIdValue);
+      const [releaseRecord] = anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("apc-release"), Buffer.from(releaseId)],
+        program.programId
+      );
+      const params = {
+        releaseId,
+        allocationId: treasury.allocationId,
+        bandIndex,
+        observationId,
+        amount: new anchor.BN(amountPex * BASE_UNITS),
+        destinationTokenAccount: treasury.destinationTokenAccount,
+      };
+      await program.methods
+        .executeApcRelease(params)
+        .accounts({
+          state,
+          apcConfig,
+          apcState,
+          observation,
+          bandRecord,
+          reserveVaultConfig: treasury.config,
+          vaultAuthority: treasury.authority,
+          vaultTokenAccount: treasury.tokenAccount,
+          destinationTokenAccount: treasury.destinationTokenAccount,
+          counterweightConfig,
+          counterweightVault,
+          releaseRecord,
+          oracleFeed: oracle.publicKey,
+          tokenMint: mint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .signers([oracle])
+        .rpc();
+      return { releaseId, releaseRecord, params };
+    };
+
+    const firstReleaseObservation = await submitObservation(50_011, 10_000);
+    await releaseFromBand(
+      50_101,
+      1,
+      firstBand,
+      firstReleaseObservation.observationId,
+      firstReleaseObservation.observation,
+      10
+    );
+
+    const blockedObservation = await submitObservation(50_012, 10_000);
+    await expectFailure(() =>
+      releaseFromBand(
+        50_102,
+        2,
+        secondBand,
+        blockedObservation.observationId,
+        blockedObservation.observation,
+        5
+      )
+    );
+
+    const depositId = uniqueId(50_201);
+    const [depositRecord] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("counterweight-deposit"), Buffer.from(depositId)],
+      program.programId
+    );
+    const counterweightBefore = await getAccount(
+      provider.connection,
+      counterweightVault
+    );
+    await program.methods
+      .depositCounterweightProceeds({
+        depositId,
+        amount: new anchor.BN(1_000_000),
+      })
+      .accounts({
+        state,
+        apcConfig,
+        apcState,
+        counterweightConfig,
+        sourceOwner: proceedsOwner.publicKey,
+        sourceTokenAccount: proceedsTokenAccount,
+        counterweightVault,
+        quoteMint,
+        depositRecord,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([proceedsOwner])
+      .rpc();
+    const counterweightAfter = await getAccount(
+      provider.connection,
+      counterweightVault
+    );
+    expect(counterweightAfter.amount - counterweightBefore.amount).to.equal(
+      1_000_000n
+    );
+
+    const secondReleaseObservation = await submitObservation(50_013, 10_000);
+    await releaseFromBand(
+      50_103,
+      2,
+      secondBand,
+      secondReleaseObservation.observationId,
+      secondReleaseObservation.observation,
+      5
+    );
+    await expectFailure(() =>
+      releaseFromBand(
+        50_104,
+        2,
+        secondBand,
+        secondReleaseObservation.observationId,
+        secondReleaseObservation.observation,
+        1
+      )
+    );
+
+    const burnDecisionId = uniqueId(50_301);
+    const [deferredBurnRecord] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("deferred-burn"), Buffer.from(burnDecisionId)],
+      program.programId
+    );
+    await program.methods
+      .recordDeferredBurn({
+        decisionId: burnDecisionId,
+        amount: new anchor.BN(BASE_UNITS),
+        observedAt: new anchor.BN(await currentChainTime()),
+      })
+      .accounts({
+        state,
+        apcConfig,
+        apcState,
+        counterweightConfig,
+        sourceAuthority: wrongSourceOwner.publicKey,
+        sourceTokenAccount: wrongSourceTokenAccount,
+        deferredBurnVault,
+        tokenMint: mint,
+        deferredBurnRecord,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([wrongSourceOwner])
+      .rpc();
+    await expectFailure(() =>
+      program.methods
+        .executeDeferredBurn({ amount: new anchor.BN(BASE_UNITS) })
+        .accounts({
+          state,
+          apcConfig,
+          apcState,
+          counterweightConfig,
+          deferredBurnAuthority,
+          deferredBurnVault,
+          deferredBurnRecord,
+          tokenMint: mint,
+          oracleFeed: oracle.publicKey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([oracle])
+        .rpc()
+    );
+
+    const confirmationObservation = await submitObservation(50_014, 10_000);
+    await program.methods
+      .confirmApcAbsorption()
+      .accounts({
+        state,
+        apcConfig,
+        apcState,
+        observation: confirmationObservation.observation,
+        oracleFeed: oracle.publicKey,
+      })
+      .signers([oracle])
+      .rpc();
+    const confirmedState = await program.account.apcState.fetch(apcState);
+    expect(confirmedState.unconfirmedReleaseAmount.toString()).to.equal("0");
+
+    await program.methods
+      .executeDeferredBurn({ amount: new anchor.BN(BASE_UNITS) })
+      .accounts({
+        state,
+        apcConfig,
+        apcState,
+        counterweightConfig,
+        deferredBurnAuthority,
+        deferredBurnVault,
+        deferredBurnRecord,
+        tokenMint: mint,
+        oracleFeed: oracle.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([oracle])
+      .rpc();
+    expect((await getAccount(provider.connection, deferredBurnVault)).amount).to.equal(0n);
+
+    const rollbackObservation = await submitObservation(50_015, 10_000);
+    const rollbackReleaseOne = uniqueId(50_401);
+    const rollbackReleaseTwo = uniqueId(50_402);
+    const [rollbackRecordOne] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("apc-release"), Buffer.from(rollbackReleaseOne)],
+      program.programId
+    );
+    const [rollbackRecordTwo] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("apc-release"), Buffer.from(rollbackReleaseTwo)],
+      program.programId
+    );
+    const rollbackParams = (releaseId: number[]) => ({
+      releaseId,
+      allocationId: treasury.allocationId,
+      bandIndex: 2,
+      observationId: rollbackObservation.observationId,
+      amount: new anchor.BN(BASE_UNITS),
+      destinationTokenAccount: treasury.destinationTokenAccount,
+    });
+    const rollbackAccounts = (releaseRecord: anchor.web3.PublicKey) => ({
+      state,
+      apcConfig,
+      apcState,
+      observation: rollbackObservation.observation,
+      bandRecord: secondBand,
+      reserveVaultConfig: treasury.config,
+      vaultAuthority: treasury.authority,
+      vaultTokenAccount: treasury.tokenAccount,
+      destinationTokenAccount: treasury.destinationTokenAccount,
+      counterweightConfig,
+      counterweightVault,
+      releaseRecord,
+      oracleFeed: oracle.publicKey,
+      tokenMint: mint,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      systemProgram: anchor.web3.SystemProgram.programId,
+    });
+    const rollbackIxOne = await program.methods
+      .executeApcRelease(rollbackParams(rollbackReleaseOne))
+      .accounts(rollbackAccounts(rollbackRecordOne))
+      .instruction();
+    const rollbackIxTwo = await program.methods
+      .executeApcRelease(rollbackParams(rollbackReleaseTwo))
+      .accounts(rollbackAccounts(rollbackRecordTwo))
+      .instruction();
+    const destinationBeforeRollback = await getAccount(
+      provider.connection,
+      treasury.destinationTokenAccount
+    );
+    await expectFailure(() =>
+      provider.sendAndConfirm(
+        new anchor.web3.Transaction().add(rollbackIxOne, rollbackIxTwo),
+        [oracle]
+      )
+    );
+    const destinationAfterRollback = await getAccount(
+      provider.connection,
+      treasury.destinationTokenAccount
+    );
+    expect(destinationAfterRollback.amount).to.equal(
+      destinationBeforeRollback.amount
+    );
+    expect(await provider.connection.getAccountInfo(rollbackRecordOne)).to.equal(null);
+    expect(await provider.connection.getAccountInfo(rollbackRecordTwo)).to.equal(null);
+
+    const referenceBeforeRecovery = (
+      await program.account.apcState.fetch(apcState)
+    ).currentReferencePrice.toString();
+    const recoveryEntryObservation = await submitObservation(50_016, 2_000, {
+      buyPressure: 0,
+    });
+    await program.methods
+      .enterApcRecovery()
+      .accounts({
+        state,
+        apcConfig,
+        apcState,
+        observation: recoveryEntryObservation.observation,
+        oracleFeed: oracle.publicKey,
+      })
+      .signers([oracle])
+      .rpc();
+    expect(
+      (await program.account.apcState.fetch(apcState)).currentReferencePrice.toString()
+    ).to.equal(referenceBeforeRecovery);
+
+    const recoveryPurchaseObservation = await submitObservation(50_017, 2_000, {
+      buyPressure: 0,
+    });
+    const adapterParams = {
+      quoteAmount: new anchor.BN(100_000),
+      minimumPexOut: new anchor.BN(1),
+    };
+    const adapterInstruction = await program.methods
+      .executeRecoverySwapAdapter(adapterParams)
+      .accounts({
+        counterweightVault,
+        recoveryVault,
+        counterweightAuthority,
+        recoveryPool,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        quoteMint,
+        pexMint: mint,
+        poolAuthority,
+        poolQuoteVault,
+        poolPexVault,
+      })
+      .instruction();
+    const recoveryId = uniqueId(50_501);
+    const [recoveryRecord] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("apc-recovery"), Buffer.from(recoveryId)],
+      program.programId
+    );
+    const quoteBeforeRecovery = await getAccount(
+      provider.connection,
+      counterweightVault
+    );
+    const pexBeforeRecovery = await getAccount(provider.connection, recoveryVault);
+    await program.methods
+      .executeCounterweightPurchase({
+        recoveryId,
+        observationId: recoveryPurchaseObservation.observationId,
+        maximumQuoteAmount: new anchor.BN(100_000),
+        minimumPexOut: new anchor.BN(1),
+        swapInstructionData: adapterInstruction.data,
+      })
+      .accounts({
+        state,
+        apcConfig,
+        apcState,
+        observation: recoveryPurchaseObservation.observation,
+        counterweightConfig,
+        counterweightAuthority,
+        counterweightVault,
+        recoveryVault,
+        quoteMint,
+        pexMint: mint,
+        approvedPool: recoveryPool,
+        recoveryProgram: program.programId,
+        recoveryRecord,
+        oracleFeed: oracle.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .remainingAccounts([
+        { pubkey: quoteMint, isWritable: false, isSigner: false },
+        { pubkey: mint, isWritable: false, isSigner: false },
+        { pubkey: poolAuthority, isWritable: false, isSigner: false },
+        { pubkey: poolQuoteVault, isWritable: true, isSigner: false },
+        { pubkey: poolPexVault, isWritable: true, isSigner: false },
+      ])
+      .signers([oracle])
+      .rpc();
+    const quoteAfterRecovery = await getAccount(
+      provider.connection,
+      counterweightVault
+    );
+    const pexAfterRecovery = await getAccount(provider.connection, recoveryVault);
+    expect(quoteBeforeRecovery.amount - quoteAfterRecovery.amount).to.equal(100_000n);
+    expect(pexAfterRecovery.amount > pexBeforeRecovery.amount).to.equal(true);
+    expect(pexAfterRecovery.owner.toBase58()).to.equal(recoveryAuthority.toBase58());
+
+    const wrongPoolObservationId = uniqueId(50_018);
+    const wrongPoolObservation = observationPda(wrongPoolObservationId);
+    const wrongPoolObservedAt = await currentChainTime();
+    await expectFailure(() =>
+      program.methods
+        .submitApcObservation({
+          observationId: wrongPoolObservationId,
+          sequence: new anchor.BN(sequence++),
+          pool: outsider.publicKey,
+          spotPrice: new anchor.BN(10_000),
+          twapPrice: new anchor.BN(10_000),
+          twapMinutes: new anchor.BN(60),
+          liquidityUsd: new anchor.BN(1_000_000),
+          quoteLiquidityUsd: new anchor.BN(500_000),
+          volumeUsd: new anchor.BN(2_000_000),
+          netBuyPressureBps: 6_000,
+          priceVelocityBps: 100,
+          volatilityBps: 100,
+          estimatedPriceImpactBps: 10,
+          observedAt: new anchor.BN(wrongPoolObservedAt),
+        })
+        .accounts({
+          state,
+          apcConfig,
+          apcState,
+          observation: wrongPoolObservation,
+          oracleFeed: oracle.publicKey,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .signers([oracle])
+        .rpc()
+    );
+  });
+
 });

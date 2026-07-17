@@ -71,19 +71,21 @@ Remaining liquidity reserve:
 
 This uses the full 38% liquidity allocation at the approved launch price of $0.000012.
 
-## Market-Conditional Unlocking
+## Adaptive Price Control
 
-Pera-X uses Reactive Market-Conditional Unlocking with TWAP protection.
+Pera-X reserve releases use Adaptive Price Control (APC). The first activation remains exactly three times the launch price: `$0.000036`. After that point, the contract derives each sequential band from immutable APC policy and fresh signed market observations; it does not reuse a fixed price multiplier.
 
-The market may be monitored every 10 minutes, but tokens only unlock when price, liquidity, volume, TWAP confirmation, cooldown, daily cap, business purpose, and manual or multisig approval conditions are satisfied.
+Routine APC releases are autonomous and require neither manual nor multisig approval. The program enforces permanent observation, band, and release PDAs; existing reserve-vault custody; hourly, pump-window, daily, monthly, and per-band caps; actual USDC counterweight custody; deferred-burn escrow during pump protection; and atomic approved-adapter recovery into a locked PEX vault. Safety administrators may pause the system but cannot authorize routine releases.
 
-The unlocking model is designed to support liquidity, reduce unhealthy volatility, and establish stronger support levels without creating sudden supply shocks.
+The ten numerical APC policy inputs remain explicitly pending formal approval and are not represented as production values in the machine-readable tokenomics file.
 
 ## Important Documents
 
 | Document | Purpose |
 |---|---|
-| `docs/PEX_TOKENOMICS_AND_UNLOCKING.md` | Full approved tokenomics and unlocking principles. |
+| `docs/PEX_TOKENOMICS_AND_UNLOCKING.md` | PEX tokenomics and APC principles. |
+| `docs/APC_LOGIC_SPECIFICATION.md` | Contract, custody, observation, band, burn, and recovery specification. |
+| `docs/APC_VALIDATION_STATUS.md` | Source validation status and remaining deployment gates. |
 | `docs/PEX_DEPLOYMENT_CHECKLIST.md` | Pre-deployment checklist and safety process. |
 | `perax-contracts/DEPLOYMENT_FLOW.md` | Command flow for validation, planning, and future deployment. |
 | `perax-contracts/config/pex-tokenomics.json` | Machine-readable PEX tokenomics policy. |
@@ -102,6 +104,9 @@ The current core program supports:
 5. Trading company burn execution.
 6. Pause controls.
 7. Authority transfer controls.
+8. Adaptive Price Control configuration, observations, sequential bands, and reserve releases.
+9. PDA-controlled USDC counterweight custody and deferred-burn PEX custody.
+10. Approved atomic recovery-adapter execution into a locked Recovery Vault.
 
 ## Safe Commands
 
@@ -168,6 +173,8 @@ Optional: copy `.wslconfig.example` to `%UserProfile%\.wslconfig`, then run `wsl
 
 ## Current Status
 
+Source-complete, pending formal numerical approval and deployment review. No APC account has been initialized on-chain.
+
 Completed:
 
 1. Tokenomics documentation.
@@ -188,4 +195,4 @@ Pending:
 3. Allocation transfer script.
 4. Anchor deployment script.
 5. Meteora liquidity setup process.
-6. Market-condition unlock monitor/bot service.
+6. Formal approval of the ten APC numerical policies before initialization.

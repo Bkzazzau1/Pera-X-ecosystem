@@ -6,10 +6,12 @@ on:
       - main
     paths:
       - "perax-contracts/**"
+      - "perax-market-engine/**"
       - ".github/workflows/perax-contracts-ci.yml"
   pull_request:
     paths:
       - "perax-contracts/**"
+      - "perax-market-engine/**"
       - ".github/workflows/perax-contracts-ci.yml"
   workflow_dispatch:
 
@@ -110,6 +112,13 @@ jobs:
 
       - name: TypeScript check
         run: npm run typecheck
+
+      - name: Validate APC market engine
+        working-directory: perax-market-engine
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
 
       - name: Run local-validator transaction tests
         run: anchor test --provider.cluster localnet
