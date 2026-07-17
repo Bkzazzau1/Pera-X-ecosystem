@@ -1,0 +1,104 @@
+config = config.key();
++    counterweight.state = ctx.accounts.state.key();
++    counterweight.quote_mint = ctx.accounts.quote_mint.key();
++    counterweight.pex_mint = ctx.accounts.token_mint.key();
++    counterweight.counterweight_authority = ctx.accounts.counterweight_authority.key();
++    counterweight.counterweight_vault = ctx.accounts.counterweight_vault.key();
++    counterweight.deferred_burn_authority = ctx.accounts.deferred_burn_authority.key();
++    counterweight.deferred_burn_vault = ctx.accounts.deferred_burn_vault.key();
++    counterweight.recovery_authority = ctx.accounts.recovery_authority.key();
++    counterweight.recovery_vault = ctx.accounts.recovery_vault.key();
++    counterweight.approved_proceeds_owner = params.approved_proceeds_owner;
++    counterweight.approved_proceeds_token_account = params.approved_proceeds_token_account;
++    counterweight.approved_recovery_program = params.approved_recovery_program;
++    counterweight.approved_pool = params.approved_pool;
++    counterweight.bump = ctx.bumps.counterweight_config;
++    counterweight.counterweight_authority_bump = ctx.bumps.counterweight_authority;
++    counterweight.deferred_burn_authority_bump = ctx.bumps.deferred_burn_authority;
++    counterweight.recovery_authority_bump = ctx.bumps.recovery_authority;
++
++    let initialized_at = Clock::get()?.unix_timestamp;
++    emit!(ApcInitialized {
++        state: ctx.accounts.state.key(),
++        apc_config: config.key(),
++        apc_state: apc_state.key(),
++        oracle_feed: config.oracle_feed,
++        quote_mint: config.quote_mint,
++        approved_pool: config.approved_pool,
++        first_activation_price: config.first_activation_price,
++        initialized_at,
++    });
++
++    Ok(())
++}
++
++pub fn submit_apc_observation(
++    ctx: Context<SubmitApcObservation>,
++    params: SubmitApcObservationParams,
++) -> Result<()> {
++    require!(!ctx.accounts.state.is_paused, PeraxError::ProgramPaused);
++    require!(ctx.accounts.apc_config.is_active, PeraxError::ApcInactive);
++    require!(!ctx.accounts.apc_config.is_paused, PeraxError::ApcPaused);
++    require!(
++        ctx.accounts.apc_state.status != ApcStatus::Paused,
++        PeraxError::ApcPaused
++    );
++
++    let now = Clock::get()?.unix_timestamp;
++    validate_apc_observation_submission(
++        &ctx.accounts.apc_config,
++        &ctx.accounts.apc_state,
++        &params,
++        now,
++    )?;
++
++    let observation = &mut ctx.accounts.observation;
++    observation.observation_id = params.observation_id;
++    observation.sequence = params.sequence;
++    observation.oracle_feed = ctx.accounts.oracle_feed.key();
++    observation.pool = params.pool;
++    observation.spot_price = params.spot_price;
++    observation.twap_price = params.twap_price;
++    observation.twap_minutes = params.twap_minutes;
++    observation.liquidity_usd = params.liquidity_usd;
++    observation.quote_liquidity_usd = params.quote_liquidity_usd;
++    observation.volume_usd = params.volume_usd;
++    observation.net_buy_pressure_bps = params.net_buy_pressure_bps;
++    observation.price_velocity_bps = params.price_velocity_bps;
++    observation.volatility_bps = params.volatility_bps;
++    observation.estimated_price_impact_bps = params.estimated_price_impact_bps;
++    observation.observed_at = params.observed_at;
++    observation.submitted_at = now;
++    observation.is_consumed_for_release = false;
++    observation.consumed_by_release = Pubkey::default();
++    observation.bump = ctx.bumps.observation;
++
++    ctx.accounts.apc_state.last_observation_sequence = params.sequence;
++
++    emit!(ApcObservationSubmitted {
++        observation: observation.key(),
++        observation_id: observation.observation_id,
++        sequence: observation.sequence,
++        spot_price: observation.spot_price,
++        twap_price: observation.twap_price,
++        pool: observation.pool,
++        observed_at: observation.observed_at,
++        submitted_at: now,
++    });
++
++    Ok(())
++}
++
++pub fn activate_next_apc_band(
++    ctx: Context<ActivateNextApcBand>,
++    params: ActivateApcBandParams,
++) -> Result<()> {
++    require!(!ctx.accounts.state.is_paused, PeraxError::ProgramPaused);
++    let config = &ctx.accounts.apc_config;
++    require!(config.is_active, PeraxError::ApcInactive);
++    require!(!config.is_paused, PeraxError::ApcPaused);
++    require!(
++        !matches!(
++            ctx.accounts.apc_state.status,
++            ApcStatus::Inactive | ApcStatus::Recovery | ApcStatus::Paused
++
