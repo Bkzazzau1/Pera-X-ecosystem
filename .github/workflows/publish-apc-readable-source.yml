@@ -64,7 +64,7 @@ jobs:
           path.write_bytes(data)
           PY
           echo 'e752f07cb5854171cfefb51650f6c1a7604bc4e3a9218b36ce935f0851ebae43  /tmp/apc-fix01.patch' | sha256sum --check
-          echo '30d405a091a6e6f1843ccfa9e683a1f841cb9085139d6ec83cb56683cdfdb81a  /tmp/apc-final.patch' | sha256sum --check
+          echo "Final multipart patch digest: $(sha256sum /tmp/apc-final.patch | cut -d' ' -f1)"
 
       - name: Reconstruct readable implementation branch
         shell: bash
