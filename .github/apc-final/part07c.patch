@@ -1,0 +1,34 @@
+diff --git a/perax-contracts/scripts/print-allocation-plan.js b/perax-contracts/scripts/print-allocation-plan.js
+index 5483b13..e2f566c 100644
+--- a/perax-contracts/scripts/print-allocation-plan.js
++++ b/perax-contracts/scripts/print-allocation-plan.js
+@@ -116,19 +116,17 @@ function main() {
+   console.log(`Remaining liquidity reserve: ${formatNumber(tokenomics.initialLiquidity.remainingLiquidityReserve)} PEX`);
+   console.log('');
+ 
+-  console.log('Market-conditional release policy summary:');
++  console.log('Adaptive Price Control policy summary:');
+   console.log('----------------------------------------------');
+-  console.log(`Release authority: ${tokenomics.unlocking.releaseAuthority}`);
+-  console.log(`Safety authority: ${tokenomics.unlocking.safetyAuthority}`);
+-  console.log(`Human approval after market conditions pass: ${tokenomics.unlocking.requiresManualOrMultisigApproval}`);
+-  console.log(`Monitoring interval: ${tokenomics.unlocking.monitoringIntervalMinutes} minutes`);
+-  console.log(`TWAP confirmation: ${tokenomics.unlocking.twapConfirmationMinutesMin}-${tokenomics.unlocking.twapConfirmationMinutesMax} minutes`);
+-  console.log(`Cooldown: ${tokenomics.unlocking.cooldownHoursMin}-${tokenomics.unlocking.cooldownHoursMax} hours`);
+-  console.log(`Liquidity gate: ${tokenomics.marketConditionalReleasePolicy.minimumLiquidityMultipleOfInitial}x initial liquidity ($${formatNumber(tokenomics.marketConditionalReleasePolicy.minimumLiquidityUsd)})`);
+-  console.log(`Buy pressure gate: ${tokenomics.marketConditionalReleasePolicy.minimumNetBuyPressurePercentage}%`);
+-  console.log(`Daily unlock cap: ${tokenomics.unlocking.maxDailyUnlockAmount} PEX (${tokenomics.unlocking.maxDailyUnlockPercentageOfTotalSupply}% of total supply)`);
+-  console.log(`Monthly unlock cap: ${tokenomics.unlocking.maxMonthlyUnlockAmount} PEX (${tokenomics.unlocking.maxMonthlyUnlockPercentageOfTotalSupply}% of total supply)`);
+-  console.log(`Emergency pause enabled: ${tokenomics.unlocking.emergencyPauseEnabled}`);
++  const apc = tokenomics.adaptivePriceControl;
++  console.log(`Policy status: ${apc.policyStatus}`);
++  console.log(`First activation: $${apc.firstActivationPriceUsd} (${apc.firstActivationMultiplier}x launch)`);
++  console.log(`Fixed multiplication after first activation: ${apc.fixedMultiplicationAfterFirstActivation}`);
++  console.log(`Observation authority: ${apc.authorityPolicy.observationAuthority}`);
++  console.log(`Human approval after contract gates pass: ${apc.authorityPolicy.requiresManualOrMultisigApproval}`);
++  console.log(`Daily cap: ${apc.releaseCaps.dailyCapAmount} PEX`);
++  console.log(`Monthly cap: ${apc.releaseCaps.monthlyCapAmount} PEX`);
++  console.log(`Pending numerical policies: ${apc.unresolvedNumericalPolicies.length}`);
+   console.log('');
+ 
+   console.log('Next safe step: run npm run validate:tokenomics before any real deployment.');
