@@ -1,0 +1,33 @@
++pub fn calculate_recovery_pex_out(
++    quote_reserve: u64,
++    pex_reserve: u64,
++    quote_amount: u64,
++    fee_bps: u16,
++) -> Result<u64> {
++    require!(
++        quote_reserve > 0 && pex_reserve > 0 && quote_amount > 0 && fee_bps <= 1_000,
++        PeraxError::InvalidRecoveryPool
++    );
++    let effective_quote = u128::from(quote_amount)
++        .checked_mul(
++            APC_BPS_DENOMINATOR
++                .checked_sub(u128::from(fee_bps))
++                .ok_or(PeraxError::InvalidRecoverySettlement)?,
++        )
++        .ok_or(PeraxError::InvalidRecoverySettlement)?
++        .checked_div(APC_BPS_DENOMINATOR)
++        .ok_or(PeraxError::InvalidRecoverySettlement)?;
++    require!(effective_quote > 0, PeraxError::InvalidRecoverySettlement);
++    let denominator = u128::from(quote_reserve)
++        .checked_add(effective_quote)
++        .ok_or(PeraxError::InvalidRecoverySettlement)?;
++    let pex_out = u128::from(pex_reserve)
++        .checked_mul(effective_quote)
++        .ok_or(PeraxError::InvalidRecoverySettlement)?
++        .checked_div(denominator)
++        .ok_or(PeraxError::InvalidRecoverySettlement)?;
++    let pex_out = u64::try_from(pex_out).map_err(|_| PeraxError::InvalidRecoverySettlement)?;
++    require!(pex_out > 0, PeraxError::InvalidRecoverySettlement);
++    Ok(pex_out)
++}
++
