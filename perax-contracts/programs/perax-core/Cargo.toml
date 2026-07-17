@@ -3,6 +3,7 @@ name = "perax-core"
 version = "0.1.0"
 description = "Perax core Anchor program"
 edition = "2021"
+rust-version = "1.79"
 
 [lib]
 crate-type = ["cdylib", "lib"]
