@@ -1,0 +1,134 @@
++        .rpc();
++      return { observationId, observation, params };
++    };
++
++    const pumpObservation = await submitObservation(50_010, 10_000);
++    const firstBand = bandPda(1);
++    const secondBand = bandPda(2);
++    await program.methods
++      .activateNextApcBand({ bandIndex: 1 })
++      .accounts({
++        state,
++        apcConfig,
++        apcState,
++        observation: pumpObservation.observation,
++        bandRecord: firstBand,
++        oracleFeed: oracle.publicKey,
++        systemProgram: anchor.web3.SystemProgram.programId,
++      })
++      .signers([oracle])
++      .rpc();
++    await program.methods
++      .activateNextApcBand({ bandIndex: 2 })
++      .accounts({
++        state,
++        apcConfig,
++        apcState,
++        observation: pumpObservation.observation,
++        bandRecord: secondBand,
++        oracleFeed: oracle.publicKey,
++        systemProgram: anchor.web3.SystemProgram.programId,
++      })
++      .signers([oracle])
++      .rpc();
++    expect(firstBand.equals(secondBand)).to.equal(false);
++    const firstBandAccount = await program.account.apcBandRecord.fetch(firstBand);
++    const secondBandAccount = await program.account.apcBandRecord.fetch(secondBand);
++    expect(firstBandAccount.maximumReleaseAmount.gt(secondBandAccount.maximumReleaseAmount)).to.equal(true);
++
++    await mintTo(
++      provider.connection,
++      payer,
++      mint,
++      treasury.sourceTokenAccount,
++      payer,
++      1_000n * BigInt(BASE_UNITS)
++    );
++    await program.methods
++      .depositIntoReserveVault(
++        treasury.allocationId,
++        new anchor.BN(1_000 * BASE_UNITS)
++      )
++      .accounts({
++        state,
++        reserveVaultConfig: treasury.config,
++        vaultAuthority: treasury.authority,
++        sourceOwner: treasury.sourceOwner.publicKey,
++        sourceTokenAccount: treasury.sourceTokenAccount,
++        vaultTokenAccount: treasury.tokenAccount,
++        tokenMint: mint,
++        tokenProgram: TOKEN_PROGRAM_ID,
++      })
++      .signers([treasury.sourceOwner])
++      .rpc();
++
++    const releaseFromBand = async (
++      releaseIdValue: number,
++      bandIndex: number,
++      bandRecord: anchor.web3.PublicKey,
++      observationId: number[],
++      observation: anchor.web3.PublicKey,
++      amountPex: number
++    ) => {
++      const releaseId = uniqueId(releaseIdValue);
++      const [releaseRecord] = anchor.web3.PublicKey.findProgramAddressSync(
++        [Buffer.from("apc-release"), Buffer.from(releaseId)],
++        program.programId
++      );
++      const params = {
++        releaseId,
++        allocationId: treasury.allocationId,
++        bandIndex,
++        observationId,
++        amount: new anchor.BN(amountPex * BASE_UNITS),
++        destinationTokenAccount: treasury.destinationTokenAccount,
++      };
++      await program.methods
++        .executeApcRelease(params)
++        .accounts({
++          state,
++          apcConfig,
++          apcState,
++          observation,
++          bandRecord,
++          reserveVaultConfig: treasury.config,
++          vaultAuthority: treasury.authority,
++          vaultTokenAccount: treasury.tokenAccount,
++          destinationTokenAccount: treasury.destinationTokenAccount,
++          counterweightConfig,
++          counterweightVault,
++          releaseRecord,
++          oracleFeed: oracle.publicKey,
++          tokenMint: mint,
++          tokenProgram: TOKEN_PROGRAM_ID,
++          systemProgram: anchor.web3.SystemProgram.programId,
++        })
++        .signers([oracle])
++        .rpc();
++      return { releaseId, releaseRecord, params };
++    };
++
++    const firstReleaseObservation = await submitObservation(50_011, 10_000);
++    await releaseFromBand(
++      50_101,
++      1,
++      firstBand,
++      firstReleaseObservation.observationId,
++      firstReleaseObservation.observation,
++      10
++    );
++
++    const blockedObservation = await submitObservation(50_012, 10_000);
++    await expectFailure(() =>
++      releaseFromBand(
++        50_102,
++        2,
++        secondBand,
++        blockedObservation.observationId,
++        blockedObservation.observation,
++        5
++      )
++    );
++
++    const depositId = uniqueId(50_201);
++    const [depositRecord] = anchor.web3.PublicKey.findProgramAddressSync(
