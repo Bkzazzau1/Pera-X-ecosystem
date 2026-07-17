@@ -1,0 +1,315 @@
+32],
++    pub sequence: u64,
++    pub spot_price: u64,
++    pub twap_price: u64,
++    pub pool: Pubkey,
++    pub observed_at: i64,
++    pub submitted_at: i64,
++}
++
++#[event]
++pub struct ApcBandActivated {
++    pub apc_state: Pubkey,
++    pub band_record: Pubkey,
++    pub band_index: u32,
++    pub trigger_price: u64,
++    pub interval_bps: u16,
++    pub risk_tier: u8,
++    pub maximum_release_amount: u64,
++    pub observation_id: [u8; 32],
++    pub activated_at: i64,
++}
++
++#[event]
++pub struct ApcReleaseExecuted {
++    pub release_record: Pubkey,
++    pub release_id: [u8; 32],
++    pub band_index: u32,
++    pub allocation_id: [u8; 32],
++    pub vault_config: Pubkey,
++    pub destination_token_account: Pubkey,
++    pub observation_id: [u8; 32],
++    pub amount: u64,
++    pub band_released_after: u64,
++    pub pump_window_released_after: u64,
++    pub counterweight_required_after: u64,
++    pub executed_at: i64,
++}
++
++#[event]
++pub struct ApcPumpControlEntered {
++    pub apc_state: Pubkey,
++    pub band_index: u32,
++    pub risk_tier: u8,
++    pub observation_id: [u8; 32],
++    pub entered_at: i64,
++}
++
++#[event]
++pub struct ApcStatusChanged {
++    pub apc_state: Pubkey,
++    pub previous_status: ApcStatus,
++    pub new_status: ApcStatus,
++    pub actor: Pubkey,
++    pub changed_at: i64,
++}
++
++#[event]
++pub struct CounterweightProceedsDeposited {
++    pub deposit_record: Pubkey,
++    pub deposit_id: [u8; 32],
++    pub source_owner: Pubkey,
++    pub source_token_account: Pubkey,
++    pub counterweight_vault: Pubkey,
++    pub amount: u64,
++    pub credited_after: u64,
++    pub deposited_at: i64,
++}
++
++#[event]
++pub struct DeferredBurnRecorded {
++    pub deferred_burn_record: Pubkey,
++    pub decision_id: [u8; 32],
++    pub source_token_account: Pubkey,
++    pub deferred_burn_vault: Pubkey,
++    pub amount: u64,
++    pub total_deferred_after: u64,
++    pub recorded_at: i64,
++}
++
++#[event]
++pub struct DeferredBurnExecuted {
++    pub deferred_burn_record: Pubkey,
++    pub decision_id: [u8; 32],
++    pub deferred_burn_vault: Pubkey,
++    pub amount: u64,
++    pub amount_executed_after: u64,
++    pub remaining_deferred: u64,
++    pub executed_at: i64,
++}
++
++#[event]
++pub struct ApcRecoveryEntered {
++    pub apc_state: Pubkey,
++    pub observation_id: [u8; 32],
++    pub reference_price: u64,
++    pub observed_price: u64,
++    pub entered_at: i64,
++}
++
++#[event]
++pub struct CounterweightPurchaseExecuted {
++    pub recovery_record: Pubkey,
++    pub recovery_id: [u8; 32],
++    pub observation_id: [u8; 32],
++    pub quote_spent: u64,
++    pub pex_received: u64,
++    pub recovery_vault: Pubkey,
++    pub executed_at: i64,
++}
++
++#[event]
++pub struct ApcPaused {
++    pub apc_state: Pubkey,
++    pub actor: Pubkey,
++    pub is_paused: bool,
++    pub changed_at: i64,
++}
+--- a/perax-contracts/programs/perax-core/src/lib.rs
++++ b/perax-contracts/programs/perax-core/src/lib.rs
+@@ -138,6 +138,69 @@
+     ) -> Result<()> {
+         instructions::execute_conditional_buyback_burn(ctx, params)
+     }
++
++
++    pub fn initialize_apc(ctx: Context<InitializeApc>, params: InitializeApcParams) -> Result<()> {
++        instructions::initialize_apc(ctx, params)
++    }
++
++    pub fn submit_apc_observation(
++        ctx: Context<SubmitApcObservation>,
++        params: SubmitApcObservationParams,
++    ) -> Result<()> {
++        instructions::submit_apc_observation(ctx, params)
++    }
++
++    pub fn activate_next_apc_band(
++        ctx: Context<ActivateNextApcBand>,
++        params: ActivateApcBandParams,
++    ) -> Result<()> {
++        instructions::activate_next_apc_band(ctx, params)
++    }
++
++    pub fn execute_apc_release(
++        ctx: Context<ExecuteApcRelease>,
++        params: ExecuteApcReleaseParams,
++    ) -> Result<()> {
++        instructions::execute_apc_release(ctx, params)
++    }
++
++    pub fn deposit_counterweight_proceeds(
++        ctx: Context<DepositCounterweightProceeds>,
++        params: DepositCounterweightParams,
++    ) -> Result<()> {
++        instructions::deposit_counterweight_proceeds(ctx, params)
++    }
++
++    pub fn record_deferred_burn(
++        ctx: Context<RecordDeferredBurn>,
++        params: RecordDeferredBurnParams,
++    ) -> Result<()> {
++        instructions::record_deferred_burn(ctx, params)
++    }
++
++    pub fn execute_deferred_burn(
++        ctx: Context<ExecuteDeferredBurn>,
++        params: ExecuteDeferredBurnParams,
++    ) -> Result<()> {
++        instructions::execute_deferred_burn(ctx, params)
++    }
++
++    pub fn enter_apc_recovery(ctx: Context<EnterApcRecovery>) -> Result<()> {
++        instructions::enter_apc_recovery(ctx)
++    }
++
++    pub fn execute_counterweight_purchase<'info>(
++        ctx: Context<'_, '_, '_, 'info, ExecuteCounterweightPurchase<'info>>,
++        params: ExecuteCounterweightPurchaseParams,
++    ) -> Result<()> {
++        instructions::execute_counterweight_purchase(ctx, params)
++    }
++
++    pub fn pause_apc(ctx: Context<PauseApc>, is_paused: bool) -> Result<()> {
++        instructions::pause_apc(ctx, is_paused)
++    }
++
+ }
+ 
+ #[cfg(test)]
+--- a/perax-contracts/programs/perax-core/src/state.rs
++++ b/perax-contracts/programs/perax-core/src/state.rs
+@@ -26,6 +26,7 @@
+ pub struct UpdateMarketEngineConfigParams {
+     pub safety_admin: Option<Pubkey>,
+     pub oracle_feed: Option<Pubkey>,
++    /// Legacy compatibility field. APC progression is never read from this value.
+     pub current_stepped_floor: Option<u64>,
+     pub daily_release_cap: Option<u64>,
+     pub monthly_release_cap: Option<u64>,
+@@ -117,6 +118,108 @@
+     pub burn_source: BurnFulfillmentSource,
+ }
+ 
++#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
++pub enum ApcStatus {
++    Inactive,
++    Armed,
++    Active,
++    PumpControl,
++    AwaitingAbsorption,
++    Recovery,
++    Paused,
++}
++
++#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
++pub struct InitializeApcParams {
++    pub quote_mint: Pubkey,
++    pub approved_pool: Pubkey,
++    pub approved_proceeds_owner: Pubkey,
++    pub approved_proceeds_token_account: Pubkey,
++    pub approved_recovery_program: Pubkey,
++    pub price_scale: u64,
++    pub first_activation_price: u64,
++    pub minimum_band_interval_bps: u16,
++    pub maximum_band_interval_bps: u16,
++    pub maximum_observation_age_seconds: i64,
++    pub maximum_future_clock_skew_seconds: i64,
++    pub hourly_release_cap: u64,
++    pub pump_window_release_cap: u64,
++    pub pump_window_seconds: i64,
++    pub minimum_counterweight_coverage_bps: u16,
++    pub base_band_release_cap: u64,
++    pub minimum_twap_minutes: u64,
++    pub minimum_liquidity_usd: u64,
++    pub minimum_volume_usd: u64,
++    pub minimum_buy_pressure_bps: u16,
++    pub risk_velocity_thresholds_bps: [u32; 3],
++    pub risk_volatility_thresholds_bps: [u32; 3],
++    pub risk_price_impact_thresholds_bps: [u32; 3],
++    pub band_interval_bps_by_risk: [u16; 4],
++    pub band_release_bps_by_risk: [u16; 4],
++    pub cascade_reduction_bps: [u16; 4],
++    pub recovery_spending_cap: u64,
++}
++
++#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
++pub struct SubmitApcObservationParams {
++    pub observation_id: [u8; 32],
++    pub sequence: u64,
++    pub pool: Pubkey,
++    pub spot_price: u64,
++    pub twap_price: u64,
++    pub twap_minutes: u64,
++    pub liquidity_usd: u64,
++    pub quote_liquidity_usd: u64,
++    pub volume_usd: u64,
++    pub net_buy_pressure_bps: u16,
++    pub price_velocity_bps: u32,
++    pub volatility_bps: u32,
++    pub estimated_price_impact_bps: u32,
++    pub observed_at: i64,
++}
++
++#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
++pub struct ActivateApcBandParams {
++    pub band_index: u32,
++}
++
++#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
++pub struct ExecuteApcReleaseParams {
++    pub release_id: [u8; 32],
++    pub allocation_id: [u8; 32],
++    pub band_index: u32,
++    pub observation_id: [u8; 32],
++    pub amount: u64,
++    pub destination_token_account: Pubkey,
++}
++
++#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
++pub struct DepositCounterweightParams {
++    pub deposit_id: [u8; 32],
++    pub amount: u64,
++}
++
++#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
++pub struct RecordDeferredBurnParams {
++    pub decision_id: [u8; 32],
++    pub amount: u64,
++    pub observed_at: i64,
++}
++
++#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
++pub struct ExecuteDeferredBurnParams {
++    pub amount: u64,
++}
++
++#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
++pub struct ExecuteCounterweightPurchaseParams {
++    pub recovery_id: [u8; 32],
++    pub observation_id: [u8; 32],
++    pub maximum_quote_amount: u64,
++    pub minimum_pex_out: u64,
++    pub swap_instruction_data: Vec<u8>,
++}
++
+ #[account]
+ #[derive(InitSpace)]
+ pub struct PeraxState {
+@@ -130,6 +233,7 @@
+     pub safety_admin: Pubkey,
+     pub oracle_feed: Pubkey,
+     pub launch_price: u64,
++    /// Legacy field retained solely for account layout compatibility. APC never reads it.
+     pub current_stepped_floor: u64,
+     pub last 
