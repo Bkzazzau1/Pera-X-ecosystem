@@ -1,0 +1,57 @@
+  const observations = apc.observationPolicy;
++  assert(observations.permanentObservationPda === true, 'Permanent observation PDAs are required.');
++  assert(observations.strictlyIncreasingSequence === true, 'Observation sequence must be strictly increasing.');
++  assert(observations.freshObservationPerRelease === true, 'Every release must use a fresh observation.');
++  assert(observations.trustedClockForWindows === true, 'On-chain windows must use the Solana clock.');
++  assert(observations.approvedPoolOnly === true, 'Only the approved market pool may be observed.');
++
++  const caps = apc.releaseCaps;
++  assert(caps.perBandHardCapRequired === true, 'Every band must have a hard cap.');
++  assert(caps.unconfirmedExposureCapRequired === true, 'Unconfirmed release exposure must have a hard cap.');
++  assert(caps.dailyCapAmount === config.marketConditionalReleasePolicy.dailyReleaseCapAmount, 'APC daily cap must match the global daily cap.');
++  assert(caps.monthlyCapAmount === config.marketConditionalReleasePolicy.monthlyReleaseCapAmount, 'APC monthly cap must match the global monthly cap.');
++  if (caps.hourlyCapAmount !== null) {
++    assert(toBigIntAmount(caps.hourlyCapAmount, 'adaptivePriceControl.releaseCaps.hourlyCapAmount') <= toBigIntAmount(caps.dailyCapAmount, 'adaptivePriceControl.releaseCaps.dailyCapAmount'), 'Hourly cap cannot exceed daily cap.');
++  }
++  if (caps.pumpWindowCapAmount !== null) {
++    assert(toBigIntAmount(caps.pumpWindowCapAmount, 'adaptivePriceControl.releaseCaps.pumpWindowCapAmount') <= toBigIntAmount(caps.monthlyCapAmount, 'adaptivePriceControl.releaseCaps.monthlyCapAmount'), 'Pump-window cap cannot exceed monthly cap.');
++  }
++
++  const counterweight = apc.counterweightPolicy;
++  assert(counterweight.realSplTransferRequired === true && counterweight.pdaControlledVault === true, 'Counterweight credit must come from real SPL custody.');
++  assert(counterweight.missingCoverageStopsLaterReleases === true, 'Missing counterweight coverage must stop later releases.');
++  if (counterweight.proceedsAllocationBps !== null) {
++    const total = Object.values(counterweight.proceedsAllocationBps).reduce((sum, value) => sum + value, 0);
++    assert(total === 10000, 'Counterweight proceeds percentages must total 10,000 bps.');
++  }
++
++  assert(apc.burnDeferralPolicy.enabledDuringPumpControl === true, 'Burn deferral must be enabled during pump control.');
++  assert(apc.burnDeferralPolicy.pexEscrowRequired === true, 'Deferred burn PEX must be escrowed.');
++  assert(apc.recoveryPolicy.atomicSwapRequired === true, 'Recovery must use an atomic swap.');
++  assert(apc.recoveryPolicy.lockedRecoveryVault === true, 'Recovered PEX must enter a locked vault.');
++  assert(apc.recoveryPolicy.hardSpendingCapRequired === true, 'Recovery spending must have a hard cap.');
++  assert(apc.authorityPolicy.requiresManualOrMultisigApproval === false, 'Manual or multisig release approval must remain disabled.');
++  assert(apc.authorityPolicy.routineReleaseApproval === 'none', 'Routine APC release must not require human approval.');
++  assert(Array.isArray(apc.unresolvedNumericalPolicies) && apc.unresolvedNumericalPolicies.length === 10, 'All ten unresolved numerical policies must be listed.');
+ }
+ 
+ function validateWalletTemplate(config) {
+@@ -245,7 +289,7 @@ function main() {
+   validateTokenomics(config);
+   validateInitialLiquidity(config);
+   validateMarketConditionalReleasePolicy(config);
+-  validateUnlocking(config);
++  validateAdaptivePriceControl(config);
+   validateWalletTemplate(config);
+ 
+   console.log('✅ PEX tokenomics config is valid.');
+@@ -253,7 +297,8 @@ function main() {
+   console.log(`✅ Initial price: $${config.token.initialPriceUsd}`);
+   console.log(`✅ Allocations: ${EXPECTED_TOTAL_PERCENTAGE}%`);
+   console.log('✅ Initial liquidity uses full 38% allocation on Meteora DLMM.');
+-  console.log('✅ Market-conditional release policy is valid.');
++  console.log('✅ Adaptive Price Control structure is valid.');
++  console.log(`✅ APC numerical policy status: ${config.adaptivePriceControl.policyStatus}`);
+   console.log('✅ Allocation wallet template is valid.');
+ }
+ 
