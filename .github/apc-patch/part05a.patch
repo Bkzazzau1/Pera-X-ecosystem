@@ -1,0 +1,126 @@
+requested_amount: u64,
+-    snapshot: &MarketConditionSnapshot,
++    _state: &PeraxState,
++    _requested_amount: u64,
++    _snapshot: &MarketConditionSnapshot,
+ ) -> Result<()> {
+-    let growth_price_trigger = state
+-        .launch_price
+-        .checked_mul(GROWTH_PRICE_MULTIPLIER)
+-        .ok_or(PeraxError::InvalidMarketParameter)?;
+-    require!(
+-        snapshot.observed_price >= growth_price_trigger,
+-        PeraxError::GrowthPriceGateNotMet
+-    );
+-    require!(
+-        snapshot.twap_minutes >= MIN_GROWTH_TWAP_MINUTES,
+-        PeraxError::TwapGateNotMet
+-    );
+-    require!(
+-        snapshot.liquidity_usd >= MIN_GROWTH_LIQUIDITY_USD,
+-        PeraxError::LiquidityGateNotMet
+-    );
+-    require!(
+-        snapshot.net_buy_volume_bps >= MIN_NET_BUY_VOLUME_BPS,
+-        PeraxError::BuyPressureGateNotMet
+-    );
+-    require!(
+-        snapshot.observed_at >= state.last_release_timestamp + RELEASE_COOLDOWN_SECONDS
+-            || state.last_release_timestamp == 0,
+-        PeraxError::ReleaseCooldownActive
+-    );
+-    require!(
+-        state
+-            .daily_unlocked_accumulator
+-            .saturating_add(requested_amount)
+-            <= state.daily_release_cap,
+-        PeraxError::DailyReleaseCapExceeded
+-    );
+-    require!(
+-        state
+-            .monthly_unlocked_accumulator
+-            .saturating_add(requested_amount)
+-            <= state.monthly_release_cap,
+-        PeraxError::MonthlyReleaseCapExceeded
+-    );
+-    Ok(())
++    err!(PeraxError::UseApcRelease)
+ }
+ 
+ pub(crate) fn validate_emergency_release(
+@@ -236,41 +203,399 @@
+         requested_amount <= hourly_cap,
+         PeraxError::EmergencyHourlyCapExceeded
+     );
+-    require!(
+-        state
+-            .daily_unlocked_accumulator
+-            .saturating_add(requested_amount)
+-            <= state.daily_release_cap,
+-        PeraxError::DailyReleaseCapExceeded
+-    );
+-    require!(
+-        state
+-            .monthly_unlocked_accumulator
+-            .saturating_add(requested_amount)
+-            <= state.monthly_release_cap,
+-        PeraxError::MonthlyReleaseCapExceeded
+-    );
++    require_checked_cap(
++        state.daily_unlocked_accumulator,
++        requested_amount,
++        state.daily_release_cap,
++        PeraxError::DailyReleaseCapExceeded,
++    )?;
++    require_checked_cap(
++        state.monthly_unlocked_accumulator,
++        requested_amount,
++        state.monthly_release_cap,
++        PeraxError::MonthlyReleaseCapExceeded,
++    )?;
+     Ok(())
+ }
+ 
+-pub(crate) fn reset_release_windows_if_needed(state: &mut PeraxState, observed_at: i64) {
+-    if state.daily_window_start == 0 || observed_at >= state.daily_window_start + 86_400 {
+-        state.daily_window_start = observed_at;
++pub(crate) fn reset_release_windows_if_needed(state: &mut PeraxState, now: i64) {
++    if state.daily_window_start == 0 || now >= state.daily_window_start.saturating_add(86_400) {
++        state.daily_window_start = now;
+         state.daily_unlocked_accumulator = 0;
+     }
+-    if state.monthly_window_start == 0 || observed_at >= state.monthly_window_start + 2_592_000 {
+-        state.monthly_window_start = observed_at;
++    if state.monthly_window_start == 0
++        || now >= state.monthly_window_start.saturating_add(2_592_000)
++    {
++        state.monthly_window_start = now;
+         state.monthly_unlocked_accumulator = 0;
+     }
+ }
+ 
+-pub(crate) fn reset_burn_window_if_needed(state: &mut PeraxState, observed_at: i64) {
+-    if state.daily_burn_window_start == 0 || observed_at >= state.daily_burn_window_start + 86_400 {
+-        state.daily_burn_window_start = observed_at;
++pub(crate) fn reset_burn_window_if_needed(state: &mut PeraxState, now: i64) {
++    if state.daily_burn_window_start == 0
++        || now >= state.daily_burn_window_start.saturating_add(86_400)
++    {
++        state.daily_burn_window_start = now;
+         state.daily_burn_accumulator = 0;
+     }
+ }
+ 
++pub(crate) fn validate_apc_policy(
++    state: &PeraxState,
++    params: &InitializeApcParams,
++) -> Result<()> {
++    require!(params.quote_mint != Pubkey::default(), PeraxError::InvalidCounterweightMint);
++    require!(params.approved_pool != Pubkey::default(), PeraxError::InvalidApcPool);
++    require!(
++        params.approved_proceeds_owner != Pubkey::default()
++            && params.approved_proceeds_token_account != Pubkey::default(),
++        PeraxError::InvalidCounterweightVault
++    );
++    require!(
++        params.approved_recovery_program 
