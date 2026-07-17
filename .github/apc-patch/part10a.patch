@@ -1,0 +1,86 @@
+dows_if_needed,
++    validate_apc_market_gates, validate_apc_observation_fresh,
++    validate_apc_observation_submission, validate_apc_policy, validate_apc_release_caps,
++    validate_reference, validate_sequential_band_index, ActivateApcBandParams, ActivateNextApcBand, ApcBandActivated, ApcInitialized,
++    ApcObservationSubmitted, ApcPaused, ApcPumpControlEntered, ApcReleaseExecuted, ApcStatus,
++    ApcStatusChanged, ExecuteApcRelease, ExecuteApcReleaseParams, InitializeApc,
++    InitializeApcParams, PauseApc, PeraxError, SubmitApcObservation,
++    SubmitApcObservationParams, PEX_MINT_DECIMALS,
++};
++use anchor_lang::prelude::*;
++use anchor_spl::token::{self, TransferChecked};
++
++pub fn initialize_apc(ctx: Context<InitializeApc>, params: InitializeApcParams) -> Result<()> {
++    validate_apc_policy(&ctx.accounts.state, &params)?;
++    require!(
++        ctx.accounts.token_mint.decimals == PEX_MINT_DECIMALS,
++        PeraxError::InvalidTokenMint
++    );
++    require!(
++        ctx.accounts.quote_mint.decimals == crate::APC_QUOTE_DECIMALS,
++        PeraxError::InvalidCounterweightMint
++    );
++    require!(
++        params.quote_mint != ctx.accounts.token_mint.key(),
++        PeraxError::InvalidCounterweightMint
++    );
++
++    let config = &mut ctx.accounts.apc_config;
++    config.state = ctx.accounts.state.key();
++    config.oracle_feed = ctx.accounts.state.oracle_feed;
++    config.quote_mint = params.quote_mint;
++    config.approved_pool = params.approved_pool;
++    config.approved_proceeds_owner = params.approved_proceeds_owner;
++    config.approved_proceeds_token_account = params.approved_proceeds_token_account;
++    config.approved_recovery_program = params.approved_recovery_program;
++    config.price_scale = params.price_scale;
++    config.first_activation_price = params.first_activation_price;
++    config.minimum_band_interval_bps = params.minimum_band_interval_bps;
++    config.maximum_band_interval_bps = params.maximum_band_interval_bps;
++    config.maximum_observation_age_seconds = params.maximum_observation_age_seconds;
++    config.maximum_future_clock_skew_seconds = params.maximum_future_clock_skew_seconds;
++    config.hourly_release_cap = params.hourly_release_cap;
++    config.pump_window_release_cap = params.pump_window_release_cap;
++    config.pump_window_seconds = params.pump_window_seconds;
++    config.minimum_counterweight_coverage_bps = params.minimum_counterweight_coverage_bps;
++    config.base_band_release_cap = params.base_band_release_cap;
++    config.minimum_twap_minutes = params.minimum_twap_minutes;
++    config.minimum_liquidity_usd = params.minimum_liquidity_usd;
++    config.minimum_volume_usd = params.minimum_volume_usd;
++    config.minimum_buy_pressure_bps = params.minimum_buy_pressure_bps;
++    config.risk_velocity_thresholds_bps = params.risk_velocity_thresholds_bps;
++    config.risk_volatility_thresholds_bps = params.risk_volatility_thresholds_bps;
++    config.risk_price_impact_thresholds_bps = params.risk_price_impact_thresholds_bps;
++    config.band_interval_bps_by_risk = params.band_interval_bps_by_risk;
++    config.band_release_bps_by_risk = params.band_release_bps_by_risk;
++    config.cascade_reduction_bps = params.cascade_reduction_bps;
++    config.recovery_spending_cap = params.recovery_spending_cap;
++    config.is_active = true;
++    config.is_paused = false;
++    config.bump = ctx.bumps.apc_config;
++
++    let apc_state = &mut ctx.accounts.apc_state;
++    apc_state.config = config.key();
++    apc_state.status = ApcStatus::Armed;
++    apc_state.current_reference_price = ctx.accounts.state.launch_price;
++    apc_state.next_band_price = config.first_activation_price;
++    apc_state.current_band_index = 0;
++    apc_state.highest_crossed_band_index = 0;
++    apc_state.pump_window_started_at = 0;
++    apc_state.pump_window_released = 0;
++    apc_state.hourly_window_started_at = 0;
++    apc_state.hourly_released = 0;
++    apc_state.total_apc_released = 0;
++    apc_state.total_counterweight_credited = 0;
++    apc_state.total_counterweight_spent = 0;
++    apc_state.last_observation_sequence = 0;
++    apc_state.last_release_timestamp = 0;
++    apc_state.deferred_burn_amount = 0;
++    apc_state.last_release_observation_id = [0u8; 32];
++    apc_state.cascade_observation_id = [0u8; 32];
++    apc_state.cascade_band_count = 0;
++    apc_state.active_risk_tier = 0;
++    apc_state.bump = ctx.bumps.apc_state;
++
++    let counterweight = &mut ctx.accounts.counterweight_config;
++    counterweight.apc_
