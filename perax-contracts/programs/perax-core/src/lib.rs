@@ -138,6 +138,85 @@ pub mod perax_core {
     ) -> Result<()> {
         instructions::execute_conditional_buyback_burn(ctx, params)
     }
+
+    pub fn initialize_recovery_pool(
+        ctx: Context<InitializeRecoveryPool>,
+        params: InitializeRecoveryPoolParams,
+    ) -> Result<()> {
+        instructions::initialize_recovery_pool(ctx, params)
+    }
+
+    pub fn execute_recovery_swap_adapter(
+        ctx: Context<RecoverySwapAdapter>,
+        params: RecoverySwapAdapterParams,
+    ) -> Result<()> {
+        instructions::execute_recovery_swap_adapter(ctx, params)
+    }
+
+    pub fn initialize_apc(ctx: Context<InitializeApc>, params: InitializeApcParams) -> Result<()> {
+        instructions::initialize_apc(ctx, params)
+    }
+
+    pub fn submit_apc_observation(
+        ctx: Context<SubmitApcObservation>,
+        params: SubmitApcObservationParams,
+    ) -> Result<()> {
+        instructions::submit_apc_observation(ctx, params)
+    }
+
+    pub fn activate_next_apc_band(
+        ctx: Context<ActivateNextApcBand>,
+        params: ActivateApcBandParams,
+    ) -> Result<()> {
+        instructions::activate_next_apc_band(ctx, params)
+    }
+
+    pub fn execute_apc_release(
+        ctx: Context<ExecuteApcRelease>,
+        params: ExecuteApcReleaseParams,
+    ) -> Result<()> {
+        instructions::execute_apc_release(ctx, params)
+    }
+
+    pub fn deposit_counterweight_proceeds(
+        ctx: Context<DepositCounterweightProceeds>,
+        params: DepositCounterweightParams,
+    ) -> Result<()> {
+        instructions::deposit_counterweight_proceeds(ctx, params)
+    }
+
+    pub fn record_deferred_burn(
+        ctx: Context<RecordDeferredBurn>,
+        params: RecordDeferredBurnParams,
+    ) -> Result<()> {
+        instructions::record_deferred_burn(ctx, params)
+    }
+
+    pub fn execute_deferred_burn(
+        ctx: Context<ExecuteDeferredBurn>,
+        params: ExecuteDeferredBurnParams,
+    ) -> Result<()> {
+        instructions::execute_deferred_burn(ctx, params)
+    }
+
+    pub fn confirm_apc_absorption(ctx: Context<ConfirmApcAbsorption>) -> Result<()> {
+        instructions::confirm_apc_absorption(ctx)
+    }
+
+    pub fn enter_apc_recovery(ctx: Context<EnterApcRecovery>) -> Result<()> {
+        instructions::enter_apc_recovery(ctx)
+    }
+
+    pub fn execute_counterweight_purchase<'info>(
+        ctx: Context<'_, '_, '_, 'info, ExecuteCounterweightPurchase<'info>>,
+        params: ExecuteCounterweightPurchaseParams,
+    ) -> Result<()> {
+        instructions::execute_counterweight_purchase(ctx, params)
+    }
+
+    pub fn pause_apc(ctx: Context<PauseApc>, is_paused: bool) -> Result<()> {
+        instructions::pause_apc(ctx, is_paused)
+    }
 }
 
 #[cfg(test)]

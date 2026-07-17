@@ -161,31 +161,75 @@ function validateMarketConditionalReleasePolicy(config) {
   assert(policy.monthlyReleaseCapAmount === '150000000', 'Monthly release cap amount must be 150,000,000 PEX.');
 }
 
-function validateUnlocking(config) {
-  const unlocking = config.unlocking;
-  assert(unlocking, 'Missing unlocking section.');
-  assert(
-    unlocking.model === 'reactive_market_conditional_unlocking_with_twap_protection',
-    'Unlocking model must be reactive_market_conditional_unlocking_with_twap_protection.'
-  );
-  assert(unlocking.monitoringIntervalMinutes === 10, 'Monitoring interval must be 10 minutes.');
-  assert(unlocking.twapConfirmationMinutesMin === 30, 'Minimum TWAP confirmation must be 30 minutes.');
-  assert(unlocking.twapConfirmationMinutesMax === 60, 'Maximum TWAP confirmation must be 60 minutes.');
-  assert(unlocking.cooldownHoursMin === 2, 'Minimum cooldown must be 2 hours.');
-  assert(unlocking.cooldownHoursMax === 6, 'Maximum cooldown must be 6 hours.');
-  assert(unlocking.maxDailyUnlockPercentageOfTotalSupply === 1, 'Daily unlock cap must be 1% of total supply.');
-  assert(unlocking.maxDailyUnlockAmount === '10000000', 'Daily unlock cap amount must be 10,000,000 PEX.');
-  assert(unlocking.maxMonthlyUnlockPercentageOfTotalSupply === 15, 'Monthly unlock cap must be 15% of total supply.');
-  assert(unlocking.maxMonthlyUnlockAmount === '150000000', 'Monthly unlock cap amount must be 150,000,000 PEX.');
-  assert(unlocking.requiresManualOrMultisigApproval === false, 'Manual or multisig approval must be disabled for market-conditional release.');
-  assert(unlocking.releaseAuthority === 'market_condition_oracle_only', 'Release authority must be market_condition_oracle_only.');
-  assert(unlocking.safetyAuthority === 'emergency_pause_and_system_maintenance_only', 'Safety authority must be emergency_pause_and_system_maintenance_only.');
-  assert(unlocking.emergencyPauseEnabled === true, 'Emergency pause must be enabled.');
-  assert(Array.isArray(unlocking.stages) && unlocking.stages.length >= 3, 'At least 3 unlocking stages are required.');
-  assert(Array.isArray(unlocking.healthChecks) && unlocking.healthChecks.length > 0, 'Unlocking health checks are required.');
-  assert(unlocking.healthChecks.includes('liquidity_depth_3x_initial'), 'Health checks must include liquidity_depth_3x_initial.');
-  assert(unlocking.healthChecks.includes('minimum_50_percent_buy_side_demand'), 'Health checks must include minimum_50_percent_buy_side_demand.');
-  assert(unlocking.healthChecks.includes('monthly_15_percent_cap_available'), 'Health checks must include monthly_15_percent_cap_available.');
+function validateAdaptivePriceControl(config) {
+  const apc = config.adaptivePriceControl;
+  assert(apc, 'Missing adaptivePriceControl section.');
+  assert(!config.unlocking, 'Legacy unlocking section must be removed.');
+  assert(apc.model === 'deterministic_adaptive_price_control', 'APC model is invalid.');
+  assert(apc.launchPriceUsd === config.token.initialPriceUsd, 'APC launch price must match token launch price.');
+
+  const launchScaled = toBigIntAmount(apc.launchPriceScaled, 'adaptivePriceControl.launchPriceScaled');
+  const firstScaled = toBigIntAmount(apc.firstActivationPriceScaled, 'adaptivePriceControl.firstActivationPriceScaled');
+  assert(apc.firstActivationMultiplier === 3, 'First activation multiplier must be exactly 3.');
+  assert(firstScaled === launchScaled * 3n, 'First activation must equal exactly three times launch price.');
+  assert(apc.firstActivationPriceUsd === '0.000036', 'First activation price must be $0.000036.');
+  assert(apc.fixedMultiplicationAfterFirstActivation === false, 'Fixed multiplication must be disabled after first activation.');
+
+  const bands = apc.bandPolicy;
+  assert(bands.sequentialActivation === true, 'Bands must activate sequentially.');
+  assert(bands.multiBandPerFreshObservation === true, 'One fresh pump observation must be able to activate several sequential bands.');
+  assert(bands.immutableBandRecords === true, 'Band records must be immutable PDAs.');
+  assert(bands.usedBandCapacityNeverRestores === true, 'Used band capacity must never restore.');
+  if (apc.policyStatus === 'approved') {
+    assert(Number.isInteger(bands.minimumIntervalBps) && bands.minimumIntervalBps > 0, 'Approved minimum band interval is invalid.');
+    assert(Number.isInteger(bands.maximumIntervalBps) && bands.maximumIntervalBps > bands.minimumIntervalBps, 'Approved maximum band interval is invalid.');
+    assert(Array.isArray(bands.cascadeReductionBps) && bands.cascadeReductionBps.length > 0, 'Approved cascade policy is required.');
+    let previous = 10001;
+    for (const value of bands.cascadeReductionBps) {
+      assert(Number.isInteger(value) && value > 0 && value <= 10000 && value <= previous, 'Cascade reductions must be positive and monotonic.');
+      previous = value;
+    }
+  } else {
+    assert(apc.policyStatus === 'pending_formal_numerical_approval', 'Unknown APC policy status.');
+    assert(bands.minimumIntervalBps === null && bands.maximumIntervalBps === null, 'Pending band interval values must remain null.');
+    assert(bands.riskTierThresholds === null && bands.cascadeReductionBps === null, 'Pending risk and cascade values must remain null.');
+  }
+
+  const observations = apc.observationPolicy;
+  assert(observations.permanentObservationPda === true, 'Permanent observation PDAs are required.');
+  assert(observations.strictlyIncreasingSequence === true, 'Observation sequence must be strictly increasing.');
+  assert(observations.freshObservationPerRelease === true, 'Every release must use a fresh observation.');
+  assert(observations.trustedClockForWindows === true, 'On-chain windows must use the Solana clock.');
+  assert(observations.approvedPoolOnly === true, 'Only the approved market pool may be observed.');
+
+  const caps = apc.releaseCaps;
+  assert(caps.perBandHardCapRequired === true, 'Every band must have a hard cap.');
+  assert(caps.unconfirmedExposureCapRequired === true, 'Unconfirmed release exposure must have a hard cap.');
+  assert(caps.dailyCapAmount === config.marketConditionalReleasePolicy.dailyReleaseCapAmount, 'APC daily cap must match the global daily cap.');
+  assert(caps.monthlyCapAmount === config.marketConditionalReleasePolicy.monthlyReleaseCapAmount, 'APC monthly cap must match the global monthly cap.');
+  if (caps.hourlyCapAmount !== null) {
+    assert(toBigIntAmount(caps.hourlyCapAmount, 'adaptivePriceControl.releaseCaps.hourlyCapAmount') <= toBigIntAmount(caps.dailyCapAmount, 'adaptivePriceControl.releaseCaps.dailyCapAmount'), 'Hourly cap cannot exceed daily cap.');
+  }
+  if (caps.pumpWindowCapAmount !== null) {
+    assert(toBigIntAmount(caps.pumpWindowCapAmount, 'adaptivePriceControl.releaseCaps.pumpWindowCapAmount') <= toBigIntAmount(caps.monthlyCapAmount, 'adaptivePriceControl.releaseCaps.monthlyCapAmount'), 'Pump-window cap cannot exceed monthly cap.');
+  }
+
+  const counterweight = apc.counterweightPolicy;
+  assert(counterweight.realSplTransferRequired === true && counterweight.pdaControlledVault === true, 'Counterweight credit must come from real SPL custody.');
+  assert(counterweight.missingCoverageStopsLaterReleases === true, 'Missing counterweight coverage must stop later releases.');
+  if (counterweight.proceedsAllocationBps !== null) {
+    const total = Object.values(counterweight.proceedsAllocationBps).reduce((sum, value) => sum + value, 0);
+    assert(total === 10000, 'Counterweight proceeds percentages must total 10,000 bps.');
+  }
+
+  assert(apc.burnDeferralPolicy.enabledDuringPumpControl === true, 'Burn deferral must be enabled during pump control.');
+  assert(apc.burnDeferralPolicy.pexEscrowRequired === true, 'Deferred burn PEX must be escrowed.');
+  assert(apc.recoveryPolicy.atomicSwapRequired === true, 'Recovery must use an atomic swap.');
+  assert(apc.recoveryPolicy.lockedRecoveryVault === true, 'Recovered PEX must enter a locked vault.');
+  assert(apc.recoveryPolicy.hardSpendingCapRequired === true, 'Recovery spending must have a hard cap.');
+  assert(apc.authorityPolicy.requiresManualOrMultisigApproval === false, 'Manual or multisig release approval must remain disabled.');
+  assert(apc.authorityPolicy.routineReleaseApproval === 'none', 'Routine APC release must not require human approval.');
+  assert(Array.isArray(apc.unresolvedNumericalPolicies) && apc.unresolvedNumericalPolicies.length === 10, 'All ten unresolved numerical policies must be listed.');
 }
 
 function validateWalletTemplate(config) {
@@ -245,7 +289,7 @@ function main() {
   validateTokenomics(config);
   validateInitialLiquidity(config);
   validateMarketConditionalReleasePolicy(config);
-  validateUnlocking(config);
+  validateAdaptivePriceControl(config);
   validateWalletTemplate(config);
 
   console.log('✅ PEX tokenomics config is valid.');
@@ -253,7 +297,8 @@ function main() {
   console.log(`✅ Initial price: $${config.token.initialPriceUsd}`);
   console.log(`✅ Allocations: ${EXPECTED_TOTAL_PERCENTAGE}%`);
   console.log('✅ Initial liquidity uses full 38% allocation on Meteora DLMM.');
-  console.log('✅ Market-conditional release policy is valid.');
+  console.log('✅ Adaptive Price Control structure is valid.');
+  console.log(`✅ APC numerical policy status: ${config.adaptivePriceControl.policyStatus}`);
   console.log('✅ Allocation wallet template is valid.');
 }
 

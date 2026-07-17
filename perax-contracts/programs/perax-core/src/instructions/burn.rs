@@ -1,6 +1,6 @@
 use crate::{
-    reset_burn_window_if_needed, validate_market_condition_burn, validate_reference,
-    BurnExecutionRecord, BurnFromTradingCompany, BurnFulfillmentSource,
+    reset_burn_window_if_needed, validate_apc_burn_allowed, validate_market_condition_burn,
+    validate_reference, BurnExecutionRecord, BurnFromTradingCompany, BurnFulfillmentSource,
     ConditionalBuybackBurnExecuted, ConditionalBuybackBurnParams, ExecuteConditionalBuybackBurn,
     ExecuteMarketConditionBurn, MarketConditionBurnExecuted, MarketConditionBurnParams, PeraxError,
     PeraxState,
@@ -20,6 +20,18 @@ pub fn execute_market_condition_burn(
     ctx: Context<ExecuteMarketConditionBurn>,
     params: MarketConditionBurnParams,
 ) -> Result<()> {
+    validate_apc_burn_allowed(&ctx.accounts.apc_state)?;
+    let now = Clock::get()?.unix_timestamp;
+    require!(
+        params.observed_at
+            <= now.saturating_add(ctx.accounts.apc_config.maximum_future_clock_skew_seconds),
+        PeraxError::ObservationFromFuture
+    );
+    require!(
+        now.saturating_sub(params.observed_at)
+            <= ctx.accounts.apc_config.maximum_observation_age_seconds,
+        PeraxError::ObservationStale
+    );
     let burn_params = ConditionalBuybackBurnParams {
         amount: params.amount,
         eligible_revenue_amount: params.eligible_revenue_amount,
@@ -58,6 +70,18 @@ pub fn execute_conditional_buyback_burn(
     ctx: Context<ExecuteConditionalBuybackBurn>,
     params: ConditionalBuybackBurnParams,
 ) -> Result<()> {
+    validate_apc_burn_allowed(&ctx.accounts.apc_state)?;
+    let now = Clock::get()?.unix_timestamp;
+    require!(
+        params.observed_at
+            <= now.saturating_add(ctx.accounts.apc_config.maximum_future_clock_skew_seconds),
+        PeraxError::ObservationFromFuture
+    );
+    require!(
+        now.saturating_sub(params.observed_at)
+            <= ctx.accounts.apc_config.maximum_observation_age_seconds,
+        PeraxError::ObservationStale
+    );
     let state = &ctx.accounts.state;
 
     match params.burn_source {
@@ -118,7 +142,8 @@ fn execute_validated_burn<'info>(
     require!(params.observed_at > 0, PeraxError::InvalidMarketParameter);
     validate_reference(params.decision_id)?;
 
-    reset_burn_window_if_needed(state, params.observed_at);
+    let executed_at = Clock::get()?.unix_timestamp;
+    reset_burn_window_if_needed(state, executed_at);
     validate_market_condition_burn(state, &params, current_mint_supply)?;
 
     token::burn(burn_ctx, params.amount)?;
@@ -127,8 +152,6 @@ fn execute_validated_burn<'info>(
         .daily_burn_accumulator
         .checked_add(params.amount)
         .ok_or(PeraxError::DailyBurnCapExceeded)?;
-
-    let executed_at = Clock::get()?.unix_timestamp;
 
     burn_record.decision_id = params.decision_id;
     burn_record.authority = authority;

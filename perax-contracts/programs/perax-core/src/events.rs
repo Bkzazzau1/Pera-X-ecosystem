@@ -1,4 +1,4 @@
-use crate::{BurnFulfillmentSource, ReleaseType, VaultClass};
+use crate::{ApcStatus, BurnFulfillmentSource, ReleaseType, VaultClass};
 use anchor_lang::prelude::*;
 
 #[event]
@@ -218,4 +218,170 @@ pub struct ConditionalBuybackBurnExecuted {
     pub decision_id: [u8; 32],
     pub observed_at: i64,
     pub executed_at: i64,
+}
+
+#[event]
+pub struct RecoveryPoolInitialized {
+    pub recovery_pool: Pubkey,
+    pub pool_id: [u8; 32],
+    pub quote_mint: Pubkey,
+    pub pex_mint: Pubkey,
+    pub pool_quote_vault: Pubkey,
+    pub pool_pex_vault: Pubkey,
+    pub fee_bps: u16,
+    pub initialized_at: i64,
+}
+
+#[event]
+pub struct RecoverySwapAdapterExecuted {
+    pub recovery_pool: Pubkey,
+    pub quote_source: Pubkey,
+    pub pex_destination: Pubkey,
+    pub quote_amount: u64,
+    pub pex_amount: u64,
+    pub executed_at: i64,
+}
+
+#[event]
+pub struct ApcInitialized {
+    pub state: Pubkey,
+    pub apc_config: Pubkey,
+    pub apc_state: Pubkey,
+    pub oracle_feed: Pubkey,
+    pub quote_mint: Pubkey,
+    pub approved_pool: Pubkey,
+    pub first_activation_price: u64,
+    pub initialized_at: i64,
+}
+
+#[event]
+pub struct ApcObservationSubmitted {
+    pub observation: Pubkey,
+    pub observation_id: [u8; 32],
+    pub sequence: u64,
+    pub spot_price: u64,
+    pub twap_price: u64,
+    pub pool: Pubkey,
+    pub observed_at: i64,
+    pub submitted_at: i64,
+}
+
+#[event]
+pub struct ApcBandActivated {
+    pub apc_state: Pubkey,
+    pub band_record: Pubkey,
+    pub band_index: u32,
+    pub trigger_price: u64,
+    pub interval_bps: u16,
+    pub risk_tier: u8,
+    pub maximum_release_amount: u64,
+    pub observation_id: [u8; 32],
+    pub activated_at: i64,
+}
+
+#[event]
+pub struct ApcReleaseExecuted {
+    pub release_record: Pubkey,
+    pub release_id: [u8; 32],
+    pub band_index: u32,
+    pub allocation_id: [u8; 32],
+    pub vault_config: Pubkey,
+    pub destination_token_account: Pubkey,
+    pub observation_id: [u8; 32],
+    pub amount: u64,
+    pub band_released_after: u64,
+    pub pump_window_released_after: u64,
+    pub unconfirmed_release_after: u64,
+    pub counterweight_required_after: u64,
+    pub executed_at: i64,
+}
+
+#[event]
+pub struct ApcPumpControlEntered {
+    pub apc_state: Pubkey,
+    pub band_index: u32,
+    pub risk_tier: u8,
+    pub observation_id: [u8; 32],
+    pub entered_at: i64,
+}
+
+#[event]
+pub struct ApcAbsorptionConfirmed {
+    pub apc_state: Pubkey,
+    pub band_index: u32,
+    pub observation_id: [u8; 32],
+    pub reference_price: u64,
+    pub confirmed_price: u64,
+    pub confirmed_at: i64,
+}
+
+#[event]
+pub struct ApcStatusChanged {
+    pub apc_state: Pubkey,
+    pub previous_status: ApcStatus,
+    pub new_status: ApcStatus,
+    pub actor: Pubkey,
+    pub changed_at: i64,
+}
+
+#[event]
+pub struct CounterweightProceedsDeposited {
+    pub deposit_record: Pubkey,
+    pub deposit_id: [u8; 32],
+    pub source_owner: Pubkey,
+    pub source_token_account: Pubkey,
+    pub counterweight_vault: Pubkey,
+    pub amount: u64,
+    pub credited_after: u64,
+    pub deposited_at: i64,
+}
+
+#[event]
+pub struct DeferredBurnRecorded {
+    pub deferred_burn_record: Pubkey,
+    pub decision_id: [u8; 32],
+    pub source_token_account: Pubkey,
+    pub deferred_burn_vault: Pubkey,
+    pub amount: u64,
+    pub total_deferred_after: u64,
+    pub recorded_at: i64,
+}
+
+#[event]
+pub struct DeferredBurnExecuted {
+    pub deferred_burn_record: Pubkey,
+    pub decision_id: [u8; 32],
+    pub deferred_burn_vault: Pubkey,
+    pub amount: u64,
+    pub amount_executed_after: u64,
+    pub remaining_deferred: u64,
+    pub executed_at: i64,
+}
+
+#[event]
+pub struct ApcRecoveryEntered {
+    pub apc_state: Pubkey,
+    pub observation_id: [u8; 32],
+    pub reference_price: u64,
+    pub observed_price: u64,
+    pub entered_at: i64,
+}
+
+#[event]
+pub struct CounterweightPurchaseExecuted {
+    pub recovery_record: Pubkey,
+    pub recovery_id: [u8; 32],
+    pub observation_id: [u8; 32],
+    pub quote_spent: u64,
+    pub pex_received: u64,
+    pub recovery_vault: Pubkey,
+    pub executed_at: i64,
+}
+
+#[event]
+pub struct ApcPaused {
+    pub apc_state: Pubkey,
+    pub actor: Pubkey,
+    pub is_paused: bool,
+    pub changed_at: i64,
 }

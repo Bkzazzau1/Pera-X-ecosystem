@@ -106,4 +106,68 @@ pub enum PeraxError {
     InvalidApprovedDestination,
     #[msg("A program-derived account, including another reserve vault, cannot receive a market release.")]
     DestinationIsReserveVault,
+    #[msg("Growth releases must use the Adaptive Price Control release route.")]
+    UseApcRelease,
+    #[msg("Adaptive Price Control has not been initialized.")]
+    ApcNotInitialized,
+    #[msg("Adaptive Price Control is inactive.")]
+    ApcInactive,
+    #[msg("Adaptive Price Control is paused.")]
+    ApcPaused,
+    #[msg("The requested action is not valid for the current APC status.")]
+    InvalidApcStatus,
+    #[msg("The APC band index is invalid.")]
+    InvalidBandIndex,
+    #[msg("The APC band has already been activated.")]
+    BandAlreadyActivated,
+    #[msg("The APC band has not been activated.")]
+    BandNotActivated,
+    #[msg("The APC band release cap would be exceeded.")]
+    BandReleaseCapExceeded,
+    #[msg("The APC band is already exhausted.")]
+    BandAlreadyExhausted,
+    #[msg("APC bands must be activated sequentially.")]
+    NonSequentialBand,
+    #[msg("The calculated APC band interval is outside the immutable policy bounds.")]
+    InvalidBandInterval,
+    #[msg("The effective APC price has not reached the next band trigger.")]
+    ApcPriceGateNotMet,
+    #[msg("The APC observation has already been consumed by a release.")]
+    ObservationAlreadyUsed,
+    #[msg("The APC observation is stale.")]
+    ObservationStale,
+    #[msg("The APC observation timestamp is too far in the future.")]
+    ObservationFromFuture,
+    #[msg("The APC observation sequence must increase strictly.")]
+    ObservationSequenceInvalid,
+    #[msg("The APC observation does not use the approved market pool.")]
+    InvalidApcPool,
+    #[msg("The APC pump-window release cap would be exceeded.")]
+    PumpWindowCapExceeded,
+    #[msg("The APC hourly release cap would be exceeded.")]
+    HourlyApcCapExceeded,
+    #[msg("The Counterweight Vault does not meet the required coverage.")]
+    CounterweightCoverageNotMet,
+    #[msg("The counterweight quote mint is invalid.")]
+    InvalidCounterweightMint,
+    #[msg("The Counterweight Vault is invalid.")]
+    InvalidCounterweightVault,
+    #[msg("Immediate burn is disabled while APC pump protection is active.")]
+    BurnDeferredDuringPump,
+    #[msg("The deferred burn cannot execute in the current APC state.")]
+    DeferredBurnNotExecutable,
+    #[msg("APC recovery is not active.")]
+    RecoveryNotActive,
+    #[msg("The APC recovery spending cap would be exceeded.")]
+    RecoveryCapExceeded,
+    #[msg("The atomic recovery swap did not settle the required quote spend and PEX receipt.")]
+    InvalidRecoverySettlement,
+    #[msg("The configured recovery adapter program is invalid.")]
+    InvalidRecoveryProgram,
+    #[msg("The recovery swap pool configuration or custody accounts are invalid.")]
+    InvalidRecoveryPool,
+    #[msg("The recovery swap pool is inactive.")]
+    RecoveryPoolInactive,
+    #[msg("The immutable APC policy is invalid.")]
+    InvalidApcPolicy,
 }

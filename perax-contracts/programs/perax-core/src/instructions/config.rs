@@ -144,12 +144,8 @@ pub fn update_market_engine_config(
         state.oracle_feed = oracle_feed;
     }
 
-    if let Some(current_stepped_floor) = params.current_stepped_floor {
-        require!(
-            current_stepped_floor > 0,
-            PeraxError::InvalidMarketParameter
-        );
-        state.current_stepped_floor = current_stepped_floor;
+    if params.current_stepped_floor.is_some() {
+        return err!(PeraxError::UseApcRelease);
     }
 
     if let Some(daily_release_cap) = params.daily_release_cap {

@@ -11,7 +11,10 @@
     "create:reserve-vaults:devnet": "node scripts/create-reserve-vaults-devnet.js --execute",
     "plan:migrate-reserves:devnet": "node scripts/migrate-reserves-to-vaults-devnet.js",
     "migrate:reserves:devnet": "node scripts/migrate-reserves-to-vaults-devnet.js --execute",
-    "verify:reserve-vaults:devnet": "node scripts/verify-reserve-vaults-devnet.js"
+    "verify:reserve-vaults:devnet": "node scripts/verify-reserve-vaults-devnet.js",
+    "plan:apc": "node scripts/plan-apc-initialize.js",
+    "initialize:apc": "node scripts/initialize-apc-program.js --execute",
+    "verify:apc": "node scripts/verify-apc-state.js"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.30.1",

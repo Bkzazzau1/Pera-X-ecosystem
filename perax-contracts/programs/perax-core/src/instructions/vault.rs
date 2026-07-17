@@ -1,14 +1,13 @@
 use crate::{
     approved_allocation, calculate_vault_available_amount, is_market_releasable_vault_class,
     is_program_derived_destination, reset_release_windows_if_needed,
-    validate_emergency_release_fields, validate_growth_release_fields, validate_oracle_snapshot,
-    validate_reference, validate_vault_class_for_release, DepositIntoReserveVault,
-    ExecuteMarketConditionalRelease, InitializeReserveVault, InitializeReserveVaultParams,
-    MarketConditionalReleaseParams, PeraxError, ReconcileReserveVault,
-    RecordMarketConditionalRelease, ReleaseType, ReserveVaultDepositReceived,
-    ReserveVaultInitialized, ReserveVaultPaused, ReserveVaultReconciled,
-    ReserveVaultReleaseExecuted, SetReserveVaultPause, VaultMarketConditionalReleaseParams,
-    PEX_MINT_DECIMALS,
+    validate_emergency_release_fields, validate_oracle_snapshot, validate_reference,
+    validate_vault_class_for_release, DepositIntoReserveVault, ExecuteMarketConditionalRelease,
+    InitializeReserveVault, InitializeReserveVaultParams, MarketConditionalReleaseParams,
+    PeraxError, ReconcileReserveVault, RecordMarketConditionalRelease, ReleaseType,
+    ReserveVaultDepositReceived, ReserveVaultInitialized, ReserveVaultPaused,
+    ReserveVaultReconciled, ReserveVaultReleaseExecuted, SetReserveVaultPause,
+    VaultMarketConditionalReleaseParams, PEX_MINT_DECIMALS,
 };
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, TransferChecked};
@@ -238,6 +237,9 @@ pub fn execute_market_conditional_release(
     params: VaultMarketConditionalReleaseParams,
 ) -> Result<()> {
     require!(params.requested_amount > 0, PeraxError::InvalidAmount);
+    if params.release_type == ReleaseType::Growth {
+        return err!(PeraxError::UseApcRelease);
+    }
     validate_reference(params.release_id)?;
     validate_reference(params.market_observation_id)?;
     require!(
@@ -272,17 +274,16 @@ pub fn execute_market_conditional_release(
         PeraxError::InsufficientVaultBalance
     );
 
+    let now = Clock::get()?.unix_timestamp;
     {
         let state = &mut ctx.accounts.state;
         require!(!state.is_paused, PeraxError::ProgramPaused);
         require!(!state.emergency_pause, PeraxError::EmergencyPaused);
         validate_oracle_snapshot(state, &params.snapshot)?;
-        reset_release_windows_if_needed(state, params.snapshot.observed_at);
+        reset_release_windows_if_needed(state, now);
 
         match params.release_type {
-            ReleaseType::Growth => {
-                validate_growth_release_fields(state, params.requested_amount, &params.snapshot)?
-            }
+            ReleaseType::Growth => return err!(PeraxError::UseApcRelease),
             ReleaseType::Emergency => validate_emergency_release_fields(
                 state,
                 params.requested_amount,
@@ -330,7 +331,7 @@ pub fn execute_market_conditional_release(
         ctx.accounts.token_mint.decimals,
     )?;
 
-    let executed_at = Clock::get()?.unix_timestamp;
+    let executed_at = now;
     let state = &mut ctx.accounts.state;
     state.daily_unlocked_accumulator = state
         .daily_unlocked_accumulator
@@ -340,7 +341,7 @@ pub fn execute_market_conditional_release(
         .monthly_unlocked_accumulator
         .checked_add(params.requested_amount)
         .ok_or(PeraxError::ReleaseCapExceeded)?;
-    state.last_release_timestamp = params.snapshot.observed_at;
+    state.last_release_timestamp = executed_at;
 
     let config = &mut ctx.accounts.reserve_vault_config;
     config.total_released = config

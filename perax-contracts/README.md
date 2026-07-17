@@ -28,3 +28,10 @@ anchor test
 
 The current program id is a placeholder. `anchor keys sync` will update `Anchor.toml` and `declare_id!` after a real keypair exists under `target/deploy`.
 
+
+
+## Adaptive Price Control
+
+Growth releases use separate APC PDAs and `execute_apc_release`. The legacy growth variant of `execute_market_conditional_release` always fails with `UseApcRelease`; emergency release remains available.
+
+APC initialization is separate from core initialization. Run `npm run plan:apc` first. Execution remains blocked while `adaptivePriceControl.policyStatus` is `pending_formal_numerical_approval`.
