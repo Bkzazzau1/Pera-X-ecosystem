@@ -38,8 +38,8 @@ pub fn initialize_reserve_vault(
         PeraxError::UnsupportedVaultClass
     );
     require!(
-        params.allocation_cap <= approved_cap,
-        PeraxError::AllocationCapExceeded
+        params.allocation_cap == approved_cap,
+        PeraxError::InvalidAllocationCap
     );
     require!(
         params.authorized_source_token_account != ctx.accounts.vault_token_account.key(),
