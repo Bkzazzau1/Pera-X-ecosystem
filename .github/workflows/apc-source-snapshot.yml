@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/apc-source-snapshot.yml'
       - '.github/apc-patch/**'
+      - '.github/apc-fixes/**'
 
 permissions:
   contents: read
@@ -54,6 +55,11 @@ jobs:
           PY
           git apply --check /tmp/apc.patch
           git apply /tmp/apc.patch
+
+          cat .github/apc-fixes/fix*.patch > /tmp/apc-fixes.patch
+          echo 'e752f07cb5854171cfefb51650f6c1a7604bc4e3a9218b36ce935f0851ebae43  /tmp/apc-fixes.patch' | sha256sum --check
+          git apply --check /tmp/apc-fixes.patch
+          git apply /tmp/apc-fixes.patch
           git diff --check
 
       - name: Regenerate Rust 1.79 compatible lockfile
@@ -100,6 +106,7 @@ jobs:
           name: apc-source-validation
           path: |
             /tmp/apc.patch
+            /tmp/apc-fixes.patch
             /tmp/apc-cargo-test.log
             /tmp/apc-cargo-check.log
             /tmp/apc-patched-source.tar.gz
