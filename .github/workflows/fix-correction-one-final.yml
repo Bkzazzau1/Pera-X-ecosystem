@@ -50,17 +50,24 @@ jobs:
 
       - name: Run Rust unit tests
         working-directory: perax-contracts
-        run: cargo test --all-targets
+        shell: bash
+        run: |
+          set +e
+          cargo test --all-targets 2>&1 | tee /tmp/correction-one-cargo-test.log
+          status=${PIPESTATUS[0]}
+          exit "$status"
 
       - name: Check Rust contracts
         working-directory: perax-contracts
         run: cargo check --all-targets
 
-      - name: Upload verified source files
+      - name: Upload validation files and diagnostics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: correction-one-verified-source
+          name: correction-one-validation-output
           path: |
             perax-contracts/programs/perax-core/src/instructions/vault.rs
             perax-contracts/tests/perax-core.ts
+            /tmp/correction-one-cargo-test.log
           if-no-files-found: error
