@@ -57,9 +57,12 @@ jobs:
           git apply /tmp/apc.patch
 
           echo 'e752f07cb5854171cfefb51650f6c1a7604bc4e3a9218b36ce935f0851ebae43  .github/apc-fixes/fix01.patch' | sha256sum --check
+          git apply --check .github/apc-fixes/fix01.patch
+          git apply .github/apc-fixes/fix01.patch
+          (cd perax-contracts && cargo +1.79.0 fmt --all)
+          git apply --check .github/apc-fixes/fix02.patch
+          git apply .github/apc-fixes/fix02.patch
           cat .github/apc-fixes/fix*.patch > /tmp/apc-fixes.patch
-          git apply --check /tmp/apc-fixes.patch
-          git apply /tmp/apc-fixes.patch
           git diff --check
 
       - name: Regenerate Rust 1.79 compatible lockfile
