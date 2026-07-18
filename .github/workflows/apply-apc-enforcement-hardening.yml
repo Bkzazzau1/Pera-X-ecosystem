@@ -46,6 +46,10 @@ jobs:
           from pathlib import Path
           path = Path('/tmp/apply-apc-enforcement-hardening.py')
           text = path.read_text()
+          root_old = 'ROOT = Path(__file__).resolve().parents[2]'
+          if text.count(root_old) != 1:
+              raise SystemExit('unexpected hardening root declaration')
+          text = text.replace(root_old, 'ROOT = Path.cwd()')
           old = '''    if marker not in text:\n        raise SystemExit(f"{relative}: insertion marker not found")\n    path.write_text(text.replace(marker, addition + marker, 1))\n'''
           new = '''    if marker == "":\n        path.write_text(text + addition)\n        return\n    if marker not in text:\n        raise SystemExit(f"{relative}: insertion marker not found")\n    path.write_text(text.replace(marker, addition + marker, 1))\n'''
           if text.count(old) != 1:
