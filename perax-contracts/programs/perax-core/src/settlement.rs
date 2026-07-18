@@ -1,5 +1,5 @@
 pub use crate::PeraxError as SettlementError;
-use crate::PeraxState;
+use crate::{PeraxError, PeraxState};
 use anchor_lang::prelude::*;
 
 pub const SETTLEMENT_FUNDING_PEX: u8 = 1;
