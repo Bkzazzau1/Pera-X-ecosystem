@@ -3,6 +3,7 @@
     "test": "anchor test --provider.cluster localnet",
     "typecheck": "tsc --noEmit",
     "validate:tokenomics": "node scripts/validate-tokenomics.js",
+    "validate:settlement": "node scripts/validate-settlement-source.js",
     "plan:allocation": "node scripts/print-allocation-plan.js",
     "plan:mint": "node scripts/plan-mint.js",
     "plan:initialize": "node scripts/plan-core-initialize.js",
