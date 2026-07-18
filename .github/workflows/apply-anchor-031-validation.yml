@@ -30,6 +30,11 @@ jobs:
       - name: Apply guarded Anchor upgrade
         shell: bash
         run: python3 .github/scripts/run-anchor-032-validation.py 2>&1 | tee /tmp/anchor-upgrade-transform.log
+      - name: Install Anchor native build dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev libudev-dev build-essential
       - name: Install Rust 1.85
         uses: dtolnay/rust-toolchain@1.85.0
         with:
