@@ -53,7 +53,6 @@ pub fn initialize_settlement_policy(
     policy.approved_market_program = ctx.accounts.apc_config.approved_recovery_program;
     policy.approved_market_pool = ctx.accounts.apc_config.approved_pool;
     policy.approved_policy_vault_config = ctx.accounts.approved_policy_vault_config.key();
-    // Shared custody is deliberately disabled. Every SettlementRecord gets its own PDA vault.
     policy.settlement_authority = Pubkey::default();
     policy.settlement_pex_vault = Pubkey::default();
     policy.lock_vault = ctx.accounts.lock_vault.key();
@@ -250,7 +249,6 @@ pub fn plan_settlement(ctx: Context<PlanSettlementV2>, params: PlanSettlementPar
     };
 
     let record_key = ctx.accounts.settlement_record.key();
-    let custody_key = ctx.accounts.settlement_custody.key();
     let vault_key = ctx.accounts.settlement_pex_vault.key();
     let authority_key = ctx.accounts.settlement_authority.key();
 
@@ -306,7 +304,6 @@ pub fn plan_settlement(ctx: Context<PlanSettlementV2>, params: PlanSettlementPar
         policy_vault_pex_required,
         planned_at: now,
     });
-    let _ = custody_key;
     Ok(())
 }
 
@@ -954,6 +951,9 @@ pub fn calculate_settlement_quote_requirement(
 }
 
 fn amount_bps_ceiling(amount: u64, bps: u16) -> Result<u64> {
+    if bps == 0 {
+        return Ok(0);
+    }
     let numerator = u128::from(amount)
         .checked_mul(u128::from(bps))
         .ok_or(SettlementError::SettlementArithmeticError)?;
