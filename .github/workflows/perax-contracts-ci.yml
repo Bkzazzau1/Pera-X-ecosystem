@@ -99,6 +99,9 @@ jobs:
       - name: Validate tokenomics
         run: npm run validate:tokenomics
 
+      - name: Validate settlement source guards
+        run: npm run validate:settlement
+
       - name: Run planning scripts
         run: |
           npm run plan:allocation
