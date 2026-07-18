@@ -32,7 +32,17 @@ jobs:
           node-version: "24"
           package-manager-cache: false
       - name: Run deterministic and adversarial simulations
-        run: node perax-contracts/scripts/simulate-apc-policy-v1.js --write-report
+        shell: bash
+        run: |
+          set -o pipefail
+          node perax-contracts/scripts/simulate-apc-policy-v1.js --write-report 2>&1 | tee /tmp/apc-policy-v1-simulation.log
+      - name: Upload simulation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apc-policy-v1-simulation-diagnostics
+          path: /tmp/apc-policy-v1-simulation.log
+          if-no-files-found: error
       - name: Commit generated simulation report
         if: github.event_name != 'pull_request'
         shell: bash
