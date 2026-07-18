@@ -5,12 +5,8 @@ source = Path('.github/scripts/apply-anchor-031-validation.py')
 target = Path('/tmp/apply-anchor-032-validation.py')
 text = source.read_text()
 
-for old, new in [
-    ('0.31.1', '0.32.1'),
-    ('2.1.0', '2.3.0'),
-    ('Prepared Anchor 0.32.1 / Agave 2.3.0 validation upgrade', 'Prepared Anchor 0.32.1 / Agave 2.3.0 validation upgrade'),
-]:
-    text = text.replace(old, new)
+text = text.replace('0.31.1', '0.32.1')
+text = text.replace('2.1.0', '2.3.0')
 
 old_install = '''      - name: Install Anchor CLI 0.32.1
         shell: bash
@@ -39,12 +35,15 @@ new_install = '''      - name: Install Rust 1.89 for Anchor CLI compilation
 if text.count(old_install) != 1:
     raise SystemExit('expected one permanent workflow Anchor install block')
 text = text.replace(old_install, new_install)
-
-# Keep the permanent workflow cache aligned with the actual direct CLI installation.
 text = text.replace('~/.avm\n', '~/.cargo/bin\n')
 
-# The transformed source must actually target the intended supported pair.
-for required in ['anchor-lang = "0.32.1"', 'anchor_version = "0.32.1"', 'solana_version = "2.3.0"', 'v0.32.1/install']:
+for required in [
+    'anchor-lang = "0.32.1"',
+    'anchor_version = "0.32.1"',
+    'solana_version = "2.3.0"',
+    'https://release.anza.xyz/v2.3.0/install',
+    '--tag v0.32.1',
+]:
     if required not in text:
         raise SystemExit(f'missing transformed requirement: {required}')
 
