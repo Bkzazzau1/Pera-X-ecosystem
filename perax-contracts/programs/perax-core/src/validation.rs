@@ -300,6 +300,28 @@ pub(crate) fn validate_apc_policy(state: &PeraxState, params: &InitializeApcPara
         PeraxError::InvalidApcPolicy
     );
     require!(
+        params.deferred_burn_window_cap > 0
+            && params.deferred_burn_window_seconds > 0
+            && params.deferred_burn_cooldown_seconds >= 0
+            && params.deferred_burn_cooldown_seconds <= params.deferred_burn_window_seconds,
+        PeraxError::InvalidApcPolicy
+    );
+    require!(
+        params.maximum_recovery_purchase_bps > 0
+            && params.maximum_recovery_purchase_bps < 10_000
+            && params.minimum_counterweight_reserve_bps > 0
+            && params.minimum_counterweight_reserve_bps < 10_000
+            && u32::from(params.maximum_recovery_purchase_bps)
+                + u32::from(params.minimum_counterweight_reserve_bps)
+                <= 10_000
+            && params.recovery_window_cap > 0
+            && params.recovery_window_cap <= params.recovery_spending_cap
+            && params.recovery_window_seconds > 0
+            && params.recovery_cooldown_seconds >= 0
+            && params.recovery_cooldown_seconds <= params.recovery_window_seconds,
+        PeraxError::InvalidApcPolicy
+    );
+    require!(
         params.minimum_twap_minutes > 0
             && params.minimum_liquidity_usd > 0
             && params.minimum_volume_usd > 0,
@@ -322,6 +344,8 @@ pub(crate) fn validate_apc_policy(state: &PeraxState, params: &InitializeApcPara
             PeraxError::InvalidApcPolicy
         );
     }
+    validate_non_increasing_u16(params.band_interval_bps_by_risk)?;
+    validate_non_increasing_u16(params.band_release_bps_by_risk)?;
     let mut previous = 10_001u16;
     for reduction in params.cascade_reduction_bps {
         require!(
@@ -329,6 +353,13 @@ pub(crate) fn validate_apc_policy(state: &PeraxState, params: &InitializeApcPara
             PeraxError::InvalidApcPolicy
         );
         previous = reduction;
+    }
+    Ok(())
+}
+
+fn validate_non_increasing_u16(values: [u16; 4]) -> Result<()> {
+    for pair in values.windows(2) {
+        require!(pair[0] >= pair[1], PeraxError::InvalidApcPolicy);
     }
     Ok(())
 }
@@ -453,6 +484,17 @@ pub fn calculate_effective_apc_price(spot_price: u64, twap_price: u64) -> Result
         PeraxError::InvalidMarketParameter
     );
     Ok(spot_price.min(twap_price))
+}
+
+pub(crate) fn validate_apc_reference_support(
+    apc_state: &ApcState,
+    effective_price: u64,
+) -> Result<()> {
+    require!(
+        effective_price >= apc_state.current_reference_price,
+        PeraxError::ApcReferencePriceNotSupported
+    );
+    Ok(())
 }
 
 pub fn calculate_band_interval_bps(config: &ApcConfig, risk_tier: u8) -> Result<u16> {
@@ -595,6 +637,123 @@ pub(crate) fn reset_apc_windows_if_needed(config: &ApcConfig, apc_state: &mut Ap
     }
 }
 
+pub(crate) fn reset_deferred_burn_window_if_needed(
+    config: &ApcConfig,
+    apc_state: &mut ApcState,
+    now: i64,
+) {
+    if apc_state.deferred_burn_window_started_at == 0
+        || now
+            >= apc_state
+                .deferred_burn_window_started_at
+                .saturating_add(config.deferred_burn_window_seconds)
+    {
+        apc_state.deferred_burn_window_started_at = now;
+        apc_state.deferred_burn_window_executed = 0;
+    }
+}
+
+pub(crate) fn reset_recovery_window_if_needed(
+    config: &ApcConfig,
+    apc_state: &mut ApcState,
+    now: i64,
+) {
+    if apc_state.recovery_window_started_at == 0
+        || now
+            >= apc_state
+                .recovery_window_started_at
+                .saturating_add(config.recovery_window_seconds)
+    {
+        apc_state.recovery_window_started_at = now;
+        apc_state.recovery_window_spent = 0;
+    }
+}
+
+pub(crate) fn validate_deferred_burn_limits(
+    config: &ApcConfig,
+    apc_state: &ApcState,
+    core_state: &PeraxState,
+    requested_amount: u64,
+    current_mint_supply: u64,
+    now: i64,
+) -> Result<()> {
+    if apc_state.last_deferred_burn_timestamp > 0 {
+        require!(
+            now >= apc_state
+                .last_deferred_burn_timestamp
+                .saturating_add(config.deferred_burn_cooldown_seconds),
+            PeraxError::DeferredBurnCooldownActive
+        );
+    }
+    require_checked_cap(
+        apc_state.deferred_burn_window_executed,
+        requested_amount,
+        config.deferred_burn_window_cap,
+        PeraxError::DeferredBurnWindowCapExceeded,
+    )?;
+    require_checked_cap(
+        core_state.daily_burn_accumulator,
+        requested_amount,
+        calculate_daily_burn_cap_amount(current_mint_supply)?,
+        PeraxError::DailyBurnCapExceeded,
+    )?;
+    Ok(())
+}
+
+pub(crate) fn validate_recovery_purchase_limits(
+    config: &ApcConfig,
+    apc_state: &ApcState,
+    requested_maximum: u64,
+    tracked_available: u64,
+    actual_vault_balance: u64,
+    now: i64,
+) -> Result<()> {
+    if apc_state.last_recovery_purchase_timestamp > 0 {
+        require!(
+            now >= apc_state
+                .last_recovery_purchase_timestamp
+                .saturating_add(config.recovery_cooldown_seconds),
+            PeraxError::RecoveryCooldownActive
+        );
+    }
+    require!(
+        requested_maximum <= tracked_available && requested_maximum <= actual_vault_balance,
+        PeraxError::InvalidCounterweightVault
+    );
+    let single_purchase_cap = amount_bps(tracked_available, config.maximum_recovery_purchase_bps)?;
+    require!(
+        requested_maximum <= single_purchase_cap,
+        PeraxError::RecoveryPurchaseCapExceeded
+    );
+    require_checked_cap(
+        apc_state.recovery_window_spent,
+        requested_maximum,
+        config.recovery_window_cap,
+        PeraxError::RecoveryWindowCapExceeded,
+    )?;
+    require_checked_cap(
+        apc_state.total_counterweight_spent,
+        requested_maximum,
+        config.recovery_spending_cap,
+        PeraxError::RecoveryCapExceeded,
+    )?;
+    let protected_reserve = amount_bps(
+        apc_state.total_counterweight_credited,
+        config.minimum_counterweight_reserve_bps,
+    )?;
+    let tracked_after = tracked_available
+        .checked_sub(requested_maximum)
+        .ok_or(PeraxError::RecoveryReserveFloorViolated)?;
+    let vault_after = actual_vault_balance
+        .checked_sub(requested_maximum)
+        .ok_or(PeraxError::RecoveryReserveFloorViolated)?;
+    require!(
+        tracked_after >= protected_reserve && vault_after >= protected_reserve,
+        PeraxError::RecoveryReserveFloorViolated
+    );
+    Ok(())
+}
+
 pub(crate) fn validate_apc_release_caps(
     config: &ApcConfig,
     apc_state: &ApcState,
@@ -711,12 +870,7 @@ pub(crate) fn validate_market_condition_burn(
         PeraxError::BurnAmountMismatch
     );
 
-    let daily_cap_bps = if conservation_phase {
-        CONSERVATION_DAILY_BURN_CAP_BPS
-    } else {
-        EARLY_DAILY_BURN_CAP_BPS
-    };
-    let daily_cap_amount = amount_bps(PEX_TOTAL_SUPPLY, daily_cap_bps)?;
+    let daily_cap_amount = calculate_daily_burn_cap_amount(current_mint_supply)?;
 
     require_checked_cap(
         state.daily_burn_accumulator,
@@ -726,6 +880,16 @@ pub(crate) fn validate_market_condition_burn(
     )?;
 
     Ok(())
+}
+
+pub(crate) fn calculate_daily_burn_cap_amount(current_mint_supply: u64) -> Result<u64> {
+    let conservation_threshold = amount_bps(PEX_TOTAL_SUPPLY, CONSERVATION_SUPPLY_THRESHOLD_BPS)?;
+    let daily_cap_bps = if current_mint_supply <= conservation_threshold {
+        CONSERVATION_DAILY_BURN_CAP_BPS
+    } else {
+        EARLY_DAILY_BURN_CAP_BPS
+    };
+    amount_bps(PEX_TOTAL_SUPPLY, daily_cap_bps)
 }
 
 pub(crate) fn amount_bps(amount: u64, bps: u16) -> Result<u64> {

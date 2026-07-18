@@ -41,16 +41,20 @@ jobs:
             exit 1
           fi
 
+      - name: Set up Rust 1.79 contract toolchain
+        uses: dtolnay/rust-toolchain@1.79.0
+        with:
+          components: rustfmt
+
+      - name: Install Cargo toolchain for Anchor metadata
+        shell: bash
+        run: rustup toolchain install 1.85.0 --profile minimal
+
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
           node-version: "24"
           package-manager-cache: false
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@1.79.0
-        with:
-          components: rustfmt
 
       - name: Cache Cargo registry and build output
         uses: actions/cache@v4
@@ -59,21 +63,22 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             perax-contracts/target
-          key: ${{ runner.os }}-cargo-rust-1.79.0-${{ hashFiles('perax-contracts/**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-rust-1.79.0-agave-3.1.14-${{ hashFiles('perax-contracts/**/Cargo.lock') }}
           restore-keys: |
+            ${{ runner.os }}-cargo-rust-1.79.0-agave-3.1.14-
             ${{ runner.os }}-cargo-rust-1.79.0-
 
-      - name: Install Solana CLI
+      - name: Install Agave CLI and SBF tools
         shell: bash
         run: |
-          sh -c "$(curl -sSfL https://release.anza.xyz/v1.18.26/install)"
+          sh -c "$(curl -sSfL https://release.anza.xyz/v3.1.14/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 
       - name: Install Anchor CLI
         shell: bash
         run: |
-          cargo install \
-            --git https://github.com/coral-xyz/anchor \
+          cargo +1.79.0 install \
+            --git https://github.com/solana-foundation/anchor \
             --tag v0.30.1 \
             anchor-cli \
             --locked
@@ -105,10 +110,24 @@ jobs:
           node scripts/check-anchor-deploy-readiness.js
 
       - name: Build Anchor program
-        run: anchor build
+        shell: bash
+        run: |
+          set -o pipefail
+          RUSTUP_TOOLCHAIN=1.85.0 anchor build 2>&1 | tee /tmp/anchor-build.log
+
+      - name: Upload Anchor build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anchor-build-diagnostics
+          path: /tmp/anchor-build.log
+          if-no-files-found: warn
 
       - name: Run Rust unit tests
-        run: cargo test --manifest-path programs/perax-core/Cargo.toml
+        run: cargo +1.79.0 test --locked --manifest-path programs/perax-core/Cargo.toml
+
+      - name: Check Rust contracts
+        run: cargo +1.79.0 check --locked --all-targets
 
       - name: TypeScript check
         run: npm run typecheck
@@ -121,4 +140,4 @@ jobs:
           npm test
 
       - name: Run local-validator transaction tests
-        run: anchor test --provider.cluster localnet
+        run: RUSTUP_TOOLCHAIN=1.85.0 anchor test --provider.cluster localnet

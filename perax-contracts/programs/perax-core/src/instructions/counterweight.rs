@@ -1,8 +1,9 @@
 use crate::{
-    validate_reference, ApcStatus, CounterweightProceedsDeposited, DeferredBurnExecuted,
-    DeferredBurnRecorded, DepositCounterweightParams, DepositCounterweightProceeds,
-    ExecuteDeferredBurn, ExecuteDeferredBurnParams, PeraxError, RecordDeferredBurn,
-    RecordDeferredBurnParams,
+    reset_burn_window_if_needed, reset_deferred_burn_window_if_needed,
+    validate_deferred_burn_limits, validate_reference, ApcStatus, CounterweightProceedsDeposited,
+    DeferredBurnExecuted, DeferredBurnRecorded, DepositCounterweightParams,
+    DepositCounterweightProceeds, ExecuteDeferredBurn, ExecuteDeferredBurnParams, PeraxError,
+    RecordDeferredBurn, RecordDeferredBurnParams,
 };
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Burn, TransferChecked};
@@ -165,6 +166,22 @@ pub fn execute_deferred_burn(
         PeraxError::DeferredBurnNotExecutable
     );
 
+    let now = Clock::get()?.unix_timestamp;
+    reset_burn_window_if_needed(&mut ctx.accounts.state, now);
+    reset_deferred_burn_window_if_needed(
+        &ctx.accounts.apc_config,
+        &mut ctx.accounts.apc_state,
+        now,
+    );
+    validate_deferred_burn_limits(
+        &ctx.accounts.apc_config,
+        &ctx.accounts.apc_state,
+        &ctx.accounts.state,
+        params.amount,
+        ctx.accounts.token_mint.supply,
+        now,
+    )?;
+
     let remaining_record_amount = ctx
         .accounts
         .deferred_burn_record
@@ -208,13 +225,27 @@ pub fn execute_deferred_burn(
         .deferred_burn_amount
         .checked_sub(params.amount)
         .ok_or(PeraxError::DeferredBurnNotExecutable)?;
-    let now = Clock::get()?.unix_timestamp;
+    let daily_burn_after = ctx
+        .accounts
+        .state
+        .daily_burn_accumulator
+        .checked_add(params.amount)
+        .ok_or(PeraxError::DailyBurnCapExceeded)?;
+    let deferred_window_after = ctx
+        .accounts
+        .apc_state
+        .deferred_burn_window_executed
+        .checked_add(params.amount)
+        .ok_or(PeraxError::DeferredBurnWindowCapExceeded)?;
 
     ctx.accounts.deferred_burn_record.amount_executed = amount_executed_after;
     ctx.accounts.deferred_burn_record.last_executed_at = now;
     ctx.accounts.deferred_burn_record.is_complete =
         amount_executed_after == ctx.accounts.deferred_burn_record.amount;
+    ctx.accounts.state.daily_burn_accumulator = daily_burn_after;
     ctx.accounts.apc_state.deferred_burn_amount = remaining_deferred;
+    ctx.accounts.apc_state.deferred_burn_window_executed = deferred_window_after;
+    ctx.accounts.apc_state.last_deferred_burn_timestamp = now;
 
     emit!(DeferredBurnExecuted {
         deferred_burn_record: ctx.accounts.deferred_burn_record.key(),

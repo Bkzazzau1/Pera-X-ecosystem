@@ -183,6 +183,12 @@ function validateAdaptivePriceControl(config) {
   if (apc.policyStatus === 'approved') {
     assert(Number.isInteger(bands.minimumIntervalBps) && bands.minimumIntervalBps > 0, 'Approved minimum band interval is invalid.');
     assert(Number.isInteger(bands.maximumIntervalBps) && bands.maximumIntervalBps > bands.minimumIntervalBps, 'Approved maximum band interval is invalid.');
+    assert(Array.isArray(bands.intervalBpsByRisk) && bands.intervalBpsByRisk.length === 4, 'Approved risk interval policy is required.');
+    assert(Array.isArray(bands.releaseBpsByRisk) && bands.releaseBpsByRisk.length === 4, 'Approved risk release policy is required.');
+    for (let index = 1; index < 4; index += 1) {
+      assert(bands.intervalBpsByRisk[index - 1] >= bands.intervalBpsByRisk[index], 'Higher risk must not widen APC bands.');
+      assert(bands.releaseBpsByRisk[index - 1] >= bands.releaseBpsByRisk[index], 'Higher risk must not increase APC release capacity.');
+    }
     assert(Array.isArray(bands.cascadeReductionBps) && bands.cascadeReductionBps.length > 0, 'Approved cascade policy is required.');
     let previous = 10001;
     for (const value of bands.cascadeReductionBps) {
@@ -193,6 +199,7 @@ function validateAdaptivePriceControl(config) {
     assert(apc.policyStatus === 'pending_formal_numerical_approval', 'Unknown APC policy status.');
     assert(bands.minimumIntervalBps === null && bands.maximumIntervalBps === null, 'Pending band interval values must remain null.');
     assert(bands.riskTierThresholds === null && bands.cascadeReductionBps === null, 'Pending risk and cascade values must remain null.');
+    assert(bands.intervalBpsByRisk === null && bands.releaseBpsByRisk === null, 'Pending risk response tables must remain null.');
   }
 
   const observations = apc.observationPolicy;
@@ -224,9 +231,25 @@ function validateAdaptivePriceControl(config) {
 
   assert(apc.burnDeferralPolicy.enabledDuringPumpControl === true, 'Burn deferral must be enabled during pump control.');
   assert(apc.burnDeferralPolicy.pexEscrowRequired === true, 'Deferred burn PEX must be escrowed.');
+  if (apc.policyStatus === 'approved') {
+    assert(apc.burnDeferralPolicy.executionWindowCapAmount !== null, 'Approved deferred-burn window cap is required.');
+    assert(Number.isInteger(apc.burnDeferralPolicy.executionWindowSeconds) && apc.burnDeferralPolicy.executionWindowSeconds > 0, 'Approved deferred-burn window is required.');
+    assert(Number.isInteger(apc.burnDeferralPolicy.executionCooldownSeconds) && apc.burnDeferralPolicy.executionCooldownSeconds >= 0, 'Approved deferred-burn cooldown is required.');
+  } else {
+    assert(apc.burnDeferralPolicy.executionWindowCapAmount === null && apc.burnDeferralPolicy.executionWindowSeconds === null && apc.burnDeferralPolicy.executionCooldownSeconds === null, 'Pending deferred-burn limits must remain null.');
+  }
   assert(apc.recoveryPolicy.atomicSwapRequired === true, 'Recovery must use an atomic swap.');
   assert(apc.recoveryPolicy.lockedRecoveryVault === true, 'Recovered PEX must enter a locked vault.');
   assert(apc.recoveryPolicy.hardSpendingCapRequired === true, 'Recovery spending must have a hard cap.');
+  if (apc.policyStatus === 'approved') {
+    assert(Number.isInteger(apc.recoveryPolicy.maximumPurchaseBps) && apc.recoveryPolicy.maximumPurchaseBps > 0 && apc.recoveryPolicy.maximumPurchaseBps < 10000, 'Approved recovery purchase percentage is invalid.');
+    assert(Number.isInteger(apc.recoveryPolicy.minimumReserveBps) && apc.recoveryPolicy.minimumReserveBps > 0 && apc.recoveryPolicy.minimumReserveBps < 10000, 'Approved recovery reserve percentage is invalid.');
+    assert(apc.recoveryPolicy.maximumPurchaseBps + apc.recoveryPolicy.minimumReserveBps <= 10000, 'Recovery purchase and reserve percentages are inconsistent.');
+    assert(apc.recoveryPolicy.windowCapAmount !== null && Number.isInteger(apc.recoveryPolicy.windowSeconds) && apc.recoveryPolicy.windowSeconds > 0, 'Approved recovery window limits are required.');
+    assert(Number.isInteger(apc.recoveryPolicy.cooldownSeconds) && apc.recoveryPolicy.cooldownSeconds >= 0, 'Approved recovery cooldown is required.');
+  } else {
+    assert(apc.recoveryPolicy.maximumPurchaseBps === null && apc.recoveryPolicy.minimumReserveBps === null && apc.recoveryPolicy.windowCapAmount === null && apc.recoveryPolicy.windowSeconds === null && apc.recoveryPolicy.cooldownSeconds === null, 'Pending recovery limits must remain null.');
+  }
   assert(apc.authorityPolicy.requiresManualOrMultisigApproval === false, 'Manual or multisig release approval must remain disabled.');
   assert(apc.authorityPolicy.routineReleaseApproval === 'none', 'Routine APC release must not require human approval.');
   assert(Array.isArray(apc.unresolvedNumericalPolicies) && apc.unresolvedNumericalPolicies.length === 10, 'All ten unresolved numerical policies must be listed.');

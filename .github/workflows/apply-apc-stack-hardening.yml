@@ -1,0 +1,154 @@
+name: Apply APC stack hardening
+
+on:
+  push:
+    branches: [agent/apc-enforcement-hardening]
+    paths:
+      - ".github/scripts/apply-apc-stack-hardening.py"
+      - ".github/workflows/apply-apc-stack-hardening.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/scripts/apply-apc-stack-hardening.py"
+      - ".github/workflows/apply-apc-stack-hardening.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  harden-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout hardening branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/apc-enforcement-hardening
+          fetch-depth: 0
+
+      - name: Preserve guarded stack transformation
+        shell: bash
+        run: cp .github/scripts/apply-apc-stack-hardening.py /tmp/apply-apc-stack-hardening.py
+
+      - name: Apply guarded stack transformation
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 /tmp/apply-apc-stack-hardening.py 2>&1 | tee /tmp/apc-stack-transform.log
+
+      - name: Install Rust toolchains
+        shell: bash
+        run: |
+          rustup toolchain install 1.79.0 --profile minimal --component rustfmt
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup toolchain install nightly-2025-04-14 --profile minimal
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Regenerate Rust lockfile with Rust 1.79 fallback
+        working-directory: perax-contracts
+        shell: bash
+        run: |
+          set -o pipefail
+          rm -f Cargo.lock
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback \
+            cargo +1.89.0 generate-lockfile 2>&1 | tee /tmp/apc-stack-lockfile.log
+
+      - name: Install Agave CLI and SBF tools
+        shell: bash
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.0/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor CLI 0.31.1
+        shell: bash
+        run: |
+          cargo +1.89.0 install \
+            --git https://github.com/solana-foundation/anchor \
+            --tag v0.31.1 \
+            anchor-cli \
+            --locked
+
+      - name: Create ephemeral validator wallet
+        working-directory: perax-contracts
+        shell: bash
+        run: |
+          mkdir -p .local
+          solana-keygen new \
+            --no-bip39-passphrase \
+            --silent \
+            --force \
+            --outfile .local/devnet-deployer.json
+
+      - name: Install JavaScript dependencies
+        working-directory: perax-contracts
+        run: npm install
+
+      - name: Validate policy and Rust 1.79 compatibility
+        working-directory: perax-contracts
+        shell: bash
+        run: |
+          node scripts/validate-tokenomics.js
+          cargo +1.79.0 fmt --all
+          cargo +1.79.0 fmt --all -- --check
+          cargo +1.79.0 test --locked --all-targets 2>&1 | tee /tmp/apc-stack-rust-tests.log
+          cargo +1.79.0 check --locked --all-targets 2>&1 | tee /tmp/apc-stack-rust-check.log
+          npm run typecheck 2>&1 | tee /tmp/apc-stack-typescript.log
+
+      - name: Build Anchor program and reject unsafe stack frames
+        working-directory: perax-contracts
+        shell: bash
+        run: |
+          set -o pipefail
+          RUSTUP_TOOLCHAIN=nightly-2025-04-14 anchor build 2>&1 | tee /tmp/apc-stack-anchor-build.log
+          if grep -E 'Stack offset of [0-9]+ exceeded max offset of 4096|Stack frame size of [0-9]+ exceeded max allowed size of 4096|overwrites values in the frame' /tmp/apc-stack-anchor-build.log; then
+            echo 'Unsafe SBF stack frame detected.'
+            exit 1
+          fi
+
+      - name: Validate APC market engine
+        working-directory: perax-market-engine
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+
+      - name: Run Anchor local-validator transactions
+        working-directory: perax-contracts
+        shell: bash
+        run: anchor test --skip-build --provider.cluster localnet
+
+      - name: Commit and push validated stack-safe source
+        shell: bash
+        run: |
+          git diff --check
+          git add \
+            .github/workflows/perax-contracts-ci.yml \
+            perax-contracts/Cargo.lock \
+            perax-contracts/package.json \
+            perax-contracts/package-lock.json \
+            perax-contracts/programs/perax-core/Cargo.toml \
+            perax-contracts/programs/perax-core/src/contexts.rs
+          git config user.name "Pera-X APC automation"
+          git config user.email "actions@github.com"
+          git commit -m "Upgrade Anchor and make account contexts stack safe"
+          git push origin agent/apc-enforcement-hardening
+
+      - name: Upload stack hardening diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apc-stack-hardening-diagnostics
+          path: |
+            /tmp/apc-stack-transform.log
+            /tmp/apc-stack-lockfile.log
+            /tmp/apc-stack-rust-tests.log
+            /tmp/apc-stack-rust-check.log
+            /tmp/apc-stack-typescript.log
+            /tmp/apc-stack-anchor-build.log
+          if-no-files-found: warn

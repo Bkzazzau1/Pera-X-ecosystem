@@ -5,12 +5,12 @@ use crate::{
     is_program_derived_destination, reset_apc_windows_if_needed, reset_release_windows_if_needed,
     validate_apc_absorption_confirmation, validate_apc_market_gates,
     validate_apc_observation_fresh, validate_apc_observation_submission, validate_apc_policy,
-    validate_apc_release_caps, validate_reference, validate_sequential_band_index,
-    ActivateApcBandParams, ActivateNextApcBand, ApcAbsorptionConfirmed, ApcBandActivated,
-    ApcInitialized, ApcObservationSubmitted, ApcPaused, ApcPumpControlEntered, ApcReleaseExecuted,
-    ApcStatus, ApcStatusChanged, ConfirmApcAbsorption, ExecuteApcRelease, ExecuteApcReleaseParams,
-    InitializeApc, InitializeApcParams, PauseApc, PeraxError, SubmitApcObservation,
-    SubmitApcObservationParams, PEX_MINT_DECIMALS,
+    validate_apc_reference_support, validate_apc_release_caps, validate_reference,
+    validate_sequential_band_index, ActivateApcBandParams, ActivateNextApcBand,
+    ApcAbsorptionConfirmed, ApcBandActivated, ApcInitialized, ApcObservationSubmitted, ApcPaused,
+    ApcPumpControlEntered, ApcReleaseExecuted, ApcStatus, ApcStatusChanged, ConfirmApcAbsorption,
+    ExecuteApcRelease, ExecuteApcReleaseParams, InitializeApc, InitializeApcParams, PauseApc,
+    PeraxError, SubmitApcObservation, SubmitApcObservationParams, PEX_MINT_DECIMALS,
 };
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, TransferChecked};
@@ -60,6 +60,14 @@ pub fn initialize_apc(ctx: Context<InitializeApc>, params: InitializeApcParams) 
     config.band_release_bps_by_risk = params.band_release_bps_by_risk;
     config.cascade_reduction_bps = params.cascade_reduction_bps;
     config.recovery_spending_cap = params.recovery_spending_cap;
+    config.deferred_burn_window_cap = params.deferred_burn_window_cap;
+    config.deferred_burn_window_seconds = params.deferred_burn_window_seconds;
+    config.deferred_burn_cooldown_seconds = params.deferred_burn_cooldown_seconds;
+    config.maximum_recovery_purchase_bps = params.maximum_recovery_purchase_bps;
+    config.minimum_counterweight_reserve_bps = params.minimum_counterweight_reserve_bps;
+    config.recovery_window_cap = params.recovery_window_cap;
+    config.recovery_window_seconds = params.recovery_window_seconds;
+    config.recovery_cooldown_seconds = params.recovery_cooldown_seconds;
     config.is_active = true;
     config.is_paused = false;
     config.bump = ctx.bumps.apc_config;
@@ -88,6 +96,12 @@ pub fn initialize_apc(ctx: Context<InitializeApc>, params: InitializeApcParams) 
     apc_state.cascade_observation_id = [0u8; 32];
     apc_state.cascade_band_count = 0;
     apc_state.active_risk_tier = 0;
+    apc_state.deferred_burn_window_started_at = 0;
+    apc_state.deferred_burn_window_executed = 0;
+    apc_state.last_deferred_burn_timestamp = 0;
+    apc_state.recovery_window_started_at = 0;
+    apc_state.recovery_window_spent = 0;
+    apc_state.last_recovery_purchase_timestamp = 0;
     apc_state.bump = ctx.bumps.apc_state;
 
     let counterweight = &mut ctx.accounts.counterweight_config;
@@ -365,6 +379,7 @@ pub fn execute_apc_release(
         effective_price >= ctx.accounts.band_record.trigger_price,
         PeraxError::ApcPriceGateNotMet
     );
+    validate_apc_reference_support(&ctx.accounts.apc_state, effective_price)?;
 
     let vault = &ctx.accounts.reserve_vault_config;
     require!(vault.is_active, PeraxError::VaultInactive);

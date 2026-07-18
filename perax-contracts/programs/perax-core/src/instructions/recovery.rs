@@ -1,10 +1,10 @@
 use crate::{
-    calculate_effective_apc_price, calculate_recovery_pex_out, validate_apc_observation_fresh,
-    validate_reference, ApcRecoveryEntered, ApcStatus, ApcStatusChanged,
-    CounterweightPurchaseExecuted, EnterApcRecovery, ExecuteCounterweightPurchase,
-    ExecuteCounterweightPurchaseParams, InitializeRecoveryPool, InitializeRecoveryPoolParams,
-    PeraxError, RecoveryPoolInitialized, RecoverySwapAdapter, RecoverySwapAdapterExecuted,
-    RecoverySwapAdapterParams,
+    calculate_effective_apc_price, calculate_recovery_pex_out, reset_recovery_window_if_needed,
+    validate_apc_observation_fresh, validate_recovery_purchase_limits, validate_reference,
+    ApcRecoveryEntered, ApcStatus, ApcStatusChanged, CounterweightPurchaseExecuted,
+    EnterApcRecovery, ExecuteCounterweightPurchase, ExecuteCounterweightPurchaseParams,
+    InitializeRecoveryPool, InitializeRecoveryPoolParams, PeraxError, RecoveryPoolInitialized,
+    RecoverySwapAdapter, RecoverySwapAdapterExecuted, RecoverySwapAdapterParams,
 };
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{
@@ -214,27 +214,21 @@ pub fn execute_counterweight_purchase<'info>(
         PeraxError::RecoveryNotActive
     );
 
+    reset_recovery_window_if_needed(&ctx.accounts.apc_config, &mut ctx.accounts.apc_state, now);
     let tracked_available = ctx
         .accounts
         .apc_state
         .total_counterweight_credited
         .checked_sub(ctx.accounts.apc_state.total_counterweight_spent)
         .ok_or(PeraxError::InvalidCounterweightVault)?;
-    require!(
-        params.maximum_quote_amount <= tracked_available
-            && params.maximum_quote_amount <= ctx.accounts.counterweight_vault.amount,
-        PeraxError::InvalidCounterweightVault
-    );
-    let maximum_total_spend = ctx
-        .accounts
-        .apc_state
-        .total_counterweight_spent
-        .checked_add(params.maximum_quote_amount)
-        .ok_or(PeraxError::RecoveryCapExceeded)?;
-    require!(
-        maximum_total_spend <= ctx.accounts.apc_config.recovery_spending_cap,
-        PeraxError::RecoveryCapExceeded
-    );
+    validate_recovery_purchase_limits(
+        &ctx.accounts.apc_config,
+        &ctx.accounts.apc_state,
+        params.maximum_quote_amount,
+        tracked_available,
+        ctx.accounts.counterweight_vault.amount,
+        now,
+    )?;
 
     let quote_before = ctx.accounts.counterweight_vault.amount;
     let pex_before = ctx.accounts.recovery_vault.amount;
@@ -306,6 +300,17 @@ pub fn execute_counterweight_purchase<'info>(
             <= ctx.accounts.apc_config.recovery_spending_cap,
         PeraxError::RecoveryCapExceeded
     );
+    ctx.accounts.apc_state.recovery_window_spent = ctx
+        .accounts
+        .apc_state
+        .recovery_window_spent
+        .checked_add(quote_spent)
+        .ok_or(PeraxError::RecoveryWindowCapExceeded)?;
+    require!(
+        ctx.accounts.apc_state.recovery_window_spent <= ctx.accounts.apc_config.recovery_window_cap,
+        PeraxError::RecoveryWindowCapExceeded
+    );
+    ctx.accounts.apc_state.last_recovery_purchase_timestamp = now;
 
     let record = &mut ctx.accounts.recovery_record;
     record.recovery_id = params.recovery_id;

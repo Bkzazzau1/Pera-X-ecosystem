@@ -170,6 +170,14 @@ pub struct InitializeApcParams {
     pub band_release_bps_by_risk: [u16; 4],
     pub cascade_reduction_bps: [u16; 4],
     pub recovery_spending_cap: u64,
+    pub deferred_burn_window_cap: u64,
+    pub deferred_burn_window_seconds: i64,
+    pub deferred_burn_cooldown_seconds: i64,
+    pub maximum_recovery_purchase_bps: u16,
+    pub minimum_counterweight_reserve_bps: u16,
+    pub recovery_window_cap: u64,
+    pub recovery_window_seconds: i64,
+    pub recovery_cooldown_seconds: i64,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -310,6 +318,14 @@ pub struct ApcConfig {
     pub band_release_bps_by_risk: [u16; 4],
     pub cascade_reduction_bps: [u16; 4],
     pub recovery_spending_cap: u64,
+    pub deferred_burn_window_cap: u64,
+    pub deferred_burn_window_seconds: i64,
+    pub deferred_burn_cooldown_seconds: i64,
+    pub maximum_recovery_purchase_bps: u16,
+    pub minimum_counterweight_reserve_bps: u16,
+    pub recovery_window_cap: u64,
+    pub recovery_window_seconds: i64,
+    pub recovery_cooldown_seconds: i64,
     pub is_active: bool,
     pub is_paused: bool,
     pub bump: u8,
@@ -341,6 +357,12 @@ pub struct ApcState {
     pub cascade_observation_id: [u8; 32],
     pub cascade_band_count: u32,
     pub active_risk_tier: u8,
+    pub deferred_burn_window_started_at: i64,
+    pub deferred_burn_window_executed: u64,
+    pub last_deferred_burn_timestamp: i64,
+    pub recovery_window_started_at: i64,
+    pub recovery_window_spent: u64,
+    pub last_recovery_purchase_timestamp: i64,
     pub bump: u8,
 }
 
