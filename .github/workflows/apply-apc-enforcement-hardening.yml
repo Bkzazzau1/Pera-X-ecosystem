@@ -6,6 +6,11 @@ on:
     paths:
       - ".github/scripts/apply-apc-enforcement-hardening.py"
       - ".github/workflows/apply-apc-enforcement-hardening.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/scripts/apply-apc-enforcement-hardening.py"
+      - ".github/workflows/apply-apc-enforcement-hardening.yml"
   workflow_dispatch:
 
 permissions:
@@ -79,6 +84,7 @@ jobs:
           npm test
 
       - name: Commit and push validated source
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         shell: bash
         run: |
           git diff --check
@@ -99,5 +105,3 @@ jobs:
           git config user.email "actions@github.com"
           git commit -m "Harden APC enforcement controls"
           git push origin agent/apc-enforcement-hardening
-
-# trigger: guarded-source-validation
