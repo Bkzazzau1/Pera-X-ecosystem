@@ -19,7 +19,7 @@ permissions:
 jobs:
   harden-stack:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - name: Checkout hardening branch
         uses: actions/checkout@v4
@@ -42,6 +42,7 @@ jobs:
         run: |
           rustup toolchain install 1.79.0 --profile minimal --component rustfmt
           rustup toolchain install 1.89.0 --profile minimal
+          rustup toolchain install nightly-2025-04-14 --profile minimal
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -49,18 +50,26 @@ jobs:
           node-version: "24"
           package-manager-cache: false
 
+      - name: Regenerate Rust lockfile with Rust 1.79 fallback
+        working-directory: perax-contracts
+        shell: bash
+        run: |
+          rm -f Cargo.lock
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +1.89.0 generate-lockfile
+          cargo +1.89.0 update -p blake3 --precise 1.5.0
+
       - name: Install Agave CLI and SBF tools
         shell: bash
         run: |
-          sh -c "$(curl -sSfL https://release.anza.xyz/v3.1.14/install)"
+          sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.0/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 
-      - name: Install Anchor CLI
+      - name: Install Anchor CLI 0.31.1
         shell: bash
         run: |
-          cargo +1.79.0 install \
+          cargo +1.89.0 install \
             --git https://github.com/solana-foundation/anchor \
-            --tag v0.30.1 \
+            --tag v0.31.1 \
             anchor-cli \
             --locked
 
@@ -95,8 +104,8 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          RUSTUP_TOOLCHAIN=1.89.0 anchor build 2>&1 | tee /tmp/apc-stack-anchor-build.log
-          if grep -E 'Stack offset of [0-9]+ exceeded max offset of 4096|Stack frame size of [0-9]+ exceeded max allowed size of 4096' /tmp/apc-stack-anchor-build.log; then
+          RUSTUP_TOOLCHAIN=nightly-2025-04-14 anchor build 2>&1 | tee /tmp/apc-stack-anchor-build.log
+          if grep -E 'Stack offset of [0-9]+ exceeded max offset of 4096|Stack frame size of [0-9]+ exceeded max allowed size of 4096|overwrites values in the frame' /tmp/apc-stack-anchor-build.log; then
             echo 'Unsafe SBF stack frame detected.'
             exit 1
           fi
@@ -111,7 +120,7 @@ jobs:
       - name: Run Anchor local-validator transactions
         working-directory: perax-contracts
         shell: bash
-        run: RUSTUP_TOOLCHAIN=1.89.0 anchor test --provider.cluster localnet
+        run: anchor test --skip-build --provider.cluster localnet
 
       - name: Commit and push validated stack-safe source
         shell: bash
@@ -119,10 +128,14 @@ jobs:
           git diff --check
           git add \
             .github/workflows/perax-contracts-ci.yml \
+            perax-contracts/Cargo.lock \
+            perax-contracts/package.json \
+            perax-contracts/package-lock.json \
+            perax-contracts/programs/perax-core/Cargo.toml \
             perax-contracts/programs/perax-core/src/contexts.rs
           git config user.name "Pera-X APC automation"
           git config user.email "actions@github.com"
-          git commit -m "Make APC instructions stack safe"
+          git commit -m "Upgrade Anchor and make account contexts stack safe"
           git push origin agent/apc-enforcement-hardening
 
       - name: Upload stack hardening diagnostics
