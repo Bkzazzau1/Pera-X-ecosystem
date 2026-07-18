@@ -1,0 +1,108 @@
+name: Synchronize APC Policy V1
+
+on:
+  push:
+    branches: [agent/apc-policy-v1]
+    paths:
+      - ".github/scripts/apply-apc-policy-v1-system.py"
+      - ".github/workflows/apply-apc-policy-v1-system.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/scripts/apply-apc-policy-v1-system.py"
+      - ".github/workflows/apply-apc-policy-v1-system.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  synchronize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/apc-policy-v1
+          fetch-depth: 0
+      - name: Apply guarded full-system synchronization
+        shell: bash
+        run: python3 .github/scripts/apply-apc-policy-v1-system.py 2>&1 | tee /tmp/apc-policy-system-transform.log
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@1.79.0
+        with:
+          components: rustfmt
+      - name: Install contract JavaScript dependencies
+        working-directory: perax-contracts
+        run: npm install
+      - name: Validate canonical policy, tokenomics and initialization gates
+        working-directory: perax-contracts
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run simulate:apc-policy-v1 2>&1 | tee /tmp/apc-policy-simulation.log
+          npm run validate:tokenomics 2>&1 | tee /tmp/apc-policy-tokenomics.log
+          npm run plan:apc 2>&1 | tee /tmp/apc-policy-plan.log
+          node scripts/initialize-apc-program.js 2>&1 | tee /tmp/apc-policy-init-dry-run.log
+          npm run typecheck 2>&1 | tee /tmp/apc-policy-contract-typescript.log
+      - name: Validate Rust exact policy and properties
+        working-directory: perax-contracts
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo +1.79.0 fmt --all
+          cargo +1.79.0 fmt --all -- --check
+          cargo +1.79.0 test --locked --all-targets 2>&1 | tee /tmp/apc-policy-rust-tests.log
+          cargo +1.79.0 check --locked --all-targets 2>&1 | tee /tmp/apc-policy-rust-check.log
+      - name: Validate market-engine policy synchronization
+        working-directory: perax-market-engine
+        shell: bash
+        run: |
+          set -o pipefail
+          npm ci
+          npm run typecheck 2>&1 | tee /tmp/apc-policy-market-typecheck.log
+          npm test 2>&1 | tee /tmp/apc-policy-market-tests.log
+      - name: Commit validated synchronized source
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          git diff --check
+          git add README.md \
+                  docs/APC_LOGIC_SPECIFICATION.md \
+                  docs/APC_VALIDATION_STATUS.md \
+                  perax-contracts/config/pex-tokenomics.json \
+                  perax-contracts/package.json \
+                  perax-contracts/scripts/validate-tokenomics.js \
+                  perax-contracts/scripts/validate-apc-policy-sync.js \
+                  perax-contracts/scripts/plan-apc-initialize.js \
+                  perax-contracts/scripts/initialize-apc-program.js \
+                  perax-contracts/programs/perax-core/src/tests.rs \
+                  perax-contracts/tests/perax-core.ts \
+                  perax-market-engine/src/policy.ts \
+                  perax-market-engine/src/types.ts \
+                  perax-market-engine/src/engine.ts \
+                  perax-market-engine/test/policy.test.ts
+          git config user.name "Pera-X policy automation"
+          git config user.email "actions@github.com"
+          git commit -m "Synchronize APC Policy Version 1"
+          git push origin agent/apc-policy-v1
+      - name: Upload synchronization diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apc-policy-v1-system-diagnostics
+          path: |
+            /tmp/apc-policy-system-transform.log
+            /tmp/apc-policy-simulation.log
+            /tmp/apc-policy-tokenomics.log
+            /tmp/apc-policy-plan.log
+            /tmp/apc-policy-init-dry-run.log
+            /tmp/apc-policy-contract-typescript.log
+            /tmp/apc-policy-rust-tests.log
+            /tmp/apc-policy-rust-check.log
+            /tmp/apc-policy-market-typecheck.log
+            /tmp/apc-policy-market-tests.log
+          if-no-files-found: warn
