@@ -8,11 +8,13 @@ PACKAGE_JSON = ROOT / "perax-contracts/package.json"
 WORKFLOW = ROOT / ".github/workflows/perax-contracts-ci.yml"
 
 
-def replace_once(path: Path, old: str, new: str) -> None:
+def replace_exact(path: Path, old: str, new: str, expected: int = 1) -> None:
     text = path.read_text()
     count = text.count(old)
-    if count != 1:
-        raise SystemExit(f"{path}: expected one match for {old!r}, found {count}")
+    if count != expected:
+        raise SystemExit(
+            f"{path}: expected {expected} matches for {old!r}, found {count}"
+        )
     path.write_text(text.replace(old, new))
 
 
@@ -40,34 +42,48 @@ print(f"boxed {boxed_count} Anchor account fields across all instruction context
 
 # Anchor 0.31 moves each init constraint into its own closure, substantially
 # reducing try_accounts stack use. 0.31.1 also fixes proc-macro IDL failures.
-replace_once(CARGO_TOML, 'anchor-lang = "0.30.1"', 'anchor-lang = "0.31.1"')
-replace_once(CARGO_TOML, 'anchor-spl = "0.30.1"', 'anchor-spl = "0.31.1"')
-replace_once(PACKAGE_JSON, '"@coral-xyz/anchor": "^0.30.1"', '"@coral-xyz/anchor": "^0.31.1"')
+replace_exact(CARGO_TOML, 'anchor-lang = "0.30.1"', 'anchor-lang = "0.31.1"')
+replace_exact(CARGO_TOML, 'anchor-spl = "0.30.1"', 'anchor-spl = "0.31.1"')
+replace_exact(PACKAGE_JSON, '"@coral-xyz/anchor": "^0.30.1"', '"@coral-xyz/anchor": "^0.31.1"')
 
 workflow = WORKFLOW.read_text()
-workflow_replacements = [
+changes = [
     (
-        "rustup toolchain install 1.89.0 --profile minimal",
+        "Install Cargo toolchain for Anchor metadata",
+        "Install Rust toolchains for Anchor and IDL generation",
+        1,
+    ),
+    (
+        "rustup toolchain install 1.85.0 --profile minimal",
         """rustup toolchain install 1.89.0 --profile minimal
           rustup toolchain install nightly-2025-04-14 --profile minimal""",
+        1,
     ),
-    ("agave-3.1.14", "agave-2.1.0"),
-    ("https://release.anza.xyz/v3.1.14/install", "https://release.anza.xyz/v2.1.0/install"),
-    ("cargo +1.79.0 install \\", "cargo +1.89.0 install \\",),
-    ("--tag v0.30.1", "--tag v0.31.1"),
+    ("agave-3.1.14", "agave-2.1.0", 2),
+    ("https://release.anza.xyz/v3.1.14/install", "https://release.anza.xyz/v2.1.0/install", 1),
+    ("cargo +1.79.0 install \\", "cargo +1.89.0 install \\", 1),
+    ("--tag v0.30.1", "--tag v0.31.1", 1),
     (
-        "RUSTUP_TOOLCHAIN=1.89.0 anchor build 2>&1 | tee /tmp/anchor-build.log",
-        "RUSTUP_TOOLCHAIN=nightly-2025-04-14 anchor build 2>&1 | tee /tmp/anchor-build.log",
+        "RUSTUP_TOOLCHAIN=1.85.0 anchor build 2>&1 | tee /tmp/anchor-build.log",
+        """RUSTUP_TOOLCHAIN=nightly-2025-04-14 anchor build 2>&1 | tee /tmp/anchor-build.log
+          if grep -E 'Stack offset of [0-9]+ exceeded max offset of 4096|Stack frame size of [0-9]+ exceeded max allowed size of 4096|overwrites values in the frame' /tmp/anchor-build.log; then
+            echo 'Unsafe SBF stack frame detected.'
+            exit 1
+          fi""",
+        1,
     ),
     (
-        "RUSTUP_TOOLCHAIN=1.89.0 anchor test --provider.cluster localnet",
+        "RUSTUP_TOOLCHAIN=1.85.0 anchor test --provider.cluster localnet",
         "anchor test --skip-build --provider.cluster localnet",
+        1,
     ),
 ]
-for old, new in workflow_replacements:
+for old, new, expected in changes:
     count = workflow.count(old)
-    if count != 1:
-        raise SystemExit(f"workflow expected one match for {old!r}, found {count}")
+    if count != expected:
+        raise SystemExit(
+            f"workflow expected {expected} matches for {old!r}, found {count}"
+        )
     workflow = workflow.replace(old, new)
 WORKFLOW.write_text(workflow)
 print("upgraded Anchor Rust/TypeScript/CLI to 0.31.1 with the recommended Agave 2.1 toolchain")
