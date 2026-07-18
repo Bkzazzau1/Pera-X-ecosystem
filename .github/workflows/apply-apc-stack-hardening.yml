@@ -54,9 +54,12 @@ jobs:
         working-directory: perax-contracts
         shell: bash
         run: |
+          set -o pipefail
           rm -f Cargo.lock
-          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +1.89.0 generate-lockfile
-          cargo +1.89.0 update -p blake3 --precise 1.5.0
+          {
+            CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +1.89.0 generate-lockfile
+            cargo +1.89.0 update -p blake3 --precise 1.5.0
+          } 2>&1 | tee /tmp/apc-stack-lockfile.log
 
       - name: Install Agave CLI and SBF tools
         shell: bash
@@ -145,6 +148,7 @@ jobs:
           name: apc-stack-hardening-diagnostics
           path: |
             /tmp/apc-stack-transform.log
+            /tmp/apc-stack-lockfile.log
             /tmp/apc-stack-rust-tests.log
             /tmp/apc-stack-rust-check.log
             /tmp/apc-stack-typescript.log
