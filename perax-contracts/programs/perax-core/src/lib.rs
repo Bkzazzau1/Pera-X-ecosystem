@@ -6,6 +6,7 @@ mod errors;
 mod events;
 mod instructions;
 mod settlement;
+mod settlement_v2;
 mod state;
 mod validation;
 
@@ -14,6 +15,7 @@ pub use contexts::*;
 pub use errors::*;
 pub use events::*;
 pub use settlement::*;
+pub use settlement_v2::*;
 pub use state::*;
 pub(crate) use validation::*;
 
@@ -221,7 +223,7 @@ pub mod perax_core {
     }
 
     pub fn initialize_settlement_policy(
-        ctx: Context<InitializeSettlementPolicy>,
+        ctx: Context<InitializeSettlementPolicyV2>,
         params: InitializeSettlementPolicyParams,
     ) -> Result<()> {
         instructions::initialize_settlement_policy(ctx, params)
@@ -242,35 +244,35 @@ pub mod perax_core {
     }
 
     pub fn plan_settlement(
-        ctx: Context<PlanSettlement>,
+        ctx: Context<PlanSettlementV2>,
         params: PlanSettlementParams,
     ) -> Result<()> {
         instructions::plan_settlement(ctx, params)
     }
 
     pub fn fund_direct_pex_settlement(
-        ctx: Context<FundDirectPexSettlement>,
+        ctx: Context<FundDirectPexSettlementV2>,
         params: FundDirectPexSettlementParams,
     ) -> Result<()> {
         instructions::fund_direct_pex_settlement(ctx, params)
     }
 
     pub fn execute_settlement_market_purchase<'info>(
-        ctx: Context<'_, '_, '_, 'info, ExecuteSettlementMarketPurchase<'info>>,
+        ctx: Context<'_, '_, '_, 'info, ExecuteSettlementMarketPurchaseV2<'info>>,
         params: ExecuteSettlementMarketPurchaseParams,
     ) -> Result<()> {
         instructions::execute_settlement_market_purchase(ctx, params)
     }
 
     pub fn execute_settlement_vault_funding(
-        ctx: Context<ExecuteSettlementVaultFunding>,
+        ctx: Context<ExecuteSettlementVaultFundingV2>,
         params: ExecuteSettlementVaultFundingParams,
     ) -> Result<()> {
         instructions::execute_settlement_vault_funding(ctx, params)
     }
 
     pub fn finalize_settlement(
-        ctx: Context<FinalizeSettlement>,
+        ctx: Context<FinalizeSettlementV2>,
         params: FinalizeSettlementParams,
     ) -> Result<()> {
         instructions::finalize_settlement(ctx, params)
