@@ -54,10 +54,18 @@ fn test_apc_params() -> InitializeApcParams {
         risk_velocity_thresholds_bps: [2_000, 5_000, 10_000],
         risk_volatility_thresholds_bps: [1_000, 2_500, 5_000],
         risk_price_impact_thresholds_bps: [100, 300, 800],
-        band_interval_bps_by_risk: [1_000, 1_500, 2_500, 4_000],
+        band_interval_bps_by_risk: [4_000, 2_500, 1_500, 1_000],
         band_release_bps_by_risk: [10_000, 8_000, 6_000, 4_000],
         cascade_reduction_bps: [10_000, 7_000, 4_500, 2_500],
         recovery_spending_cap: 1_000_000_000,
+        deferred_burn_window_cap: 1_000_000 * PEX_DECIMALS,
+        deferred_burn_window_seconds: 3_600,
+        deferred_burn_cooldown_seconds: 60,
+        maximum_recovery_purchase_bps: 2_000,
+        minimum_counterweight_reserve_bps: 5_000,
+        recovery_window_cap: 200_000_000,
+        recovery_window_seconds: 3_600,
+        recovery_cooldown_seconds: 60,
     }
 }
 
@@ -93,6 +101,14 @@ fn test_apc_config() -> ApcConfig {
         band_release_bps_by_risk: params.band_release_bps_by_risk,
         cascade_reduction_bps: params.cascade_reduction_bps,
         recovery_spending_cap: params.recovery_spending_cap,
+        deferred_burn_window_cap: params.deferred_burn_window_cap,
+        deferred_burn_window_seconds: params.deferred_burn_window_seconds,
+        deferred_burn_cooldown_seconds: params.deferred_burn_cooldown_seconds,
+        maximum_recovery_purchase_bps: params.maximum_recovery_purchase_bps,
+        minimum_counterweight_reserve_bps: params.minimum_counterweight_reserve_bps,
+        recovery_window_cap: params.recovery_window_cap,
+        recovery_window_seconds: params.recovery_window_seconds,
+        recovery_cooldown_seconds: params.recovery_cooldown_seconds,
         is_active: true,
         is_paused: false,
         bump: 254,
@@ -124,6 +140,12 @@ fn test_apc_state(config: Pubkey) -> ApcState {
         cascade_observation_id: [0u8; 32],
         cascade_band_count: 0,
         active_risk_tier: 0,
+        deferred_burn_window_started_at: 0,
+        deferred_burn_window_executed: 0,
+        last_deferred_burn_timestamp: 0,
+        recovery_window_started_at: 0,
+        recovery_window_spent: 0,
+        last_recovery_purchase_timestamp: 0,
         bump: 253,
     }
 }
@@ -308,7 +330,7 @@ fn risk_and_interval_calculation_is_deterministic() {
         config.risk_price_impact_thresholds_bps,
     );
     assert_eq!(tier, 2);
-    assert_eq!(calculate_band_interval_bps(&config, tier).unwrap(), 2_500);
+    assert_eq!(calculate_band_interval_bps(&config, tier).unwrap(), 1_500);
 }
 
 #[test]
@@ -524,4 +546,94 @@ fn market_burn_policy_remains_enforced() {
         amount_bps(PEX_TOTAL_SUPPLY, CONSERVATION_SUPPLY_THRESHOLD_BPS).unwrap();
     let conservation = market_burn_params(1_000_000 * PEX_DECIMALS, CONSERVATION_BURN_RATE_BPS, 50);
     assert!(validate_market_condition_burn(&state, &conservation, conservation_threshold).is_ok());
+}
+
+#[test]
+fn apc_policy_rejects_more_aggressive_higher_risk_settings() {
+    let state = test_state(0);
+
+    let mut widening = test_apc_params();
+    widening.band_interval_bps_by_risk = [1_000, 1_500, 2_500, 4_000];
+    assert!(validate_apc_policy(&state, &widening).is_err());
+
+    let mut increasing_release = test_apc_params();
+    increasing_release.band_release_bps_by_risk = [4_000, 6_000, 8_000, 10_000];
+    assert!(validate_apc_policy(&state, &increasing_release).is_err());
+
+    assert!(validate_apc_policy(&state, &test_apc_params()).is_ok());
+}
+
+#[test]
+fn old_band_release_requires_highest_reference_support() {
+    let config = test_apc_config();
+    let mut state = test_apc_state(config.state);
+    state.current_reference_price = 10_200;
+
+    assert!(validate_apc_reference_support(&state, 10_200).is_ok());
+    assert!(validate_apc_reference_support(&state, 5_500).is_err());
+}
+
+#[test]
+fn deferred_burn_limits_are_windowed_capped_and_cooled_down() {
+    let config = test_apc_config();
+    let core = test_state(0);
+    let mut apc = test_apc_state(config.state);
+    let amount = 100 * PEX_DECIMALS;
+
+    assert!(
+        validate_deferred_burn_limits(&config, &apc, &core, amount, PEX_TOTAL_SUPPLY, 10_000,)
+            .is_ok()
+    );
+
+    apc.deferred_burn_window_executed = config.deferred_burn_window_cap;
+    assert!(
+        validate_deferred_burn_limits(&config, &apc, &core, amount, PEX_TOTAL_SUPPLY, 10_000,)
+            .is_err()
+    );
+
+    apc.deferred_burn_window_executed = 0;
+    apc.last_deferred_burn_timestamp = 10_000;
+    assert!(validate_deferred_burn_limits(
+        &config,
+        &apc,
+        &core,
+        amount,
+        PEX_TOTAL_SUPPLY,
+        10_000 + config.deferred_burn_cooldown_seconds - 1,
+    )
+    .is_err());
+}
+
+#[test]
+fn recovery_limits_preserve_reserve_and_prevent_single_price_depletion() {
+    let config = test_apc_config();
+    let mut apc = test_apc_state(config.state);
+    apc.total_counterweight_credited = 1_000_000;
+
+    assert!(validate_recovery_purchase_limits(
+        &config, &apc, 100_000, 1_000_000, 1_000_000, 10_000,
+    )
+    .is_ok());
+    assert!(validate_recovery_purchase_limits(
+        &config, &apc, 300_000, 1_000_000, 1_000_000, 10_000,
+    )
+    .is_err());
+
+    apc.recovery_window_spent = config.recovery_window_cap - 50_000;
+    assert!(validate_recovery_purchase_limits(
+        &config, &apc, 100_000, 1_000_000, 1_000_000, 10_000,
+    )
+    .is_err());
+
+    apc.recovery_window_spent = 0;
+    apc.last_recovery_purchase_timestamp = 10_000;
+    assert!(validate_recovery_purchase_limits(
+        &config,
+        &apc,
+        100_000,
+        1_000_000,
+        1_000_000,
+        10_000 + config.recovery_cooldown_seconds - 1,
+    )
+    .is_err());
 }

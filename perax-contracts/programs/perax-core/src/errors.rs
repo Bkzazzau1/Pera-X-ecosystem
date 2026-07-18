@@ -132,6 +132,8 @@ pub enum PeraxError {
     InvalidBandInterval,
     #[msg("The effective APC price has not reached the next band trigger.")]
     ApcPriceGateNotMet,
+    #[msg("The market no longer supports the highest crossed APC reference price.")]
+    ApcReferencePriceNotSupported,
     #[msg("The APC observation has already been consumed by a release.")]
     ObservationAlreadyUsed,
     #[msg("The APC observation is stale.")]
@@ -156,10 +158,22 @@ pub enum PeraxError {
     BurnDeferredDuringPump,
     #[msg("The deferred burn cannot execute in the current APC state.")]
     DeferredBurnNotExecutable,
+    #[msg("The deferred-burn execution window cap would be exceeded.")]
+    DeferredBurnWindowCapExceeded,
+    #[msg("The deferred-burn execution cooldown is still active.")]
+    DeferredBurnCooldownActive,
     #[msg("APC recovery is not active.")]
     RecoveryNotActive,
     #[msg("The APC recovery spending cap would be exceeded.")]
     RecoveryCapExceeded,
+    #[msg("The requested recovery purchase exceeds the immutable per-purchase percentage cap.")]
+    RecoveryPurchaseCapExceeded,
+    #[msg("The recovery purchase would violate the protected Counterweight Vault reserve floor.")]
+    RecoveryReserveFloorViolated,
+    #[msg("The APC recovery spending window cap would be exceeded.")]
+    RecoveryWindowCapExceeded,
+    #[msg("The APC recovery purchase cooldown is still active.")]
+    RecoveryCooldownActive,
     #[msg("The atomic recovery swap did not settle the required quote spend and PEX receipt.")]
     InvalidRecoverySettlement,
     #[msg("The configured recovery adapter program is invalid.")]

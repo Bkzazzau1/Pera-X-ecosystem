@@ -745,7 +745,7 @@ pub struct RecordDeferredBurn<'info> {
 
 #[derive(Accounts)]
 pub struct ExecuteDeferredBurn<'info> {
-    #[account(seeds = [b"perax-state"], bump = state.bump, constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint)]
+    #[account(mut, seeds = [b"perax-state"], bump = state.bump, constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint)]
     pub state: Account<'info, PeraxState>,
     #[account(seeds = [b"apc-config", state.key().as_ref()], bump = apc_config.bump, has_one = oracle_feed @ PeraxError::Unauthorized)]
     pub apc_config: Account<'info, ApcConfig>,

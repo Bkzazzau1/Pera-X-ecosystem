@@ -1307,10 +1307,18 @@ describe("perax-core reserve vault custody", () => {
         riskVelocityThresholdsBps: [2_000, 5_000, 10_000],
         riskVolatilityThresholdsBps: [1_000, 2_500, 5_000],
         riskPriceImpactThresholdsBps: [100, 300, 800],
-        bandIntervalBpsByRisk: [1_000, 1_500, 2_500, 4_000],
+        bandIntervalBpsByRisk: [4_000, 2_500, 1_500, 1_000],
         bandReleaseBpsByRisk: [10_000, 8_000, 6_000, 4_000],
         cascadeReductionBps: [10_000, 7_000, 4_500, 2_500],
         recoverySpendingCap: new anchor.BN(1_000_000),
+        deferredBurnWindowCap: new anchor.BN(BASE_UNITS),
+        deferredBurnWindowSeconds: new anchor.BN(3_600),
+        deferredBurnCooldownSeconds: new anchor.BN(60),
+        maximumRecoveryPurchaseBps: 2_000,
+        minimumCounterweightReserveBps: 5_000,
+        recoveryWindowCap: new anchor.BN(200_000),
+        recoveryWindowSeconds: new anchor.BN(3_600),
+        recoveryCooldownSeconds: new anchor.BN(60),
       })
       .accounts({
         state,
@@ -1503,6 +1511,18 @@ describe("perax-core reserve vault custody", () => {
       return { releaseId, releaseRecord, params };
     };
 
+    const collapsedObservation = await submitObservation(50_009, 4_000);
+    await expectFailure(() =>
+      releaseFromBand(
+        50_100,
+        1,
+        firstBand,
+        collapsedObservation.observationId,
+        collapsedObservation.observation,
+        1
+      )
+    );
+
     const firstReleaseObservation = await submitObservation(50_011, 10_000);
     await releaseFromBand(
       50_101,
@@ -1590,7 +1610,7 @@ describe("perax-core reserve vault custody", () => {
     await program.methods
       .recordDeferredBurn({
         decisionId: burnDecisionId,
-        amount: new anchor.BN(BASE_UNITS),
+        amount: new anchor.BN(2 * BASE_UNITS),
         observedAt: new anchor.BN(await currentChainTime()),
       })
       .accounts({
@@ -1658,7 +1678,27 @@ describe("perax-core reserve vault custody", () => {
       })
       .signers([oracle])
       .rpc();
-    expect((await getAccount(provider.connection, deferredBurnVault)).amount).to.equal(0n);
+    expect((await getAccount(provider.connection, deferredBurnVault)).amount).to.equal(
+      BigInt(BASE_UNITS)
+    );
+    await expectFailure(() =>
+      program.methods
+        .executeDeferredBurn({ amount: new anchor.BN(BASE_UNITS) })
+        .accounts({
+          state,
+          apcConfig,
+          apcState,
+          counterweightConfig,
+          deferredBurnAuthority,
+          deferredBurnVault,
+          deferredBurnRecord,
+          tokenMint: mint,
+          oracleFeed: oracle.publicKey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([oracle])
+        .rpc()
+    );
 
     const rollbackObservation = await submitObservation(50_015, 10_000);
     const rollbackReleaseOne = uniqueId(50_401);
@@ -1768,6 +1808,49 @@ describe("perax-core reserve vault custody", () => {
         poolPexVault,
       })
       .instruction();
+    const oversizedRecoveryId = uniqueId(50_500);
+    const [oversizedRecoveryRecord] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("apc-recovery"), Buffer.from(oversizedRecoveryId)],
+      program.programId
+    );
+    await expectFailure(() =>
+      program.methods
+        .executeCounterweightPurchase({
+          recoveryId: oversizedRecoveryId,
+          observationId: recoveryPurchaseObservation.observationId,
+          maximumQuoteAmount: new anchor.BN(900_000),
+          minimumPexOut: new anchor.BN(1),
+          swapInstructionData: adapterInstruction.data,
+        })
+        .accounts({
+          state,
+          apcConfig,
+          apcState,
+          observation: recoveryPurchaseObservation.observation,
+          counterweightConfig,
+          counterweightAuthority,
+          counterweightVault,
+          recoveryVault,
+          quoteMint,
+          pexMint: mint,
+          approvedPool: recoveryPool,
+          recoveryProgram: program.programId,
+          recoveryRecord: oversizedRecoveryRecord,
+          oracleFeed: oracle.publicKey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .remainingAccounts([
+          { pubkey: quoteMint, isWritable: false, isSigner: false },
+          { pubkey: mint, isWritable: false, isSigner: false },
+          { pubkey: poolAuthority, isWritable: false, isSigner: false },
+          { pubkey: poolQuoteVault, isWritable: true, isSigner: false },
+          { pubkey: poolPexVault, isWritable: true, isSigner: false },
+        ])
+        .signers([oracle])
+        .rpc()
+    );
+
     const recoveryId = uniqueId(50_501);
     const [recoveryRecord] = anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("apc-recovery"), Buffer.from(recoveryId)],

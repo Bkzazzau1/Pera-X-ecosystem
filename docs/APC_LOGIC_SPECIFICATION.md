@@ -31,7 +31,7 @@ Any live state → Paused → exact previous state
 
 Band 1 trigger is exactly three times launch price. Every later trigger is the previous immutable trigger plus the contract-calculated interval. The effective price is the lower of spot and TWAP.
 
-Risk tier is the maximum tier reached by velocity, volatility, or estimated impact. The contract selects the interval and base release percentage from immutable arrays and applies the monotonic cascade reduction. All multiplication and division uses checked `u128` arithmetic and explicit rounding.
+Risk tier is the maximum tier reached by velocity, volatility, or estimated impact. The contract requires both the interval and release arrays to be non-increasing as risk rises, selects the response from those immutable arrays, and applies the monotonic cascade reduction. All multiplication and division uses checked `u128` arithmetic and explicit rounding.
 
 ## Observation lifecycle
 
@@ -40,7 +40,7 @@ An observation PDA is permanent. Sequence increases globally. Multi-band activat
 ## APC release transaction
 
 1. Validate APC, vault, destination, mint, pool, signer, observation, and band.
-2. Reset hourly, pump, daily, and monthly windows from `Clock::get()`.
+2. Require the effective price to support both the selected band and the highest crossed APC reference, then reset hourly, pump, daily, and monthly windows from `Clock::get()`.
 3. Calculate all caps and counterweight coverage.
 4. Transfer PEX atomically from the Correction 1 reserve PDA.
 5. Update core, APC, band, and vault accounting with checked arithmetic.
@@ -49,7 +49,7 @@ An observation PDA is permanent. Sequence increases globally. Multi-band activat
 
 ## Counterweight and recovery
 
-USDC credit follows a real SPL transfer. Recovery invokes only the immutable approved executable adapter. Before and after balances are reloaded; a recovery record is created only when USDC actually decreased and the locked PEX vault actually increased within the permitted limits.
+USDC credit follows a real SPL transfer. Recovery invokes only the immutable approved executable adapter. Before and after balances are reloaded; a recovery record is created only when USDC actually decreased and the locked PEX vault actually increased within the permitted limits. Every recovery purchase is also constrained by an immutable percentage cap, protected reserve floor, trusted-clock spending window, cooldown, and the cumulative recovery cap. Deferred burns share the global daily burn cap and additionally use an immutable execution window and cooldown.
 
 The built-in adapter is a constant-product exact-input swap with a bounded fee and minimum-output check. Its PEX pool vault is controlled by a program PDA.
 

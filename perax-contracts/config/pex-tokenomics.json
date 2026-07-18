@@ -150,6 +150,9 @@
       "minimumIntervalBps": null,
       "maximumIntervalBps": null,
       "riskTierThresholds": null,
+      "intervalBpsByRisk": null,
+      "releaseBpsByRisk": null,
+      "higherRiskMustNotIncreaseIntervalOrRelease": true,
       "intervalFormula": "contract_derived_from_risk_tier",
       "releaseCapFormula": "contract_derived_from_risk_and_cascade",
       "cascadeReductionBps": null
@@ -184,7 +187,10 @@
       "enabledDuringPumpControl": true,
       "pexEscrowRequired": true,
       "permanentDeferredBurnRecord": true,
-      "resumptionRateBps": null
+      "resumptionRateBps": null,
+      "executionWindowCapAmount": null,
+      "executionWindowSeconds": null,
+      "executionCooldownSeconds": null
     },
     "recoveryPolicy": {
       "atomicSwapRequired": true,
@@ -192,6 +198,11 @@
       "lockedRecoveryVault": true,
       "hardSpendingCapRequired": true,
       "hardSpendingCapAmount": null,
+      "maximumPurchaseBps": null,
+      "minimumReserveBps": null,
+      "windowCapAmount": null,
+      "windowSeconds": null,
+      "cooldownSeconds": null,
       "recoveredPexAutomaticallyBurned": false,
       "recoveredPexAutomaticallyRecirculated": false
     },
