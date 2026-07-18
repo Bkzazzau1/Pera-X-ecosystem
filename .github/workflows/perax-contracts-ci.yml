@@ -63,21 +63,22 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             perax-contracts/target
-          key: ${{ runner.os }}-cargo-rust-1.79.0-${{ hashFiles('perax-contracts/**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-rust-1.79.0-agave-3.1.14-${{ hashFiles('perax-contracts/**/Cargo.lock') }}
           restore-keys: |
+            ${{ runner.os }}-cargo-rust-1.79.0-agave-3.1.14-
             ${{ runner.os }}-cargo-rust-1.79.0-
 
-      - name: Install Solana CLI
+      - name: Install Agave CLI and SBF tools
         shell: bash
         run: |
-          sh -c "$(curl -sSfL https://release.anza.xyz/v1.18.26/install)"
+          sh -c "$(curl -sSfL https://release.anza.xyz/v3.1.14/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 
       - name: Install Anchor CLI
         shell: bash
         run: |
           cargo +1.79.0 install \
-            --git https://github.com/coral-xyz/anchor \
+            --git https://github.com/solana-foundation/anchor \
             --tag v0.30.1 \
             anchor-cli \
             --locked
