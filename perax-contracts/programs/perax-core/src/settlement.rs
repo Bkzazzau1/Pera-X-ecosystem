@@ -1,4 +1,5 @@
-use crate::{PeraxError, PeraxState};
+pub use crate::PeraxError as SettlementError;
+use crate::PeraxState;
 use anchor_lang::prelude::*;
 
 pub const SETTLEMENT_FUNDING_PEX: u8 = 1;
@@ -240,40 +241,6 @@ pub struct UpdateProductSettlementPolicy<'info> {
         constraint = product_policy.product_id == params.product_id @ SettlementError::InvalidPolicy
     )]
     pub product_policy: Box<Account<'info, ProductSettlementPolicy>>,
-}
-
-#[error_code]
-pub enum SettlementError {
-    #[msg("The settlement policy is invalid.")]
-    InvalidPolicy,
-    #[msg("The settlement policy is inactive.")]
-    PolicyInactive,
-    #[msg("The product settlement policy is inactive.")]
-    ProductInactive,
-    #[msg("The selected funding method is not accepted for this product.")]
-    FundingMethodNotAccepted,
-    #[msg("The requested product quantity is invalid or exceeds policy.")]
-    InvalidQuantity,
-    #[msg("Market-funded settlement is disabled during APC pump protection.")]
-    MarketActionPaused,
-    #[msg("The settlement is not in the required state for this action.")]
-    InvalidSettlementStatus,
-    #[msg("The settlement source does not match the contract-derived market mode.")]
-    InvalidSettlementMode,
-    #[msg("The settlement destination is invalid.")]
-    InvalidSettlementDestination,
-    #[msg("The approved atomic market adapter or pool is invalid.")]
-    InvalidMarketAdapter,
-    #[msg("The market adapter did not spend and receive the required assets atomically.")]
-    InvalidMarketSettlement,
-    #[msg("The policy vault cannot satisfy the contract-derived settlement amount.")]
-    PolicyVaultUnavailable,
-    #[msg("A settlement daily cap would be exceeded.")]
-    SettlementDailyCapExceeded,
-    #[msg("The settlement has not received enough PEX to finalize.")]
-    SettlementNotFunded,
-    #[msg("Settlement arithmetic overflowed or produced an invalid amount.")]
-    SettlementArithmeticError,
 }
 
 #[event]
