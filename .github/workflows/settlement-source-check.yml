@@ -1,0 +1,59 @@
+name: Settlement Source Check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "perax-contracts/programs/perax-core/src/settlement.rs"
+      - "perax-contracts/programs/perax-core/src/instructions/settlement.rs"
+      - "perax-contracts/programs/perax-core/src/settlement_tests.rs"
+      - "perax-contracts/programs/perax-core/src/instructions/mod.rs"
+      - "perax-contracts/programs/perax-core/src/lib.rs"
+      - ".github/workflows/settlement-source-check.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  source-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@1.79.0
+        with:
+          components: rustfmt
+
+      - name: Run settlement Rust checks
+        working-directory: perax-contracts
+        shell: bash
+        run: |
+          set +e
+          cargo +1.79.0 fmt --all -- --check > /tmp/settlement-check.log 2>&1
+          fmt_status=$?
+          cargo +1.79.0 test --locked --manifest-path programs/perax-core/Cargo.toml >> /tmp/settlement-check.log 2>&1
+          test_status=$?
+          cargo +1.79.0 check --locked --all-targets >> /tmp/settlement-check.log 2>&1
+          check_status=$?
+          overall=0
+          if [ "$fmt_status" -ne 0 ] || [ "$test_status" -ne 0 ] || [ "$check_status" -ne 0 ]; then
+            overall=1
+          fi
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "fmt_status=$fmt_status"
+            echo "test_status=$test_status"
+            echo "check_status=$check_status"
+            echo "overall=$overall"
+            echo "--- log tail ---"
+            tail -n 240 /tmp/settlement-check.log
+          } > .github/settlement-source-check.txt
+          git config user.name "Pera-X settlement CI"
+          git config user.email "actions@github.com"
+          git add .github/settlement-source-check.txt
+          git commit -m "ci: report settlement source check [skip ci]" || true
+          git push origin HEAD:main
+          exit "$overall"
