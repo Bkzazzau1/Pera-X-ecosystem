@@ -1,15 +1,17 @@
-name: Validate Anchor 0.31 Upgrade
+name: Validate Anchor 0.32 Upgrade
 
 on:
   push:
     branches: [agent/apc-policy-v1]
     paths:
       - ".github/scripts/apply-anchor-031-validation.py"
+      - ".github/scripts/run-anchor-032-validation.py"
       - ".github/workflows/apply-anchor-031-validation.yml"
   pull_request:
     branches: [main]
     paths:
       - ".github/scripts/apply-anchor-031-validation.py"
+      - ".github/scripts/run-anchor-032-validation.py"
       - ".github/workflows/apply-anchor-031-validation.yml"
   workflow_dispatch:
 
@@ -27,7 +29,7 @@ jobs:
           fetch-depth: 0
       - name: Apply guarded Anchor upgrade
         shell: bash
-        run: python3 .github/scripts/apply-anchor-031-validation.py 2>&1 | tee /tmp/anchor-upgrade-transform.log
+        run: python3 .github/scripts/run-anchor-032-validation.py 2>&1 | tee /tmp/anchor-upgrade-transform.log
       - name: Install Rust 1.85
         uses: dtolnay/rust-toolchain@1.85.0
         with:
@@ -48,18 +50,18 @@ jobs:
           CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +1.85.0 generate-lockfile 2>&1 | tee /tmp/anchor-upgrade-lock.log
           cargo +1.85.0 update -p blake3 --precise 1.5.5
           npm install
-      - name: Install Agave 2.1.0
+      - name: Install Agave 2.3.0
         shell: bash
         run: |
-          sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.0/install)"
+          sh -c "$(curl -sSfL https://release.anza.xyz/v2.3.0/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
-      - name: Install Anchor CLI 0.31.1
+      - name: Install Anchor CLI 0.32.1
         shell: bash
         run: |
           set -o pipefail
           cargo +1.89.0 install \
             --git https://github.com/solana-foundation/anchor \
-            --tag v0.31.1 \
+            --tag v0.32.1 \
             anchor-cli \
             --locked \
             --force 2>&1 | tee /tmp/anchor-upgrade-cli-install.log
@@ -118,8 +120,8 @@ jobs:
           cat > docs/APC_POLICY_V1_BUILD_VALIDATION.md <<EOF
           # APC Policy V1 Build Validation
 
-          - Anchor: 0.31.1
-          - Agave: 2.1.0
+          - Anchor: 0.32.1
+          - Agave: 2.3.0
           - Rust host: 1.85.0
           - Program size: ${program_bytes} bytes
           - IDL size: ${idl_bytes} bytes
@@ -147,13 +149,13 @@ jobs:
                   docs/APC_POLICY_V1_BUILD_VALIDATION.md
           git config user.name "Pera-X validation automation"
           git config user.email "actions@github.com"
-          git commit -m "Upgrade APC validation to Anchor 0.31.1"
+          git commit -m "Upgrade APC validation to Anchor 0.32.1"
           git push origin agent/apc-policy-v1
       - name: Upload upgrade validation evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: anchor-031-apc-policy-v1-evidence
+          name: anchor-032-apc-policy-v1-evidence
           path: |
             /tmp/anchor-upgrade-transform.log
             /tmp/anchor-upgrade-lock.log
