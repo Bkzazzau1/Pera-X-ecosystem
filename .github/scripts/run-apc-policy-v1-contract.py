@@ -14,8 +14,18 @@ text = text.replace(
 )
 text += r'''
 
-# Update existing recovery-limit tests for the new support-price arguments.
+# Update existing tests for the exact Policy V1 classifications and support-price arguments.
 tests = SRC / "tests.rs"
+replace_once(
+    tests,
+    "    assert_eq!(tier, 2);\n    assert_eq!(calculate_band_interval_bps(&config, tier).unwrap(), 1_500);\n",
+    "    assert_eq!(tier, 3);\n    assert_eq!(calculate_band_interval_bps(&config, tier).unwrap(), 750);\n",
+)
+replace_once(
+    tests,
+    "    let mut apc = test_apc_state(config.state);\n    let amount = 100 * PEX_DECIMALS;\n",
+    "    let mut apc = test_apc_state(config.state);\n    apc.deferred_burn_amount = 1_000 * PEX_DECIMALS;\n    let amount = 100 * PEX_DECIMALS;\n",
+)
 for old, new in [
     (
         "        &config, &apc, 100_000, 1_000_000, 1_000_000, 10_000,\n",
