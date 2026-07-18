@@ -6,6 +6,11 @@ on:
     paths:
       - ".github/scripts/select-apc-policy-v1.py"
       - ".github/workflows/select-apc-policy-v1.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/scripts/select-apc-policy-v1.py"
+      - ".github/workflows/select-apc-policy-v1.yml"
   workflow_dispatch:
 
 permissions:
@@ -29,6 +34,7 @@ jobs:
       - name: Prove selected policy
         run: node perax-contracts/scripts/simulate-apc-policy-v1.js --write-report
       - name: Publish verified simulator and report
+        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           git diff --check
