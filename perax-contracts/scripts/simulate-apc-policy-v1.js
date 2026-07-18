@@ -176,7 +176,7 @@ function candidateGrid() {
     for (const bandReleaseBpsByRisk of releaseProfiles)
       for (const cascadeReductionBps of cascadeProfiles)
         for (const baseBandReleaseCapPex of ['1500000', '2000000', '2500000'])
-          for (const hourlyReleaseCapPex of ['2000000', '3000000'])
+          for (const hourlyReleaseCapPex of ['2000000', '2500000', '3000000'])
             for (const pumpWindowReleaseCapPex of ['4000000', '6000000'])
               for (const minimumCounterweightCoverageBps of [4000, 5000, 6000])
                 for (const counterweightVault of [6000, 7000, 8000]) {
@@ -205,9 +205,9 @@ function governanceScore(candidate, result) {
   const normalThree = totalBandBudget(candidate, 0, 3);
   const extremeTen = totalBandBudget(candidate, 3, 10);
   const releaseBudgetPenalty = Math.abs(normalOne - 2_000_000) / 2_000_000
-    + Math.abs(normalThree - 3_000_000) / 3_000_000
+    + Math.abs(normalThree - 2_500_000) / 2_500_000
     + Math.abs(extremeTen - 2_000_000) / 2_000_000;
-  const windowPenalty = Math.abs(Number(candidate.hourlyReleaseCapPex) - 3_000_000) / 3_000_000
+  const windowPenalty = Math.abs(Number(candidate.hourlyReleaseCapPex) - 2_500_000) / 2_500_000
     + Math.abs(Number(candidate.pumpWindowReleaseCapPex) - 6_000_000) / 6_000_000;
   const counterweightPenalty = Math.abs(candidate.minimumCounterweightCoverageBps - 5000) / 5000
     + Math.abs(candidate.proceedsAllocationBps.counterweightVault - 7000) / 7000;
@@ -236,7 +236,7 @@ for (const candidate of candidateGrid()) {
     if (result.maximumAddedImpactBps > policyDocument.approvalBasis.requiredMaximumApcAddedPriceImpactBps) continue;
     if (result.minimumCoverageRatio < 1) continue;
     if (totalBandBudget(candidate, 0, 1) < 1_500_000) continue;
-    if (totalBandBudget(candidate, 0, 3) < 3_000_000) continue;
+    if (totalBandBudget(candidate, 0, 3) < 2_500_000) continue;
     if (totalBandBudget(candidate, 3, 10) > 2_000_000) continue;
     ranked.push({ candidate, result, score: governanceScore(candidate, result) });
   } catch {
