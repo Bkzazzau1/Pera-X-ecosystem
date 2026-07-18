@@ -1,5 +1,5 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
 import { SettlementCoordinator } from "./settlement.js";
 import type {
@@ -42,16 +42,19 @@ export function createSettlementExecutorServer(
   return createServer(async (request, response) => {
     try {
       if (request.method === "GET" && request.url === "/healthz") {
-        return sendJson(response, 200, {
+        sendJson(response, 200, {
           ok: true,
           service: "perax-settlement-executor",
         });
+        return;
       }
       if (request.method !== "POST" || request.url !== "/execute/settlement") {
-        return sendJson(response, 404, { error: "not found" });
+        sendJson(response, 404, { error: "not found" });
+        return;
       }
       if (!authorized(request, token)) {
-        return sendJson(response, 401, { error: "unauthorized" });
+        sendJson(response, 401, { error: "unauthorized" });
+        return;
       }
 
       const payload = validateRequest(await readJsonBody(request));
@@ -87,7 +90,7 @@ export function createSettlementExecutorServer(
         settlementRecordAddress: settlement.settlementRecordAddress,
         transactionSignature: settlement.transactionSignature,
       };
-      return sendJson(response, 200, result);
+      sendJson(response, 200, result);
     } catch (error) {
       const terminalFailure = dependencies.isTerminalError?.(error) ?? false;
       const result: SettlementExecutorResponse = {
@@ -95,7 +98,7 @@ export function createSettlementExecutorServer(
         terminalFailure,
         error: errorMessage(error),
       };
-      return sendJson(response, terminalFailure ? 422 : 503, result);
+      sendJson(response, terminalFailure ? 422 : 503, result);
     }
   });
 }
@@ -133,12 +136,7 @@ function validateRequest(value: unknown): SettlementExecutorRequest {
     throw new Error("fundingMethod is invalid");
   }
 
-  const quantity = value.quantity;
-  if (!Number.isSafeInteger(quantity) || quantity <= 0) {
-    throw new Error("quantity must be a positive safe integer");
-  }
-
-  const payload: SettlementExecutorRequest = {
+  return {
     solanaRpcUrl: requiredString(value.solanaRpcUrl, "solanaRpcUrl"),
     programId: requiredString(value.programId, "programId"),
     statePda: requiredString(value.statePda, "statePda"),
@@ -147,7 +145,7 @@ function validateRequest(value: unknown): SettlementExecutorRequest {
     settlementIdHex: requiredHex(value.settlementIdHex, "settlementIdHex"),
     productIdHex: requiredHex(value.productIdHex, "productIdHex"),
     fundingMethod,
-    quantity,
+    quantity: positiveSafeInteger(value.quantity, "quantity"),
     beneficiaryWallet: requiredString(
       value.beneficiaryWallet,
       "beneficiaryWallet",
@@ -155,7 +153,6 @@ function validateRequest(value: unknown): SettlementExecutorRequest {
     previousStatus: requiredString(value.previousStatus, "previousStatus"),
     attempt: nonNegativeInteger(value.attempt, "attempt"),
   };
-  return payload;
 }
 
 function authorized(request: IncomingMessage, expectedToken: string): boolean {
@@ -216,11 +213,18 @@ function requiredHex(value: unknown, label: string): string {
   return normalized;
 }
 
+function positiveSafeInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${label} must be a positive safe integer`);
+  }
+  return value;
+}
+
 function nonNegativeInteger(value: unknown, label: string): number {
-  if (!Number.isSafeInteger(value) || Number(value) < 0) {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
     throw new Error(`${label} must be a non-negative safe integer`);
   }
-  return Number(value);
+  return value;
 }
 
 function hexTo32Bytes(value: string, label: string): Uint8Array {
