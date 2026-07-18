@@ -7,6 +7,12 @@ on:
       - "perax-contracts/config/apc-policy-v1.json"
       - "perax-contracts/scripts/simulate-apc-policy-v1.js"
       - ".github/workflows/validate-apc-policy-v1.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "perax-contracts/config/apc-policy-v1.json"
+      - "perax-contracts/scripts/simulate-apc-policy-v1.js"
+      - ".github/workflows/validate-apc-policy-v1.yml"
   workflow_dispatch:
 
 permissions:
@@ -28,6 +34,7 @@ jobs:
       - name: Run deterministic and adversarial simulations
         run: node perax-contracts/scripts/simulate-apc-policy-v1.js --write-report
       - name: Commit generated simulation report
+        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           git diff --check
