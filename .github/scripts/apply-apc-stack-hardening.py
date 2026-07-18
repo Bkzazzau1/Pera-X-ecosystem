@@ -3,96 +3,71 @@ import re
 
 ROOT = Path.cwd()
 CONTEXTS = ROOT / "perax-contracts/programs/perax-core/src/contexts.rs"
+CARGO_TOML = ROOT / "perax-contracts/programs/perax-core/Cargo.toml"
+PACKAGE_JSON = ROOT / "perax-contracts/package.json"
 WORKFLOW = ROOT / ".github/workflows/perax-contracts-ci.yml"
 
-APC_CONTEXTS = [
-    "InitializeRecoveryPool",
-    "InitializeApc",
-    "SubmitApcObservation",
-    "ActivateNextApcBand",
-    "ExecuteApcRelease",
-    "DepositCounterweightProceeds",
-    "RecordDeferredBurn",
-    "ExecuteDeferredBurn",
-    "ConfirmApcAbsorption",
-    "EnterApcRecovery",
-    "ExecuteCounterweightPurchase",
-    "RecoverySwapAdapter",
-    "PauseApc",
-]
+
+def replace_once(path: Path, old: str, new: str) -> None:
+    text = path.read_text()
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f"{path}: expected one match for {old!r}, found {count}")
+    path.write_text(text.replace(old, new))
 
 
-def box_context_accounts(text: str, struct_name: str) -> tuple[str, int]:
-    start_marker = f"pub struct {struct_name}<'info> {{"
-    start = text.find(start_marker)
-    if start == -1:
-        raise SystemExit(f"missing Anchor context {struct_name}")
-
-    body_start = start + len(start_marker)
-    end = text.find("\n}\n", body_start)
-    if end == -1:
-        raise SystemExit(f"unterminated Anchor context {struct_name}")
-
-    block = text[start:end + 3]
-    if "Box<Account<'info," in block:
-        raise SystemExit(f"{struct_name} already contains boxed accounts")
-
-    pattern = re.compile(
-        r"(?P<prefix>\n\s*pub\s+[A-Za-z_][A-Za-z0-9_]*:\s*)"
-        r"Account<'info,\s*(?P<kind>[A-Za-z_][A-Za-z0-9_:]*)>(?P<suffix>,)"
-    )
-    boxed, count = pattern.subn(
-        lambda match: (
-            f"{match.group('prefix')}Box<Account<'info, {match.group('kind')}>>"
-            f"{match.group('suffix')}"
-        ),
-        block,
-    )
-    if count == 0:
-        raise SystemExit(f"{struct_name} had no Account fields to box")
-
-    return text[:start] + boxed + text[end + 3:], count
-
-
+# Box every Anchor Account wrapper in the context module. This reduces account
+# deserialization stack usage without changing addresses, constraints, or IDL
+# account ordering.
 contexts = CONTEXTS.read_text()
-total = 0
-for context in APC_CONTEXTS:
-    contexts, count = box_context_accounts(contexts, context)
-    total += count
-    print(f"boxed {count:2d} account fields in {context}")
-
-if total < 45:
-    raise SystemExit(f"unexpectedly low boxed-account count: {total}")
+if "Box<Account<'info," in contexts:
+    raise SystemExit("contexts.rs already contains boxed accounts")
+pattern = re.compile(
+    r"(?P<prefix>\bpub\s+[A-Za-z_][A-Za-z0-9_]*:\s*)"
+    r"Account<'info,\s*(?P<kind>[A-Za-z_][A-Za-z0-9_:]*)>(?P<suffix>,)"
+)
+contexts, boxed_count = pattern.subn(
+    lambda match: (
+        f"{match.group('prefix')}Box<Account<'info, {match.group('kind')}>>"
+        f"{match.group('suffix')}"
+    ),
+    contexts,
+)
+if boxed_count < 120:
+    raise SystemExit(f"unexpectedly low global boxed-account count: {boxed_count}")
 CONTEXTS.write_text(contexts)
-print(f"boxed {total} APC account fields in total")
+print(f"boxed {boxed_count} Anchor account fields across all instruction contexts")
+
+# Anchor 0.31 moves each init constraint into its own closure, substantially
+# reducing try_accounts stack use. 0.31.1 also fixes proc-macro IDL failures.
+replace_once(CARGO_TOML, 'anchor-lang = "0.30.1"', 'anchor-lang = "0.31.1"')
+replace_once(CARGO_TOML, 'anchor-spl = "0.30.1"', 'anchor-spl = "0.31.1"')
+replace_once(PACKAGE_JSON, '"@coral-xyz/anchor": "^0.30.1"', '"@coral-xyz/anchor": "^0.31.1"')
 
 workflow = WORKFLOW.read_text()
-replacements = [
+workflow_replacements = [
     (
-        "Install Cargo toolchain for Anchor metadata",
-        "Install Rust toolchain for Anchor and IDL generation",
-    ),
-    (
-        "rustup toolchain install 1.85.0 --profile minimal",
         "rustup toolchain install 1.89.0 --profile minimal",
+        """rustup toolchain install 1.89.0 --profile minimal
+          rustup toolchain install nightly-2025-04-14 --profile minimal""",
+    ),
+    ("agave-3.1.14", "agave-2.1.0"),
+    ("https://release.anza.xyz/v3.1.14/install", "https://release.anza.xyz/v2.1.0/install"),
+    ("cargo +1.79.0 install \\", "cargo +1.89.0 install \\",),
+    ("--tag v0.30.1", "--tag v0.31.1"),
+    (
+        "RUSTUP_TOOLCHAIN=1.89.0 anchor build 2>&1 | tee /tmp/anchor-build.log",
+        "RUSTUP_TOOLCHAIN=nightly-2025-04-14 anchor build 2>&1 | tee /tmp/anchor-build.log",
     ),
     (
-        "RUSTUP_TOOLCHAIN=1.85.0 anchor build 2>&1 | tee /tmp/anchor-build.log",
-        """RUSTUP_TOOLCHAIN=1.89.0 anchor build 2>&1 | tee /tmp/anchor-build.log
-          if grep -E 'Stack offset of [0-9]+ exceeded max offset of 4096|Stack frame size of [0-9]+ exceeded max allowed size of 4096' /tmp/anchor-build.log; then
-            echo 'Unsafe SBF stack frame detected.'
-            exit 1
-          fi""",
-    ),
-    (
-        "RUSTUP_TOOLCHAIN=1.85.0 anchor test --provider.cluster localnet",
         "RUSTUP_TOOLCHAIN=1.89.0 anchor test --provider.cluster localnet",
+        "anchor test --skip-build --provider.cluster localnet",
     ),
 ]
-for old, new in replacements:
+for old, new in workflow_replacements:
     count = workflow.count(old)
     if count != 1:
         raise SystemExit(f"workflow expected one match for {old!r}, found {count}")
     workflow = workflow.replace(old, new)
 WORKFLOW.write_text(workflow)
-print("aligned Anchor host tooling to Rust 1.89 and enabled stack-frame enforcement")
+print("upgraded Anchor Rust/TypeScript/CLI to 0.31.1 with the recommended Agave 2.1 toolchain")
