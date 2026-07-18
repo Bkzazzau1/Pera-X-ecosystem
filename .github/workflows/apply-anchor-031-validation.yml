@@ -32,6 +32,9 @@ jobs:
         uses: dtolnay/rust-toolchain@1.85.0
         with:
           components: rustfmt
+      - name: Install Rust 1.89 for Anchor CLI compilation
+        shell: bash
+        run: rustup toolchain install 1.89.0 --profile minimal
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
@@ -42,8 +45,8 @@ jobs:
           set -o pipefail
           cd perax-contracts
           rm -f Cargo.lock
-          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo generate-lockfile 2>&1 | tee /tmp/anchor-upgrade-lock.log
-          cargo update -p blake3 --precise 1.5.5
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +1.85.0 generate-lockfile 2>&1 | tee /tmp/anchor-upgrade-lock.log
+          cargo +1.85.0 update -p blake3 --precise 1.5.5
           npm install
       - name: Install Agave 2.1.0
         shell: bash
@@ -53,11 +56,13 @@ jobs:
       - name: Install Anchor CLI 0.31.1
         shell: bash
         run: |
-          cargo install --git https://github.com/solana-foundation/anchor avm --locked --force
-          export PATH="$HOME/.avm/bin:$PATH"
-          avm install 0.31.1
-          avm use 0.31.1
-          echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
+          set -o pipefail
+          cargo +1.89.0 install \
+            --git https://github.com/solana-foundation/anchor \
+            --tag v0.31.1 \
+            anchor-cli \
+            --locked \
+            --force 2>&1 | tee /tmp/anchor-upgrade-cli-install.log
           anchor --version
       - name: Create ephemeral local-validator wallet
         working-directory: perax-contracts
@@ -72,10 +77,10 @@ jobs:
           npm run simulate:apc-policy-v1
           npm run validate:tokenomics
           npm run typecheck
-          cargo fmt --all
-          cargo fmt --all -- --check
-          cargo test --locked --all-targets 2>&1 | tee /tmp/anchor-upgrade-rust-tests.log
-          cargo check --locked --all-targets 2>&1 | tee /tmp/anchor-upgrade-rust-check.log
+          cargo +1.85.0 fmt --all
+          cargo +1.85.0 fmt --all -- --check
+          cargo +1.85.0 test --locked --all-targets 2>&1 | tee /tmp/anchor-upgrade-rust-tests.log
+          cargo +1.85.0 check --locked --all-targets 2>&1 | tee /tmp/anchor-upgrade-rust-check.log
           cd ../perax-market-engine
           npm ci
           npm run typecheck
@@ -85,7 +90,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          anchor build 2>&1 | tee /tmp/anchor-upgrade-build.log
+          RUSTUP_TOOLCHAIN=1.85.0 anchor build 2>&1 | tee /tmp/anchor-upgrade-build.log
           if grep -E 'Stack offset of [0-9]+ exceeded max offset of 4096|Stack frame size of [0-9]+ exceeded max allowed size of 4096|overwrites values in the frame' /tmp/anchor-upgrade-build.log; then
             echo 'Unsafe SBF stack frame detected.'
             exit 1
@@ -95,16 +100,16 @@ jobs:
         shell: bash
         run: |
           cp target/idl/perax_core.json /tmp/perax_core.first.json
-          anchor build >/tmp/anchor-upgrade-build-second.log 2>&1
+          RUSTUP_TOOLCHAIN=1.85.0 anchor build >/tmp/anchor-upgrade-build-second.log 2>&1
           cmp /tmp/perax_core.first.json target/idl/perax_core.json
           npm run check:build-sizes
-          cargo test --locked apc_account_size_report_and_limits -- --nocapture 2>&1 | tee /tmp/anchor-upgrade-account-sizes.log
+          cargo +1.85.0 test --locked apc_account_size_report_and_limits -- --nocapture 2>&1 | tee /tmp/anchor-upgrade-account-sizes.log
           mkdir -p idl
           cp target/idl/perax_core.json idl/perax_core.json
       - name: Run local-validator transaction suite
         working-directory: perax-contracts
         shell: bash
-        run: anchor test --skip-build --provider.cluster localnet 2>&1 | tee /tmp/anchor-upgrade-local-validator.log
+        run: RUSTUP_TOOLCHAIN=1.85.0 anchor test --skip-build --provider.cluster localnet 2>&1 | tee /tmp/anchor-upgrade-local-validator.log
       - name: Write validation report
         shell: bash
         run: |
@@ -152,6 +157,7 @@ jobs:
           path: |
             /tmp/anchor-upgrade-transform.log
             /tmp/anchor-upgrade-lock.log
+            /tmp/anchor-upgrade-cli-install.log
             /tmp/anchor-upgrade-rust-tests.log
             /tmp/anchor-upgrade-rust-check.log
             /tmp/anchor-upgrade-build.log
