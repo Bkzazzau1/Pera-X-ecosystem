@@ -24,6 +24,9 @@ const handlers = read("programs/perax-core/src/instructions/settlement_v2.rs");
 const errors = read("programs/perax-core/src/errors.rs");
 const marketTypes = read("../perax-market-engine/src/types.ts");
 const coordinator = read("../perax-market-engine/src/settlement.ts");
+const executor = read("../perax-market-engine/src/executor.ts");
+const idlGate = read("../perax-market-engine/src/idl.ts");
+const marketIndex = read("../perax-market-engine/src/index.ts");
 const legacyHandler = path.join(
   root,
   "programs/perax-core/src/instructions/settlement.rs",
@@ -113,6 +116,9 @@ assertContains(errors, "InvalidMarketSettlement", "errors.rs");
 assertContains(errors, "SettlementNotFunded", "errors.rs");
 
 assertContains(marketTypes, "SettlementProgramClient", "market-engine types");
+assertContains(marketTypes, "SettlementObservationProvider", "market-engine types");
+assertContains(marketTypes, "SettlementExecutorRequest", "market-engine types");
+assertContains(marketTypes, "settlementRecordAddress?: string", "market-engine types");
 assertContains(
   coordinator,
   "switch (settlement.marketMode)",
@@ -125,5 +131,19 @@ assertContains(
 );
 assertNotContains(coordinator, "requestedMarketMode", "market-engine coordinator");
 assertNotContains(coordinator, "overrideMarketMode", "market-engine coordinator");
+
+assertContains(executor, "timingSafeEqual", "settlement executor");
+assertContains(executor, "getFreshObservationId", "settlement executor");
+assertContains(executor, "positiveSafeInteger", "settlement executor");
+assertContains(executor, "settlementRecordAddress", "settlement executor");
+assertContains(executor, "transactionSignature", "settlement executor");
+assertNotContains(executor, "requestedMarketMode", "settlement executor");
+assertNotContains(executor, "overrideMarketMode", "settlement executor");
+
+assertContains(idlGate, "assertSettlementIdlCompatible", "settlement IDL gate");
+assertContains(idlGate, "settlementCustody", "settlement IDL gate");
+assertContains(idlGate, "does not match configured program", "settlement IDL gate");
+assertContains(marketIndex, 'export * from "./executor.js";', "market-engine index");
+assertContains(marketIndex, 'export * from "./idl.js";', "market-engine index");
 
 console.log("Settlement source guards passed.");
