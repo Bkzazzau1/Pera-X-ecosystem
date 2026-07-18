@@ -3,7 +3,7 @@
   "policyVersion": 1,
   "status": "approved",
   "policyHashAlgorithm": "sha256-canonical-parameters-json",
-  "policyHashSha256": "79d92d2c397dd7dde4e873c081f21c3e7e7797d0a0a4306b77645f5420c9310a",
+  "policyHashSha256": "17f93bacb0cfa5346a466258117908068f1f0cd67054f8b61c7d40818dfe84bb",
   "approvalBasis": {
     "simulationSeed": 20260718,
     "launchPair": "PEX/USDC",
@@ -40,7 +40,7 @@
     "minimumQuoteLiquidityUsd": "13680",
     "minimumVolumeUsd": "6840",
     "minimumBuyPressureBps": 5500,
-    "hourlyReleaseCapPex": "3000000",
+    "hourlyReleaseCapPex": "2500000",
     "pumpWindowReleaseCapPex": "6000000",
     "pumpWindowSeconds": 21600,
     "minimumCounterweightCoverageBps": 5000,
