@@ -105,7 +105,18 @@ jobs:
           node scripts/check-anchor-deploy-readiness.js
 
       - name: Build Anchor program
-        run: anchor build
+        shell: bash
+        run: |
+          set -o pipefail
+          anchor build 2>&1 | tee /tmp/anchor-build.log
+
+      - name: Upload Anchor build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anchor-build-diagnostics
+          path: /tmp/anchor-build.log
+          if-no-files-found: warn
 
       - name: Run Rust unit tests
         run: cargo test --manifest-path programs/perax-core/Cargo.toml
