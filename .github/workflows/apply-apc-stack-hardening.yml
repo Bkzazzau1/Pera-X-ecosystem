@@ -56,10 +56,8 @@ jobs:
         run: |
           set -o pipefail
           rm -f Cargo.lock
-          {
-            CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +1.89.0 generate-lockfile
-            cargo +1.89.0 update -p blake3 --precise 1.5.0
-          } 2>&1 | tee /tmp/apc-stack-lockfile.log
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback \
+            cargo +1.89.0 generate-lockfile 2>&1 | tee /tmp/apc-stack-lockfile.log
 
       - name: Install Agave CLI and SBF tools
         shell: bash
