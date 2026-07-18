@@ -19,7 +19,12 @@ old_install = '''      - name: Install Anchor CLI 0.32.1
           ln -sf "$HOME/.avm/bin/anchor-0.32.1" "$HOME/.local/bin/anchor"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 '''
-new_install = '''      - name: Install Rust 1.89 for Anchor CLI compilation
+new_install = '''      - name: Install Anchor native build dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev libudev-dev build-essential
+      - name: Install Rust 1.89 for Anchor CLI compilation
         shell: bash
         run: rustup toolchain install 1.89.0 --profile minimal
       - name: Install Anchor CLI 0.32.1
@@ -43,6 +48,7 @@ for required in [
     'solana_version = "2.3.0"',
     'https://release.anza.xyz/v2.3.0/install',
     '--tag v0.32.1',
+    'libudev-dev',
 ]:
     if required not in text:
         raise SystemExit(f'missing transformed requirement: {required}')
