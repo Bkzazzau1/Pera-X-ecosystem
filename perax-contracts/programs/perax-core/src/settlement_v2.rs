@@ -3,8 +3,7 @@ use crate::{
     ExecuteSettlementVaultFundingParams, FinalizeSettlementParams, FundDirectPexSettlementParams,
     InitializeSettlementPolicyParams, PeraxError, PeraxState, PlanSettlementParams,
     ProductSettlementPolicy, ReserveVaultConfig, SettlementError, SettlementPolicy,
-    SettlementRecord, UpdateProductSettlementPolicyParams, VaultClass, APC_QUOTE_DECIMALS,
-    PEX_MINT_DECIMALS,
+    SettlementRecord, VaultClass, APC_QUOTE_DECIMALS, PEX_MINT_DECIMALS,
 };
 use anchor_lang::prelude::*;
 use anchor_spl::{
@@ -248,8 +247,8 @@ pub struct ExecuteSettlementMarketPurchaseV2<'info> {
     pub quote_mint: Box<Account<'info, Mint>>,
     #[account(address = settlement_policy.pex_mint @ PeraxError::InvalidTokenMint)]
     pub pex_mint: Box<Account<'info, Mint>>,
-    /// CHECK: Immutable approved pool, passed to the atomic adapter.
-    #[account(address = settlement_policy.approved_market_pool @ SettlementError::InvalidMarketAdapter)]
+    /// CHECK: Immutable approved pool, passed writable to the atomic adapter.
+    #[account(mut, address = settlement_policy.approved_market_pool @ SettlementError::InvalidMarketAdapter)]
     pub approved_market_pool: UncheckedAccount<'info>,
     /// CHECK: Immutable executable adapter; token deltas are checked after CPI.
     #[account(address = settlement_policy.approved_market_program @ SettlementError::InvalidMarketAdapter, executable)]
