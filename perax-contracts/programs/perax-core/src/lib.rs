@@ -5,6 +5,7 @@ mod contexts;
 mod errors;
 mod events;
 mod instructions;
+mod settlement;
 mod state;
 mod validation;
 
@@ -12,6 +13,7 @@ pub use constants::*;
 pub use contexts::*;
 pub use errors::*;
 pub use events::*;
+pub use settlement::*;
 pub use state::*;
 pub(crate) use validation::*;
 
@@ -217,9 +219,67 @@ pub mod perax_core {
     pub fn pause_apc(ctx: Context<PauseApc>, is_paused: bool) -> Result<()> {
         instructions::pause_apc(ctx, is_paused)
     }
+
+    pub fn initialize_settlement_policy(
+        ctx: Context<InitializeSettlementPolicy>,
+        params: InitializeSettlementPolicyParams,
+    ) -> Result<()> {
+        instructions::initialize_settlement_policy(ctx, params)
+    }
+
+    pub fn initialize_product_settlement_policy(
+        ctx: Context<InitializeProductSettlementPolicy>,
+        params: InitializeProductSettlementPolicyParams,
+    ) -> Result<()> {
+        instructions::initialize_product_settlement_policy(ctx, params)
+    }
+
+    pub fn update_product_settlement_policy(
+        ctx: Context<UpdateProductSettlementPolicy>,
+        params: UpdateProductSettlementPolicyParams,
+    ) -> Result<()> {
+        instructions::update_product_settlement_policy(ctx, params)
+    }
+
+    pub fn plan_settlement(
+        ctx: Context<PlanSettlement>,
+        params: PlanSettlementParams,
+    ) -> Result<()> {
+        instructions::plan_settlement(ctx, params)
+    }
+
+    pub fn fund_direct_pex_settlement(
+        ctx: Context<FundDirectPexSettlement>,
+        params: FundDirectPexSettlementParams,
+    ) -> Result<()> {
+        instructions::fund_direct_pex_settlement(ctx, params)
+    }
+
+    pub fn execute_settlement_market_purchase<'info>(
+        ctx: Context<'_, '_, '_, 'info, ExecuteSettlementMarketPurchase<'info>>,
+        params: ExecuteSettlementMarketPurchaseParams,
+    ) -> Result<()> {
+        instructions::execute_settlement_market_purchase(ctx, params)
+    }
+
+    pub fn execute_settlement_vault_funding(
+        ctx: Context<ExecuteSettlementVaultFunding>,
+        params: ExecuteSettlementVaultFundingParams,
+    ) -> Result<()> {
+        instructions::execute_settlement_vault_funding(ctx, params)
+    }
+
+    pub fn finalize_settlement(
+        ctx: Context<FinalizeSettlement>,
+        params: FinalizeSettlementParams,
+    ) -> Result<()> {
+        instructions::finalize_settlement(ctx, params)
+    }
 }
 
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod vault_tests;
+#[cfg(test)]
+mod settlement_tests;
