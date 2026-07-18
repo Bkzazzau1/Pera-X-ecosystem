@@ -166,6 +166,8 @@ pub enum PeraxError {
     RecoveryNotActive,
     #[msg("The APC recovery spending cap would be exceeded.")]
     RecoveryCapExceeded,
+    #[msg("The market drawdown has not reached an approved recovery support band.")]
+    RecoverySupportBandNotMet,
     #[msg("The requested recovery purchase exceeds the immutable per-purchase percentage cap.")]
     RecoveryPurchaseCapExceeded,
     #[msg("The recovery purchase would violate the protected Counterweight Vault reserve floor.")]

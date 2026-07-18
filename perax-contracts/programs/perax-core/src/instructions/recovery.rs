@@ -227,6 +227,8 @@ pub fn execute_counterweight_purchase<'info>(
         params.maximum_quote_amount,
         tracked_available,
         ctx.accounts.counterweight_vault.amount,
+        observed_price,
+        ctx.accounts.apc_state.current_reference_price,
         now,
     )?;
 

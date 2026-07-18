@@ -56,3 +56,12 @@ The built-in adapter is a constant-product exact-input swap with a bounded fee a
 ## Legacy compatibility
 
 `ReleaseType::Growth` always returns `UseApcRelease`. Emergency release remains unchanged. `current_stepped_floor` cannot be updated and is never read by APC.
+
+<!-- APC_POLICY_V1_SYNC -->
+## APC Numerical Policy Version 1
+
+Correction 2 uses immutable APC Policy V1, policy hash `17f93bacb0cfa5346a466258117908068f1f0cd67054f8b61c7d40818dfe84bb`. The canonical machine-readable source is `perax-contracts/config/apc-policy-v1.json`; contract initialization rejects every numerical or hash difference. The deterministic selection evaluated 2,916 candidates, 1,920 market scenarios and 25,000 randomized invariant cases. The selected policy produced a 498-bps worst modeled APC-added impact and 1.365× minimum counterweight coverage.
+
+Key controls: 750–2,000 bps adaptive bands; 2,000,000 PEX base band cap; 2,500,000 PEX hourly cap; 6,000,000 PEX six-hour pump cap; 70% counterweight allocation; 10% deferred-burn resumption; 30% protected recovery reserve; and four drawdown support bands at 10%, 25%, 50% and 75%.
+
+No deployment, initialization, reserve movement or migration is authorized by this policy approval. Runtime freeze still requires the complete validation pipeline and independent security approval.

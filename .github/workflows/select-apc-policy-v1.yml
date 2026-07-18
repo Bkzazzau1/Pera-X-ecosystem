@@ -1,0 +1,45 @@
+name: Select APC Policy V1
+
+on:
+  push:
+    branches: [agent/apc-policy-v1]
+    paths:
+      - ".github/scripts/select-apc-policy-v1.py"
+      - ".github/workflows/select-apc-policy-v1.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/scripts/select-apc-policy-v1.py"
+      - ".github/workflows/select-apc-policy-v1.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/apc-policy-v1
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Apply guarded selector
+        run: python3 .github/scripts/select-apc-policy-v1.py
+      - name: Prove selected policy
+        run: node perax-contracts/scripts/simulate-apc-policy-v1.js --write-report
+      - name: Publish verified simulator and report
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          git diff --check
+          git add perax-contracts/scripts/simulate-apc-policy-v1.js docs/APC_POLICY_V1_SIMULATION_REPORT.md
+          git config user.name "Pera-X policy automation"
+          git config user.email "actions@github.com"
+          git commit -m "Select simulation-safe APC Policy V1"
+          git push origin agent/apc-policy-v1

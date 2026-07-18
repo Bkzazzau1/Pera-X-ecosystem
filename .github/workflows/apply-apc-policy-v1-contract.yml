@@ -1,0 +1,71 @@
+name: Bind APC Policy V1 Contract
+
+on:
+  push:
+    branches: [agent/apc-policy-v1]
+    paths:
+      - ".github/scripts/apply-apc-policy-v1-contract.py"
+      - ".github/scripts/run-apc-policy-v1-contract.py"
+      - ".github/workflows/apply-apc-policy-v1-contract.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/scripts/apply-apc-policy-v1-contract.py"
+      - ".github/scripts/run-apc-policy-v1-contract.py"
+      - ".github/workflows/apply-apc-policy-v1-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bind-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/apc-policy-v1
+          fetch-depth: 0
+      - name: Apply exact policy binding
+        shell: bash
+        run: python3 .github/scripts/run-apc-policy-v1-contract.py 2>&1 | tee /tmp/apc-policy-contract-transform.log
+      - name: Install Rust 1.79
+        uses: dtolnay/rust-toolchain@1.79.0
+        with:
+          components: rustfmt
+      - name: Validate Rust policy binding
+        working-directory: perax-contracts
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo +1.79.0 fmt --all
+          cargo +1.79.0 fmt --all -- --check
+          cargo +1.79.0 test --locked --all-targets 2>&1 | tee /tmp/apc-policy-contract-tests.log
+          cargo +1.79.0 check --locked --all-targets 2>&1 | tee /tmp/apc-policy-contract-check.log
+      - name: Commit validated contract binding
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          git diff --check
+          git add perax-contracts/programs/perax-core/src/constants.rs \
+                  perax-contracts/programs/perax-core/src/state.rs \
+                  perax-contracts/programs/perax-core/src/validation.rs \
+                  perax-contracts/programs/perax-core/src/errors.rs \
+                  perax-contracts/programs/perax-core/src/instructions/apc.rs \
+                  perax-contracts/programs/perax-core/src/instructions/recovery.rs \
+                  perax-contracts/programs/perax-core/src/tests.rs
+          git config user.name "Pera-X policy automation"
+          git config user.email "actions@github.com"
+          git commit -m "Bind APC Policy Version 1 on-chain"
+          git push origin agent/apc-policy-v1
+      - name: Upload contract binding diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apc-policy-v1-contract-diagnostics
+          path: |
+            /tmp/apc-policy-contract-transform.log
+            /tmp/apc-policy-contract-tests.log
+            /tmp/apc-policy-contract-check.log
+          if-no-files-found: warn

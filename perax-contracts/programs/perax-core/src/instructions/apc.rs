@@ -31,6 +31,8 @@ pub fn initialize_apc(ctx: Context<InitializeApc>, params: InitializeApcParams) 
     );
 
     let config = &mut ctx.accounts.apc_config;
+    config.policy_version = params.policy_version;
+    config.policy_hash = params.policy_hash;
     config.state = ctx.accounts.state.key();
     config.oracle_feed = ctx.accounts.state.oracle_feed;
     config.quote_mint = params.quote_mint;
@@ -48,9 +50,14 @@ pub fn initialize_apc(ctx: Context<InitializeApc>, params: InitializeApcParams) 
     config.pump_window_release_cap = params.pump_window_release_cap;
     config.pump_window_seconds = params.pump_window_seconds;
     config.minimum_counterweight_coverage_bps = params.minimum_counterweight_coverage_bps;
+    config.counterweight_proceeds_allocation_bps = params.counterweight_proceeds_allocation_bps;
+    config.liquidity_reinforcement_allocation_bps = params.liquidity_reinforcement_allocation_bps;
+    config.burn_reserve_allocation_bps = params.burn_reserve_allocation_bps;
+    config.operations_allocation_bps = params.operations_allocation_bps;
     config.base_band_release_cap = params.base_band_release_cap;
     config.minimum_twap_minutes = params.minimum_twap_minutes;
     config.minimum_liquidity_usd = params.minimum_liquidity_usd;
+    config.minimum_quote_liquidity_usd = params.minimum_quote_liquidity_usd;
     config.minimum_volume_usd = params.minimum_volume_usd;
     config.minimum_buy_pressure_bps = params.minimum_buy_pressure_bps;
     config.risk_velocity_thresholds_bps = params.risk_velocity_thresholds_bps;
@@ -63,11 +70,14 @@ pub fn initialize_apc(ctx: Context<InitializeApc>, params: InitializeApcParams) 
     config.deferred_burn_window_cap = params.deferred_burn_window_cap;
     config.deferred_burn_window_seconds = params.deferred_burn_window_seconds;
     config.deferred_burn_cooldown_seconds = params.deferred_burn_cooldown_seconds;
+    config.deferred_burn_resumption_rate_bps = params.deferred_burn_resumption_rate_bps;
     config.maximum_recovery_purchase_bps = params.maximum_recovery_purchase_bps;
     config.minimum_counterweight_reserve_bps = params.minimum_counterweight_reserve_bps;
     config.recovery_window_cap = params.recovery_window_cap;
     config.recovery_window_seconds = params.recovery_window_seconds;
     config.recovery_cooldown_seconds = params.recovery_cooldown_seconds;
+    config.recovery_support_drawdown_bps = params.recovery_support_drawdown_bps;
+    config.recovery_purchase_bps_by_support = params.recovery_purchase_bps_by_support;
     config.is_active = true;
     config.is_paused = false;
     config.bump = ctx.bumps.apc_config;

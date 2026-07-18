@@ -134,7 +134,90 @@
   },
   "adaptivePriceControl": {
     "model": "deterministic_adaptive_price_control",
-    "policyStatus": "pending_formal_numerical_approval",
+    "policyStatus": "approved",
+    "policyVersion": 1,
+    "policyHashSha256": "17f93bacb0cfa5346a466258117908068f1f0cd67054f8b61c7d40818dfe84bb",
+    "approvedParameters": {
+      "policyVersion": 1,
+      "launchPriceScaled": 1200,
+      "firstActivationPriceScaled": 3600,
+      "priceScale": 100000000,
+      "minimumBandIntervalBps": 750,
+      "maximumBandIntervalBps": 2000,
+      "riskVelocityThresholdsBps": [
+        500,
+        1500,
+        3000
+      ],
+      "riskVolatilityThresholdsBps": [
+        400,
+        1200,
+        2500
+      ],
+      "riskPriceImpactThresholdsBps": [
+        250,
+        750,
+        1500
+      ],
+      "bandIntervalBpsByRisk": [
+        2000,
+        1500,
+        1000,
+        750
+      ],
+      "bandReleaseBpsByRisk": [
+        10000,
+        7500,
+        5000,
+        2500
+      ],
+      "baseBandReleaseCapPex": "2000000",
+      "cascadeReductionBps": [
+        10000,
+        7500,
+        5000,
+        2500
+      ],
+      "maximumObservationAgeSeconds": 90,
+      "maximumFutureClockSkewSeconds": 5,
+      "minimumTwapMinutes": 60,
+      "minimumLiquidityUsd": "27360",
+      "minimumQuoteLiquidityUsd": "13680",
+      "minimumVolumeUsd": "6840",
+      "minimumBuyPressureBps": 5500,
+      "hourlyReleaseCapPex": "2500000",
+      "pumpWindowReleaseCapPex": "6000000",
+      "pumpWindowSeconds": 21600,
+      "minimumCounterweightCoverageBps": 5000,
+      "proceedsAllocationBps": {
+        "counterweightVault": 7000,
+        "liquidityReinforcement": 2000,
+        "burnReserve": 500,
+        "operations": 500
+      },
+      "deferredBurnResumptionRateBps": 1000,
+      "deferredBurnWindowCapPex": "400000",
+      "deferredBurnWindowSeconds": 3600,
+      "deferredBurnCooldownSeconds": 900,
+      "recoveryTotalSpendingCapUsdc": "3000",
+      "maximumRecoveryPurchaseBps": 1500,
+      "minimumCounterweightReserveBps": 3000,
+      "recoveryWindowCapUsdc": "500",
+      "recoveryWindowSeconds": 21600,
+      "recoveryCooldownSeconds": 1800,
+      "recoverySupportDrawdownBps": [
+        1000,
+        2500,
+        5000,
+        7500
+      ],
+      "recoveryPurchaseBpsBySupport": [
+        500,
+        750,
+        1000,
+        1500
+      ]
+    },
     "launchPriceUsd": "0.000012",
     "priceScale": "100000000",
     "launchPriceScaled": "1200",
@@ -147,30 +230,67 @@
       "multiBandPerFreshObservation": true,
       "immutableBandRecords": true,
       "usedBandCapacityNeverRestores": true,
-      "minimumIntervalBps": null,
-      "maximumIntervalBps": null,
-      "riskTierThresholds": null,
-      "intervalBpsByRisk": null,
-      "releaseBpsByRisk": null,
+      "minimumIntervalBps": 750,
+      "maximumIntervalBps": 2000,
+      "riskTierThresholds": {
+        "velocityBps": [
+          500,
+          1500,
+          3000
+        ],
+        "volatilityBps": [
+          400,
+          1200,
+          2500
+        ],
+        "priceImpactBps": [
+          250,
+          750,
+          1500
+        ]
+      },
+      "intervalBpsByRisk": [
+        2000,
+        1500,
+        1000,
+        750
+      ],
+      "releaseBpsByRisk": [
+        10000,
+        7500,
+        5000,
+        2500
+      ],
+      "baseBandReleaseCapAmount": "2000000",
       "higherRiskMustNotIncreaseIntervalOrRelease": true,
-      "intervalFormula": "contract_derived_from_risk_tier",
-      "releaseCapFormula": "contract_derived_from_risk_and_cascade",
-      "cascadeReductionBps": null
+      "intervalFormula": "exact_policy_v1_risk_table",
+      "releaseCapFormula": "base_cap_times_risk_bps_times_cascade_bps",
+      "cascadeReductionBps": [
+        10000,
+        7500,
+        5000,
+        2500
+      ]
     },
     "observationPolicy": {
       "permanentObservationPda": true,
       "strictlyIncreasingSequence": true,
       "freshObservationPerRelease": true,
       "trustedClockForWindows": true,
-      "maximumObservationAgeSeconds": null,
-      "maximumFutureClockSkewSeconds": null,
+      "maximumObservationAgeSeconds": 90,
+      "maximumFutureClockSkewSeconds": 5,
+      "minimumTwapMinutes": 60,
+      "minimumLiquidityUsd": "27360",
+      "minimumQuoteLiquidityUsd": "13680",
+      "minimumVolumeUsd": "6840",
+      "minimumBuyPressureBps": 5500,
       "approvedPoolOnly": true
     },
     "releaseCaps": {
       "perBandHardCapRequired": true,
-      "hourlyCapAmount": null,
-      "pumpWindowCapAmount": null,
-      "pumpWindowSeconds": null,
+      "hourlyCapAmount": "2500000",
+      "pumpWindowCapAmount": "6000000",
+      "pumpWindowSeconds": 21600,
       "dailyCapAmount": "10000000",
       "monthlyCapAmount": "150000000",
       "unconfirmedExposureCapRequired": true
@@ -179,30 +299,47 @@
       "quoteMint": "USDC",
       "realSplTransferRequired": true,
       "pdaControlledVault": true,
-      "minimumCoverageBps": null,
-      "proceedsAllocationBps": null,
+      "minimumCoverageBps": 5000,
+      "proceedsAllocationBps": {
+        "counterweightVault": 7000,
+        "liquidityReinforcement": 2000,
+        "burnReserve": 500,
+        "operations": 500
+      },
       "missingCoverageStopsLaterReleases": true
     },
     "burnDeferralPolicy": {
       "enabledDuringPumpControl": true,
       "pexEscrowRequired": true,
       "permanentDeferredBurnRecord": true,
-      "resumptionRateBps": null,
-      "executionWindowCapAmount": null,
-      "executionWindowSeconds": null,
-      "executionCooldownSeconds": null
+      "resumptionRateBps": 1000,
+      "executionWindowCapAmount": "400000",
+      "executionWindowSeconds": 3600,
+      "executionCooldownSeconds": 900
     },
     "recoveryPolicy": {
       "atomicSwapRequired": true,
       "approvedAdapterOnly": true,
       "lockedRecoveryVault": true,
       "hardSpendingCapRequired": true,
-      "hardSpendingCapAmount": null,
-      "maximumPurchaseBps": null,
-      "minimumReserveBps": null,
-      "windowCapAmount": null,
-      "windowSeconds": null,
-      "cooldownSeconds": null,
+      "hardSpendingCapAmount": "3000",
+      "maximumPurchaseBps": 1500,
+      "minimumReserveBps": 3000,
+      "windowCapAmount": "500",
+      "windowSeconds": 21600,
+      "cooldownSeconds": 1800,
+      "supportDrawdownBps": [
+        1000,
+        2500,
+        5000,
+        7500
+      ],
+      "purchaseBpsBySupport": [
+        500,
+        750,
+        1000,
+        1500
+      ],
       "recoveredPexAutomaticallyBurned": false,
       "recoveredPexAutomaticallyRecirculated": false
     },
@@ -212,17 +349,6 @@
       "requiresManualOrMultisigApproval": false,
       "safetyAuthority": "pause_and_recovery_safety_only"
     },
-    "unresolvedNumericalPolicies": [
-      "risk_tier_thresholds",
-      "risk_to_band_interval_formula",
-      "normal_tranche_formula",
-      "cascade_reductions",
-      "pump_window_duration",
-      "pump_window_release_cap",
-      "counterweight_proceeds_allocation",
-      "minimum_counterweight_coverage",
-      "burn_deferral_resumption_rate",
-      "recovery_spending_bands_and_limits"
-    ]
+    "unresolvedNumericalPolicies": []
   }
 }
