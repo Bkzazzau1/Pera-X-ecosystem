@@ -2,7 +2,7 @@
   "scripts": {
     "test": "anchor test --provider.cluster localnet",
     "typecheck": "tsc --noEmit",
-    "validate:tokenomics": "node scripts/validate-tokenomics.js",
+    "validate:tokenomics": "node scripts/validate-tokenomics.js && node scripts/validate-apc-policy-sync.js",
     "plan:allocation": "node scripts/print-allocation-plan.js",
     "plan:mint": "node scripts/plan-mint.js",
     "plan:initialize": "node scripts/plan-core-initialize.js",
@@ -14,7 +14,8 @@
     "verify:reserve-vaults:devnet": "node scripts/verify-reserve-vaults-devnet.js",
     "plan:apc": "node scripts/plan-apc-initialize.js",
     "initialize:apc": "node scripts/initialize-apc-program.js --execute",
-    "verify:apc": "node scripts/verify-apc-state.js"
+    "verify:apc": "node scripts/verify-apc-state.js",
+    "simulate:apc-policy-v1": "node scripts/simulate-apc-policy-v1.js"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.30.1",

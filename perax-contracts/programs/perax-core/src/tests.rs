@@ -755,3 +755,62 @@ fn apc_policy_v1_property_invariants_hold_for_thousands_of_inputs() {
         assert!(calculate_next_band_price(u64::MAX, config.maximum_band_interval_bps).is_err());
     }
 }
+
+// every_apc_policy_v1_field_rejects_plus_and_minus_one
+#[test]
+fn every_apc_policy_v1_field_rejects_plus_and_minus_one() {
+    macro_rules! reject_scalar {
+        ($field:ident) => {{
+            assert_apc_policy_mutation_rejected(|p| p.$field -= 1);
+            assert_apc_policy_mutation_rejected(|p| p.$field += 1);
+        }};
+    }
+    macro_rules! reject_array {
+        ($field:ident, $length:expr) => {{
+            for index in 0..$length {
+                assert_apc_policy_mutation_rejected(|p| p.$field[index] -= 1);
+                assert_apc_policy_mutation_rejected(|p| p.$field[index] += 1);
+            }
+        }};
+    }
+    reject_scalar!(policy_version);
+    assert_apc_policy_mutation_rejected(|p| p.policy_hash[31] ^= 1);
+    reject_scalar!(price_scale);
+    reject_scalar!(first_activation_price);
+    reject_scalar!(minimum_band_interval_bps);
+    reject_scalar!(maximum_band_interval_bps);
+    reject_scalar!(maximum_observation_age_seconds);
+    reject_scalar!(maximum_future_clock_skew_seconds);
+    reject_scalar!(hourly_release_cap);
+    reject_scalar!(pump_window_release_cap);
+    reject_scalar!(pump_window_seconds);
+    reject_scalar!(minimum_counterweight_coverage_bps);
+    reject_scalar!(counterweight_proceeds_allocation_bps);
+    reject_scalar!(liquidity_reinforcement_allocation_bps);
+    reject_scalar!(burn_reserve_allocation_bps);
+    reject_scalar!(operations_allocation_bps);
+    reject_scalar!(base_band_release_cap);
+    reject_scalar!(minimum_twap_minutes);
+    reject_scalar!(minimum_liquidity_usd);
+    reject_scalar!(minimum_quote_liquidity_usd);
+    reject_scalar!(minimum_volume_usd);
+    reject_scalar!(minimum_buy_pressure_bps);
+    reject_array!(risk_velocity_thresholds_bps, 3);
+    reject_array!(risk_volatility_thresholds_bps, 3);
+    reject_array!(risk_price_impact_thresholds_bps, 3);
+    reject_array!(band_interval_bps_by_risk, 4);
+    reject_array!(band_release_bps_by_risk, 4);
+    reject_array!(cascade_reduction_bps, 4);
+    reject_scalar!(recovery_spending_cap);
+    reject_scalar!(deferred_burn_window_cap);
+    reject_scalar!(deferred_burn_window_seconds);
+    reject_scalar!(deferred_burn_cooldown_seconds);
+    reject_scalar!(deferred_burn_resumption_rate_bps);
+    reject_scalar!(maximum_recovery_purchase_bps);
+    reject_scalar!(minimum_counterweight_reserve_bps);
+    reject_scalar!(recovery_window_cap);
+    reject_scalar!(recovery_window_seconds);
+    reject_scalar!(recovery_cooldown_seconds);
+    reject_array!(recovery_support_drawdown_bps, 4);
+    reject_array!(recovery_purchase_bps_by_support, 4);
+}

@@ -1,7 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const CONFIG_PATH = path.resolve(__dirname, '../config/pex-tokenomics.json');
+const APC_POLICY_PATH = path.resolve(__dirname, '../config/apc-policy-v1.json');
 const WALLETS_TEMPLATE_PATH = path.resolve(__dirname, '../config/pex-allocation-wallets.example.json');
 const PRODUCTION_WALLETS_PATH = path.resolve(__dirname, '../config/pex-allocation-wallets.json');
 const EXPECTED_TOTAL_PERCENTAGE = 100;
@@ -161,8 +163,29 @@ function validateMarketConditionalReleasePolicy(config) {
   assert(policy.monthlyReleaseCapAmount === '150000000', 'Monthly release cap amount must be 150,000,000 PEX.');
 }
 
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function assertNoNullProductionFields(value, label) {
+  assert(value !== null && value !== undefined, `${label} cannot be null or undefined in an approved APC policy.`);
+  if (Array.isArray(value)) {
+    assert(value.length > 0, `${label} cannot be an empty array in an approved APC policy.`);
+    value.forEach((entry, index) => assertNoNullProductionFields(entry, `${label}[${index}]`));
+  } else if (typeof value === 'object') {
+    const entries = Object.entries(value);
+    assert(entries.length > 0, `${label} cannot be an empty object in an approved APC policy.`);
+    entries.forEach(([key, entry]) => assertNoNullProductionFields(entry, `${label}.${key}`));
+  }
+}
+
 function validateAdaptivePriceControl(config) {
   const apc = config.adaptivePriceControl;
+  const official = readJson(APC_POLICY_PATH, 'APC Policy V1');
   assert(apc, 'Missing adaptivePriceControl section.');
   assert(!config.unlocking, 'Legacy unlocking section must be removed.');
   assert(apc.model === 'deterministic_adaptive_price_control', 'APC model is invalid.');
@@ -175,84 +198,82 @@ function validateAdaptivePriceControl(config) {
   assert(apc.firstActivationPriceUsd === '0.000036', 'First activation price must be $0.000036.');
   assert(apc.fixedMultiplicationAfterFirstActivation === false, 'Fixed multiplication must be disabled after first activation.');
 
-  const bands = apc.bandPolicy;
-  assert(bands.sequentialActivation === true, 'Bands must activate sequentially.');
-  assert(bands.multiBandPerFreshObservation === true, 'One fresh pump observation must be able to activate several sequential bands.');
-  assert(bands.immutableBandRecords === true, 'Band records must be immutable PDAs.');
-  assert(bands.usedBandCapacityNeverRestores === true, 'Used band capacity must never restore.');
   if (apc.policyStatus === 'approved') {
-    assert(Number.isInteger(bands.minimumIntervalBps) && bands.minimumIntervalBps > 0, 'Approved minimum band interval is invalid.');
-    assert(Number.isInteger(bands.maximumIntervalBps) && bands.maximumIntervalBps > bands.minimumIntervalBps, 'Approved maximum band interval is invalid.');
-    assert(Array.isArray(bands.intervalBpsByRisk) && bands.intervalBpsByRisk.length === 4, 'Approved risk interval policy is required.');
-    assert(Array.isArray(bands.releaseBpsByRisk) && bands.releaseBpsByRisk.length === 4, 'Approved risk release policy is required.');
-    for (let index = 1; index < 4; index += 1) {
-      assert(bands.intervalBpsByRisk[index - 1] >= bands.intervalBpsByRisk[index], 'Higher risk must not widen APC bands.');
-      assert(bands.releaseBpsByRisk[index - 1] >= bands.releaseBpsByRisk[index], 'Higher risk must not increase APC release capacity.');
-    }
-    assert(Array.isArray(bands.cascadeReductionBps) && bands.cascadeReductionBps.length > 0, 'Approved cascade policy is required.');
-    let previous = 10001;
-    for (const value of bands.cascadeReductionBps) {
-      assert(Number.isInteger(value) && value > 0 && value <= 10000 && value <= previous, 'Cascade reductions must be positive and monotonic.');
-      previous = value;
-    }
+    assert(official.status === 'approved' && official.policyVersion === 1, 'Canonical APC Policy V1 must be approved.');
+    assert(apc.policyVersion === official.policyVersion, 'Tokenomics APC policy version mismatch.');
+    const calculatedHash = crypto.createHash('sha256').update(canonicalJson(official.parameters)).digest('hex');
+    assert(calculatedHash === official.policyHashSha256, 'Canonical APC Policy V1 hash is invalid.');
+    assert(apc.policyHashSha256 === official.policyHashSha256, 'Tokenomics APC policy hash mismatch.');
+    assertNoNullProductionFields(apc.approvedParameters, 'adaptivePriceControl.approvedParameters');
+    assert(canonicalJson(apc.approvedParameters) === canonicalJson(official.parameters), 'Tokenomics approved parameters differ from canonical APC Policy V1.');
+    assert(Array.isArray(apc.unresolvedNumericalPolicies) && apc.unresolvedNumericalPolicies.length === 0, 'Approved APC policy cannot contain unresolved parameters.');
   } else {
     assert(apc.policyStatus === 'pending_formal_numerical_approval', 'Unknown APC policy status.');
-    assert(bands.minimumIntervalBps === null && bands.maximumIntervalBps === null, 'Pending band interval values must remain null.');
-    assert(bands.riskTierThresholds === null && bands.cascadeReductionBps === null, 'Pending risk and cascade values must remain null.');
-    assert(bands.intervalBpsByRisk === null && bands.releaseBpsByRisk === null, 'Pending risk response tables must remain null.');
+    assert(Array.isArray(apc.unresolvedNumericalPolicies) && apc.unresolvedNumericalPolicies.length === 10, 'Pending APC policy must list every unresolved parameter.');
+    return;
+  }
+
+  const p = official.parameters;
+  const bands = apc.bandPolicy;
+  assert(bands.sequentialActivation === true && bands.multiBandPerFreshObservation === true, 'Sequential multi-band activation is required.');
+  assert(bands.immutableBandRecords === true && bands.usedBandCapacityNeverRestores === true, 'Permanent non-restoring band records are required.');
+  assert(bands.minimumIntervalBps === p.minimumBandIntervalBps && bands.maximumIntervalBps === p.maximumBandIntervalBps, 'Band interval bounds differ from Policy V1.');
+  assert(canonicalJson(bands.riskTierThresholds) === canonicalJson({ velocityBps: p.riskVelocityThresholdsBps, volatilityBps: p.riskVolatilityThresholdsBps, priceImpactBps: p.riskPriceImpactThresholdsBps }), 'Risk thresholds differ from Policy V1.');
+  assert(canonicalJson(bands.intervalBpsByRisk) === canonicalJson(p.bandIntervalBpsByRisk), 'Risk interval table differs from Policy V1.');
+  assert(canonicalJson(bands.releaseBpsByRisk) === canonicalJson(p.bandReleaseBpsByRisk), 'Risk release table differs from Policy V1.');
+  assert(bands.baseBandReleaseCapAmount === p.baseBandReleaseCapPex, 'Base band release cap differs from Policy V1.');
+  assert(canonicalJson(bands.cascadeReductionBps) === canonicalJson(p.cascadeReductionBps), 'Cascade table differs from Policy V1.');
+  for (let index = 1; index < 4; index += 1) {
+    assert(bands.intervalBpsByRisk[index - 1] >= bands.intervalBpsByRisk[index], 'Higher risk must not widen APC bands.');
+    assert(bands.releaseBpsByRisk[index - 1] >= bands.releaseBpsByRisk[index], 'Higher risk must not increase APC releases.');
   }
 
   const observations = apc.observationPolicy;
-  assert(observations.permanentObservationPda === true, 'Permanent observation PDAs are required.');
-  assert(observations.strictlyIncreasingSequence === true, 'Observation sequence must be strictly increasing.');
-  assert(observations.freshObservationPerRelease === true, 'Every release must use a fresh observation.');
-  assert(observations.trustedClockForWindows === true, 'On-chain windows must use the Solana clock.');
-  assert(observations.approvedPoolOnly === true, 'Only the approved market pool may be observed.');
+  assert(observations.maximumObservationAgeSeconds === p.maximumObservationAgeSeconds, 'Observation maximum age mismatch.');
+  assert(observations.maximumFutureClockSkewSeconds === p.maximumFutureClockSkewSeconds, 'Observation future skew mismatch.');
+  assert(observations.minimumTwapMinutes === p.minimumTwapMinutes, 'Minimum TWAP mismatch.');
+  assert(observations.minimumLiquidityUsd === p.minimumLiquidityUsd, 'Minimum total liquidity mismatch.');
+  assert(observations.minimumQuoteLiquidityUsd === p.minimumQuoteLiquidityUsd, 'Minimum quote liquidity mismatch.');
+  assert(observations.minimumVolumeUsd === p.minimumVolumeUsd, 'Minimum volume mismatch.');
+  assert(observations.minimumBuyPressureBps === p.minimumBuyPressureBps, 'Minimum buy pressure mismatch.');
+  assert(observations.permanentObservationPda && observations.strictlyIncreasingSequence && observations.freshObservationPerRelease && observations.trustedClockForWindows && observations.approvedPoolOnly, 'Observation safety flags are incomplete.');
 
   const caps = apc.releaseCaps;
-  assert(caps.perBandHardCapRequired === true, 'Every band must have a hard cap.');
-  assert(caps.unconfirmedExposureCapRequired === true, 'Unconfirmed release exposure must have a hard cap.');
-  assert(caps.dailyCapAmount === config.marketConditionalReleasePolicy.dailyReleaseCapAmount, 'APC daily cap must match the global daily cap.');
-  assert(caps.monthlyCapAmount === config.marketConditionalReleasePolicy.monthlyReleaseCapAmount, 'APC monthly cap must match the global monthly cap.');
-  if (caps.hourlyCapAmount !== null) {
-    assert(toBigIntAmount(caps.hourlyCapAmount, 'adaptivePriceControl.releaseCaps.hourlyCapAmount') <= toBigIntAmount(caps.dailyCapAmount, 'adaptivePriceControl.releaseCaps.dailyCapAmount'), 'Hourly cap cannot exceed daily cap.');
-  }
-  if (caps.pumpWindowCapAmount !== null) {
-    assert(toBigIntAmount(caps.pumpWindowCapAmount, 'adaptivePriceControl.releaseCaps.pumpWindowCapAmount') <= toBigIntAmount(caps.monthlyCapAmount, 'adaptivePriceControl.releaseCaps.monthlyCapAmount'), 'Pump-window cap cannot exceed monthly cap.');
-  }
+  assert(caps.hourlyCapAmount === p.hourlyReleaseCapPex, 'Hourly release cap mismatch.');
+  assert(caps.pumpWindowCapAmount === p.pumpWindowReleaseCapPex, 'Pump-window release cap mismatch.');
+  assert(caps.pumpWindowSeconds === p.pumpWindowSeconds, 'Pump-window duration mismatch.');
+  assert(caps.dailyCapAmount === config.marketConditionalReleasePolicy.dailyReleaseCapAmount, 'APC daily cap must match the global cap.');
+  assert(caps.monthlyCapAmount === config.marketConditionalReleasePolicy.monthlyReleaseCapAmount, 'APC monthly cap must match the global cap.');
+  assert(toBigIntAmount(caps.hourlyCapAmount, 'hourlyCapAmount') <= toBigIntAmount(caps.dailyCapAmount, 'dailyCapAmount'), 'Hourly cap exceeds daily cap.');
+  assert(toBigIntAmount(caps.pumpWindowCapAmount, 'pumpWindowCapAmount') <= toBigIntAmount(caps.monthlyCapAmount, 'monthlyCapAmount'), 'Pump cap exceeds monthly cap.');
 
   const counterweight = apc.counterweightPolicy;
-  assert(counterweight.realSplTransferRequired === true && counterweight.pdaControlledVault === true, 'Counterweight credit must come from real SPL custody.');
-  assert(counterweight.missingCoverageStopsLaterReleases === true, 'Missing counterweight coverage must stop later releases.');
-  if (counterweight.proceedsAllocationBps !== null) {
-    const total = Object.values(counterweight.proceedsAllocationBps).reduce((sum, value) => sum + value, 0);
-    assert(total === 10000, 'Counterweight proceeds percentages must total 10,000 bps.');
-  }
+  assert(counterweight.minimumCoverageBps === p.minimumCounterweightCoverageBps, 'Counterweight coverage mismatch.');
+  assert(canonicalJson(counterweight.proceedsAllocationBps) === canonicalJson(p.proceedsAllocationBps), 'Proceeds allocation mismatch.');
+  assert(Object.values(counterweight.proceedsAllocationBps).reduce((sum, value) => sum + value, 0) === 10000, 'Proceeds allocations must total 10,000 bps.');
+  assert(counterweight.realSplTransferRequired && counterweight.pdaControlledVault && counterweight.missingCoverageStopsLaterReleases, 'Counterweight custody flags are incomplete.');
 
-  assert(apc.burnDeferralPolicy.enabledDuringPumpControl === true, 'Burn deferral must be enabled during pump control.');
-  assert(apc.burnDeferralPolicy.pexEscrowRequired === true, 'Deferred burn PEX must be escrowed.');
-  if (apc.policyStatus === 'approved') {
-    assert(apc.burnDeferralPolicy.executionWindowCapAmount !== null, 'Approved deferred-burn window cap is required.');
-    assert(Number.isInteger(apc.burnDeferralPolicy.executionWindowSeconds) && apc.burnDeferralPolicy.executionWindowSeconds > 0, 'Approved deferred-burn window is required.');
-    assert(Number.isInteger(apc.burnDeferralPolicy.executionCooldownSeconds) && apc.burnDeferralPolicy.executionCooldownSeconds >= 0, 'Approved deferred-burn cooldown is required.');
-  } else {
-    assert(apc.burnDeferralPolicy.executionWindowCapAmount === null && apc.burnDeferralPolicy.executionWindowSeconds === null && apc.burnDeferralPolicy.executionCooldownSeconds === null, 'Pending deferred-burn limits must remain null.');
-  }
-  assert(apc.recoveryPolicy.atomicSwapRequired === true, 'Recovery must use an atomic swap.');
-  assert(apc.recoveryPolicy.lockedRecoveryVault === true, 'Recovered PEX must enter a locked vault.');
-  assert(apc.recoveryPolicy.hardSpendingCapRequired === true, 'Recovery spending must have a hard cap.');
-  if (apc.policyStatus === 'approved') {
-    assert(Number.isInteger(apc.recoveryPolicy.maximumPurchaseBps) && apc.recoveryPolicy.maximumPurchaseBps > 0 && apc.recoveryPolicy.maximumPurchaseBps < 10000, 'Approved recovery purchase percentage is invalid.');
-    assert(Number.isInteger(apc.recoveryPolicy.minimumReserveBps) && apc.recoveryPolicy.minimumReserveBps > 0 && apc.recoveryPolicy.minimumReserveBps < 10000, 'Approved recovery reserve percentage is invalid.');
-    assert(apc.recoveryPolicy.maximumPurchaseBps + apc.recoveryPolicy.minimumReserveBps <= 10000, 'Recovery purchase and reserve percentages are inconsistent.');
-    assert(apc.recoveryPolicy.windowCapAmount !== null && Number.isInteger(apc.recoveryPolicy.windowSeconds) && apc.recoveryPolicy.windowSeconds > 0, 'Approved recovery window limits are required.');
-    assert(Number.isInteger(apc.recoveryPolicy.cooldownSeconds) && apc.recoveryPolicy.cooldownSeconds >= 0, 'Approved recovery cooldown is required.');
-  } else {
-    assert(apc.recoveryPolicy.maximumPurchaseBps === null && apc.recoveryPolicy.minimumReserveBps === null && apc.recoveryPolicy.windowCapAmount === null && apc.recoveryPolicy.windowSeconds === null && apc.recoveryPolicy.cooldownSeconds === null, 'Pending recovery limits must remain null.');
-  }
-  assert(apc.authorityPolicy.requiresManualOrMultisigApproval === false, 'Manual or multisig release approval must remain disabled.');
-  assert(apc.authorityPolicy.routineReleaseApproval === 'none', 'Routine APC release must not require human approval.');
-  assert(Array.isArray(apc.unresolvedNumericalPolicies) && apc.unresolvedNumericalPolicies.length === 10, 'All ten unresolved numerical policies must be listed.');
+  const burn = apc.burnDeferralPolicy;
+  assert(burn.resumptionRateBps === p.deferredBurnResumptionRateBps, 'Deferred-burn resumption rate mismatch.');
+  assert(burn.executionWindowCapAmount === p.deferredBurnWindowCapPex, 'Deferred-burn window cap mismatch.');
+  assert(burn.executionWindowSeconds === p.deferredBurnWindowSeconds, 'Deferred-burn window duration mismatch.');
+  assert(burn.executionCooldownSeconds === p.deferredBurnCooldownSeconds, 'Deferred-burn cooldown mismatch.');
+  assert(burn.enabledDuringPumpControl && burn.pexEscrowRequired && burn.permanentDeferredBurnRecord, 'Deferred-burn custody flags are incomplete.');
+
+  const recovery = apc.recoveryPolicy;
+  assert(recovery.hardSpendingCapAmount === p.recoveryTotalSpendingCapUsdc, 'Recovery total cap mismatch.');
+  assert(recovery.maximumPurchaseBps === p.maximumRecoveryPurchaseBps, 'Recovery purchase cap mismatch.');
+  assert(recovery.minimumReserveBps === p.minimumCounterweightReserveBps, 'Recovery reserve floor mismatch.');
+  assert(recovery.windowCapAmount === p.recoveryWindowCapUsdc, 'Recovery window cap mismatch.');
+  assert(recovery.windowSeconds === p.recoveryWindowSeconds, 'Recovery window duration mismatch.');
+  assert(recovery.cooldownSeconds === p.recoveryCooldownSeconds, 'Recovery cooldown mismatch.');
+  assert(canonicalJson(recovery.supportDrawdownBps) === canonicalJson(p.recoverySupportDrawdownBps), 'Recovery support bands mismatch.');
+  assert(canonicalJson(recovery.purchaseBpsBySupport) === canonicalJson(p.recoveryPurchaseBpsBySupport), 'Recovery purchase bands mismatch.');
+  assert(recovery.atomicSwapRequired && recovery.approvedAdapterOnly && recovery.lockedRecoveryVault && recovery.hardSpendingCapRequired, 'Recovery custody flags are incomplete.');
+  assert(recovery.recoveredPexAutomaticallyBurned === false && recovery.recoveredPexAutomaticallyRecirculated === false, 'Recovered PEX must remain locked.');
+
+  assert(apc.authorityPolicy.requiresManualOrMultisigApproval === false, 'Manual release approval must remain disabled.');
+  assert(apc.authorityPolicy.routineReleaseApproval === 'none', 'Routine APC releases must remain autonomous.');
 }
 
 function validateWalletTemplate(config) {
