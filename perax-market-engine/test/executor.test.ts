@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 import type { AddressInfo } from "node:net";
+import test from "node:test";
 
 import { createSettlementExecutorServer } from "../src/executor.js";
 import type {
