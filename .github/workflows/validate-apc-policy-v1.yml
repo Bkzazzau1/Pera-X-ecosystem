@@ -1,0 +1,41 @@
+name: Validate APC Policy V1
+
+on:
+  push:
+    branches: [agent/apc-policy-v1]
+    paths:
+      - "perax-contracts/config/apc-policy-v1.json"
+      - "perax-contracts/scripts/simulate-apc-policy-v1.js"
+      - ".github/workflows/validate-apc-policy-v1.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/apc-policy-v1
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Run deterministic and adversarial simulations
+        run: node perax-contracts/scripts/simulate-apc-policy-v1.js --write-report
+      - name: Commit generated simulation report
+        shell: bash
+        run: |
+          git diff --check
+          git add docs/APC_POLICY_V1_SIMULATION_REPORT.md
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git config user.name "Pera-X policy automation"
+          git config user.email "actions@github.com"
+          git commit -m "Document APC Policy V1 simulation results"
+          git push origin agent/apc-policy-v1
