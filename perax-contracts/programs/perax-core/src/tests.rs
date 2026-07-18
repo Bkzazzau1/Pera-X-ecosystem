@@ -31,47 +31,59 @@ fn test_state(max_payment_amount: u64) -> PeraxState {
 
 fn test_apc_params() -> InitializeApcParams {
     InitializeApcParams {
+        policy_version: APC_POLICY_VERSION,
+        policy_hash: APC_POLICY_HASH_SHA256,
         quote_mint: Pubkey::new_unique(),
         approved_pool: Pubkey::new_unique(),
         approved_proceeds_owner: Pubkey::new_unique(),
         approved_proceeds_token_account: Pubkey::new_unique(),
         approved_recovery_program: Pubkey::new_unique(),
-        price_scale: 100_000_000,
-        first_activation_price: 3_600,
-        minimum_band_interval_bps: 1_000,
-        maximum_band_interval_bps: 4_000,
-        maximum_observation_age_seconds: 300,
-        maximum_future_clock_skew_seconds: 15,
-        hourly_release_cap: 2_000_000 * PEX_DECIMALS,
-        pump_window_release_cap: 8_000_000 * PEX_DECIMALS,
-        pump_window_seconds: 21_600,
-        minimum_counterweight_coverage_bps: 2_500,
-        base_band_release_cap: 2_000_000 * PEX_DECIMALS,
-        minimum_twap_minutes: 15,
-        minimum_liquidity_usd: 13_680,
-        minimum_volume_usd: 50_000,
-        minimum_buy_pressure_bps: 5_000,
-        risk_velocity_thresholds_bps: [2_000, 5_000, 10_000],
-        risk_volatility_thresholds_bps: [1_000, 2_500, 5_000],
-        risk_price_impact_thresholds_bps: [100, 300, 800],
-        band_interval_bps_by_risk: [4_000, 2_500, 1_500, 1_000],
-        band_release_bps_by_risk: [10_000, 8_000, 6_000, 4_000],
-        cascade_reduction_bps: [10_000, 7_000, 4_500, 2_500],
-        recovery_spending_cap: 1_000_000_000,
-        deferred_burn_window_cap: 1_000_000 * PEX_DECIMALS,
-        deferred_burn_window_seconds: 3_600,
-        deferred_burn_cooldown_seconds: 60,
-        maximum_recovery_purchase_bps: 2_000,
-        minimum_counterweight_reserve_bps: 5_000,
-        recovery_window_cap: 200_000_000,
-        recovery_window_seconds: 3_600,
-        recovery_cooldown_seconds: 60,
+        price_scale: APC_PRICE_SCALE,
+        first_activation_price: APC_FIRST_ACTIVATION_PRICE_SCALED,
+        minimum_band_interval_bps: APC_MINIMUM_BAND_INTERVAL_BPS,
+        maximum_band_interval_bps: APC_MAXIMUM_BAND_INTERVAL_BPS,
+        maximum_observation_age_seconds: APC_MAXIMUM_OBSERVATION_AGE_SECONDS,
+        maximum_future_clock_skew_seconds: APC_MAXIMUM_FUTURE_CLOCK_SKEW_SECONDS,
+        hourly_release_cap: APC_HOURLY_RELEASE_CAP,
+        pump_window_release_cap: APC_PUMP_WINDOW_RELEASE_CAP,
+        pump_window_seconds: APC_PUMP_WINDOW_SECONDS,
+        minimum_counterweight_coverage_bps: APC_MINIMUM_COUNTERWEIGHT_COVERAGE_BPS,
+        counterweight_proceeds_allocation_bps: APC_COUNTERWEIGHT_PROCEEDS_ALLOCATION_BPS,
+        liquidity_reinforcement_allocation_bps: APC_LIQUIDITY_REINFORCEMENT_ALLOCATION_BPS,
+        burn_reserve_allocation_bps: APC_BURN_RESERVE_ALLOCATION_BPS,
+        operations_allocation_bps: APC_OPERATIONS_ALLOCATION_BPS,
+        base_band_release_cap: APC_BASE_BAND_RELEASE_CAP,
+        minimum_twap_minutes: APC_MINIMUM_TWAP_MINUTES,
+        minimum_liquidity_usd: APC_MINIMUM_LIQUIDITY_USD,
+        minimum_quote_liquidity_usd: APC_MINIMUM_QUOTE_LIQUIDITY_USD,
+        minimum_volume_usd: APC_MINIMUM_VOLUME_USD,
+        minimum_buy_pressure_bps: APC_MINIMUM_BUY_PRESSURE_BPS,
+        risk_velocity_thresholds_bps: APC_RISK_VELOCITY_THRESHOLDS_BPS,
+        risk_volatility_thresholds_bps: APC_RISK_VOLATILITY_THRESHOLDS_BPS,
+        risk_price_impact_thresholds_bps: APC_RISK_PRICE_IMPACT_THRESHOLDS_BPS,
+        band_interval_bps_by_risk: APC_INTERVAL_BPS_BY_RISK,
+        band_release_bps_by_risk: APC_RELEASE_BPS_BY_RISK,
+        cascade_reduction_bps: APC_CASCADE_REDUCTION_BPS,
+        recovery_spending_cap: APC_RECOVERY_TOTAL_SPENDING_CAP,
+        deferred_burn_window_cap: APC_DEFERRED_BURN_WINDOW_CAP,
+        deferred_burn_window_seconds: APC_DEFERRED_BURN_WINDOW_SECONDS,
+        deferred_burn_cooldown_seconds: APC_DEFERRED_BURN_COOLDOWN_SECONDS,
+        deferred_burn_resumption_rate_bps: APC_DEFERRED_BURN_RESUMPTION_RATE_BPS,
+        maximum_recovery_purchase_bps: APC_MAXIMUM_RECOVERY_PURCHASE_BPS,
+        minimum_counterweight_reserve_bps: APC_MINIMUM_COUNTERWEIGHT_RESERVE_BPS,
+        recovery_window_cap: APC_RECOVERY_WINDOW_CAP,
+        recovery_window_seconds: APC_RECOVERY_WINDOW_SECONDS,
+        recovery_cooldown_seconds: APC_RECOVERY_COOLDOWN_SECONDS,
+        recovery_support_drawdown_bps: APC_RECOVERY_SUPPORT_DRAWDOWN_BPS,
+        recovery_purchase_bps_by_support: APC_RECOVERY_PURCHASE_BPS_BY_SUPPORT,
     }
 }
 
 fn test_apc_config() -> ApcConfig {
     let params = test_apc_params();
     ApcConfig {
+        policy_version: params.policy_version,
+        policy_hash: params.policy_hash,
         state: Pubkey::new_unique(),
         oracle_feed: Pubkey::new_unique(),
         quote_mint: params.quote_mint,
@@ -89,9 +101,14 @@ fn test_apc_config() -> ApcConfig {
         pump_window_release_cap: params.pump_window_release_cap,
         pump_window_seconds: params.pump_window_seconds,
         minimum_counterweight_coverage_bps: params.minimum_counterweight_coverage_bps,
+        counterweight_proceeds_allocation_bps: params.counterweight_proceeds_allocation_bps,
+        liquidity_reinforcement_allocation_bps: params.liquidity_reinforcement_allocation_bps,
+        burn_reserve_allocation_bps: params.burn_reserve_allocation_bps,
+        operations_allocation_bps: params.operations_allocation_bps,
         base_band_release_cap: params.base_band_release_cap,
         minimum_twap_minutes: params.minimum_twap_minutes,
         minimum_liquidity_usd: params.minimum_liquidity_usd,
+        minimum_quote_liquidity_usd: params.minimum_quote_liquidity_usd,
         minimum_volume_usd: params.minimum_volume_usd,
         minimum_buy_pressure_bps: params.minimum_buy_pressure_bps,
         risk_velocity_thresholds_bps: params.risk_velocity_thresholds_bps,
@@ -104,11 +121,14 @@ fn test_apc_config() -> ApcConfig {
         deferred_burn_window_cap: params.deferred_burn_window_cap,
         deferred_burn_window_seconds: params.deferred_burn_window_seconds,
         deferred_burn_cooldown_seconds: params.deferred_burn_cooldown_seconds,
+        deferred_burn_resumption_rate_bps: params.deferred_burn_resumption_rate_bps,
         maximum_recovery_purchase_bps: params.maximum_recovery_purchase_bps,
         minimum_counterweight_reserve_bps: params.minimum_counterweight_reserve_bps,
         recovery_window_cap: params.recovery_window_cap,
         recovery_window_seconds: params.recovery_window_seconds,
         recovery_cooldown_seconds: params.recovery_cooldown_seconds,
+        recovery_support_drawdown_bps: params.recovery_support_drawdown_bps,
+        recovery_purchase_bps_by_support: params.recovery_purchase_bps_by_support,
         is_active: true,
         is_paused: false,
         bump: 254,
@@ -329,8 +349,8 @@ fn risk_and_interval_calculation_is_deterministic() {
         config.risk_volatility_thresholds_bps,
         config.risk_price_impact_thresholds_bps,
     );
-    assert_eq!(tier, 2);
-    assert_eq!(calculate_band_interval_bps(&config, tier).unwrap(), 1_500);
+    assert_eq!(tier, 3);
+    assert_eq!(calculate_band_interval_bps(&config, tier).unwrap(), 750);
 }
 
 #[test]
@@ -578,6 +598,7 @@ fn deferred_burn_limits_are_windowed_capped_and_cooled_down() {
     let config = test_apc_config();
     let core = test_state(0);
     let mut apc = test_apc_state(config.state);
+    apc.deferred_burn_amount = 1_000 * PEX_DECIMALS;
     let amount = 100 * PEX_DECIMALS;
 
     assert!(
@@ -611,17 +632,17 @@ fn recovery_limits_preserve_reserve_and_prevent_single_price_depletion() {
     apc.total_counterweight_credited = 1_000_000;
 
     assert!(validate_recovery_purchase_limits(
-        &config, &apc, 100_000, 1_000_000, 1_000_000, 10_000,
+        &config, &apc, 100_000, 1_000_000, 1_000_000, 2_000, 10_000, 10_000,
     )
     .is_ok());
     assert!(validate_recovery_purchase_limits(
-        &config, &apc, 300_000, 1_000_000, 1_000_000, 10_000,
+        &config, &apc, 300_000, 1_000_000, 1_000_000, 2_000, 10_000, 10_000,
     )
     .is_err());
 
     apc.recovery_window_spent = config.recovery_window_cap - 50_000;
     assert!(validate_recovery_purchase_limits(
-        &config, &apc, 100_000, 1_000_000, 1_000_000, 10_000,
+        &config, &apc, 100_000, 1_000_000, 1_000_000, 2_000, 10_000, 10_000,
     )
     .is_err());
 
@@ -633,7 +654,104 @@ fn recovery_limits_preserve_reserve_and_prevent_single_price_depletion() {
         100_000,
         1_000_000,
         1_000_000,
+        2_000,
+        10_000,
         10_000 + config.recovery_cooldown_seconds - 1,
     )
     .is_err());
+}
+
+fn assert_apc_policy_mutation_rejected(mutator: impl FnOnce(&mut InitializeApcParams)) {
+    let state = test_state(0);
+    let mut params = test_apc_params();
+    mutator(&mut params);
+    assert!(validate_apc_policy(&state, &params).is_err());
+}
+
+#[test]
+fn every_apc_policy_v1_parameter_is_exact_and_immutable() {
+    assert!(validate_apc_policy(&test_state(0), &test_apc_params()).is_ok());
+    assert_apc_policy_mutation_rejected(|p| p.policy_version += 1);
+    assert_apc_policy_mutation_rejected(|p| p.policy_hash[0] ^= 1);
+    assert_apc_policy_mutation_rejected(|p| p.price_scale += 1);
+    assert_apc_policy_mutation_rejected(|p| p.first_activation_price += 1);
+    assert_apc_policy_mutation_rejected(|p| p.minimum_band_interval_bps += 1);
+    assert_apc_policy_mutation_rejected(|p| p.maximum_band_interval_bps += 1);
+    assert_apc_policy_mutation_rejected(|p| p.maximum_observation_age_seconds += 1);
+    assert_apc_policy_mutation_rejected(|p| p.maximum_future_clock_skew_seconds += 1);
+    assert_apc_policy_mutation_rejected(|p| p.hourly_release_cap += 1);
+    assert_apc_policy_mutation_rejected(|p| p.pump_window_release_cap += 1);
+    assert_apc_policy_mutation_rejected(|p| p.pump_window_seconds += 1);
+    assert_apc_policy_mutation_rejected(|p| p.minimum_counterweight_coverage_bps += 1);
+    assert_apc_policy_mutation_rejected(|p| p.counterweight_proceeds_allocation_bps += 1);
+    assert_apc_policy_mutation_rejected(|p| p.liquidity_reinforcement_allocation_bps += 1);
+    assert_apc_policy_mutation_rejected(|p| p.burn_reserve_allocation_bps += 1);
+    assert_apc_policy_mutation_rejected(|p| p.operations_allocation_bps += 1);
+    assert_apc_policy_mutation_rejected(|p| p.base_band_release_cap += 1);
+    assert_apc_policy_mutation_rejected(|p| p.minimum_twap_minutes += 1);
+    assert_apc_policy_mutation_rejected(|p| p.minimum_liquidity_usd += 1);
+    assert_apc_policy_mutation_rejected(|p| p.minimum_quote_liquidity_usd += 1);
+    assert_apc_policy_mutation_rejected(|p| p.minimum_volume_usd += 1);
+    assert_apc_policy_mutation_rejected(|p| p.minimum_buy_pressure_bps += 1);
+    assert_apc_policy_mutation_rejected(|p| p.risk_velocity_thresholds_bps[0] += 1);
+    assert_apc_policy_mutation_rejected(|p| p.risk_volatility_thresholds_bps[1] += 1);
+    assert_apc_policy_mutation_rejected(|p| p.risk_price_impact_thresholds_bps[2] += 1);
+    assert_apc_policy_mutation_rejected(|p| p.band_interval_bps_by_risk[0] += 1);
+    assert_apc_policy_mutation_rejected(|p| p.band_release_bps_by_risk[1] += 1);
+    assert_apc_policy_mutation_rejected(|p| p.cascade_reduction_bps[2] += 1);
+    assert_apc_policy_mutation_rejected(|p| p.recovery_spending_cap += 1);
+    assert_apc_policy_mutation_rejected(|p| p.deferred_burn_window_cap += 1);
+    assert_apc_policy_mutation_rejected(|p| p.deferred_burn_window_seconds += 1);
+    assert_apc_policy_mutation_rejected(|p| p.deferred_burn_cooldown_seconds += 1);
+    assert_apc_policy_mutation_rejected(|p| p.deferred_burn_resumption_rate_bps += 1);
+    assert_apc_policy_mutation_rejected(|p| p.maximum_recovery_purchase_bps += 1);
+    assert_apc_policy_mutation_rejected(|p| p.minimum_counterweight_reserve_bps += 1);
+    assert_apc_policy_mutation_rejected(|p| p.recovery_window_cap += 1);
+    assert_apc_policy_mutation_rejected(|p| p.recovery_window_seconds += 1);
+    assert_apc_policy_mutation_rejected(|p| p.recovery_cooldown_seconds += 1);
+    assert_apc_policy_mutation_rejected(|p| p.recovery_support_drawdown_bps[0] += 1);
+    assert_apc_policy_mutation_rejected(|p| p.recovery_purchase_bps_by_support[3] -= 1);
+}
+
+#[test]
+fn apc_policy_v1_property_invariants_hold_for_thousands_of_inputs() {
+    let config = test_apc_config();
+    let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+    for _ in 0..25_000 {
+        seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+        let risk = (seed % 4) as u8;
+        let cascade = ((seed >> 8) % 64 + 1) as u32;
+        let cap = calculate_band_release_cap(&config, risk, cascade).unwrap();
+        assert!(cap > 0);
+        assert!(cap <= config.base_band_release_cap);
+        assert!(cap <= config.hourly_release_cap);
+        if risk > 0 {
+            let safer = calculate_band_release_cap(&config, risk - 1, cascade).unwrap();
+            assert!(cap <= safer);
+            assert!(
+                config.band_interval_bps_by_risk[risk as usize]
+                    <= config.band_interval_bps_by_risk[(risk - 1) as usize]
+            );
+        }
+
+        let reference = 10_000 + (seed % 1_000_000);
+        let drawdown = config.recovery_support_drawdown_bps[(seed as usize) % 4] as u64;
+        let effective = reference
+            .saturating_mul(10_000u64.saturating_sub(drawdown))
+            .checked_div(10_000)
+            .unwrap()
+            .max(1);
+        let support =
+            recovery_purchase_bps_for_price_support(&config, effective, reference).unwrap();
+        assert!(support <= config.maximum_recovery_purchase_bps);
+
+        let deferred = 1_000_000 * PEX_DECIMALS + (seed % 10_000) * PEX_DECIMALS;
+        let resumption = amount_bps(deferred, config.deferred_burn_resumption_rate_bps).unwrap();
+        assert!(resumption <= deferred);
+        let executable = resumption.min(config.deferred_burn_window_cap);
+        assert!(executable <= resumption);
+        assert!(executable <= config.deferred_burn_window_cap);
+
+        assert!(calculate_next_band_price(u64::MAX, config.maximum_band_interval_bps).is_err());
+    }
 }

@@ -143,6 +143,8 @@ pub struct RecoverySwapAdapterParams {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct InitializeApcParams {
+    pub policy_version: u16,
+    pub policy_hash: [u8; 32],
     pub quote_mint: Pubkey,
     pub approved_pool: Pubkey,
     pub approved_proceeds_owner: Pubkey,
@@ -158,9 +160,14 @@ pub struct InitializeApcParams {
     pub pump_window_release_cap: u64,
     pub pump_window_seconds: i64,
     pub minimum_counterweight_coverage_bps: u16,
+    pub counterweight_proceeds_allocation_bps: u16,
+    pub liquidity_reinforcement_allocation_bps: u16,
+    pub burn_reserve_allocation_bps: u16,
+    pub operations_allocation_bps: u16,
     pub base_band_release_cap: u64,
     pub minimum_twap_minutes: u64,
     pub minimum_liquidity_usd: u64,
+    pub minimum_quote_liquidity_usd: u64,
     pub minimum_volume_usd: u64,
     pub minimum_buy_pressure_bps: u16,
     pub risk_velocity_thresholds_bps: [u32; 3],
@@ -173,11 +180,14 @@ pub struct InitializeApcParams {
     pub deferred_burn_window_cap: u64,
     pub deferred_burn_window_seconds: i64,
     pub deferred_burn_cooldown_seconds: i64,
+    pub deferred_burn_resumption_rate_bps: u16,
     pub maximum_recovery_purchase_bps: u16,
     pub minimum_counterweight_reserve_bps: u16,
     pub recovery_window_cap: u64,
     pub recovery_window_seconds: i64,
     pub recovery_cooldown_seconds: i64,
+    pub recovery_support_drawdown_bps: [u16; 4],
+    pub recovery_purchase_bps_by_support: [u16; 4],
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -289,6 +299,8 @@ pub struct RecoveryPoolConfig {
 #[account]
 #[derive(InitSpace)]
 pub struct ApcConfig {
+    pub policy_version: u16,
+    pub policy_hash: [u8; 32],
     pub state: Pubkey,
     pub oracle_feed: Pubkey,
     pub quote_mint: Pubkey,
@@ -306,9 +318,14 @@ pub struct ApcConfig {
     pub pump_window_release_cap: u64,
     pub pump_window_seconds: i64,
     pub minimum_counterweight_coverage_bps: u16,
+    pub counterweight_proceeds_allocation_bps: u16,
+    pub liquidity_reinforcement_allocation_bps: u16,
+    pub burn_reserve_allocation_bps: u16,
+    pub operations_allocation_bps: u16,
     pub base_band_release_cap: u64,
     pub minimum_twap_minutes: u64,
     pub minimum_liquidity_usd: u64,
+    pub minimum_quote_liquidity_usd: u64,
     pub minimum_volume_usd: u64,
     pub minimum_buy_pressure_bps: u16,
     pub risk_velocity_thresholds_bps: [u32; 3],
@@ -321,11 +338,14 @@ pub struct ApcConfig {
     pub deferred_burn_window_cap: u64,
     pub deferred_burn_window_seconds: i64,
     pub deferred_burn_cooldown_seconds: i64,
+    pub deferred_burn_resumption_rate_bps: u16,
     pub maximum_recovery_purchase_bps: u16,
     pub minimum_counterweight_reserve_bps: u16,
     pub recovery_window_cap: u64,
     pub recovery_window_seconds: i64,
     pub recovery_cooldown_seconds: i64,
+    pub recovery_support_drawdown_bps: [u16; 4],
+    pub recovery_purchase_bps_by_support: [u16; 4],
     pub is_active: bool,
     pub is_paused: bool,
     pub bump: u8,

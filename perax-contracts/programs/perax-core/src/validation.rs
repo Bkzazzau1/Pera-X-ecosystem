@@ -239,7 +239,63 @@ pub(crate) fn reset_burn_window_if_needed(state: &mut PeraxState, now: i64) {
     }
 }
 
+fn validate_exact_apc_policy_v1(params: &InitializeApcParams) -> Result<()> {
+    require!(
+        params.policy_version == crate::APC_POLICY_VERSION
+            && params.policy_hash == crate::APC_POLICY_HASH_SHA256
+            && params.price_scale == crate::APC_PRICE_SCALE
+            && params.first_activation_price == crate::APC_FIRST_ACTIVATION_PRICE_SCALED
+            && params.minimum_band_interval_bps == crate::APC_MINIMUM_BAND_INTERVAL_BPS
+            && params.maximum_band_interval_bps == crate::APC_MAXIMUM_BAND_INTERVAL_BPS
+            && params.maximum_observation_age_seconds == crate::APC_MAXIMUM_OBSERVATION_AGE_SECONDS
+            && params.maximum_future_clock_skew_seconds
+                == crate::APC_MAXIMUM_FUTURE_CLOCK_SKEW_SECONDS
+            && params.hourly_release_cap == crate::APC_HOURLY_RELEASE_CAP
+            && params.pump_window_release_cap == crate::APC_PUMP_WINDOW_RELEASE_CAP
+            && params.pump_window_seconds == crate::APC_PUMP_WINDOW_SECONDS
+            && params.minimum_counterweight_coverage_bps
+                == crate::APC_MINIMUM_COUNTERWEIGHT_COVERAGE_BPS
+            && params.counterweight_proceeds_allocation_bps
+                == crate::APC_COUNTERWEIGHT_PROCEEDS_ALLOCATION_BPS
+            && params.liquidity_reinforcement_allocation_bps
+                == crate::APC_LIQUIDITY_REINFORCEMENT_ALLOCATION_BPS
+            && params.burn_reserve_allocation_bps == crate::APC_BURN_RESERVE_ALLOCATION_BPS
+            && params.operations_allocation_bps == crate::APC_OPERATIONS_ALLOCATION_BPS
+            && params.base_band_release_cap == crate::APC_BASE_BAND_RELEASE_CAP
+            && params.minimum_twap_minutes == crate::APC_MINIMUM_TWAP_MINUTES
+            && params.minimum_liquidity_usd == crate::APC_MINIMUM_LIQUIDITY_USD
+            && params.minimum_quote_liquidity_usd == crate::APC_MINIMUM_QUOTE_LIQUIDITY_USD
+            && params.minimum_volume_usd == crate::APC_MINIMUM_VOLUME_USD
+            && params.minimum_buy_pressure_bps == crate::APC_MINIMUM_BUY_PRESSURE_BPS
+            && params.risk_velocity_thresholds_bps == crate::APC_RISK_VELOCITY_THRESHOLDS_BPS
+            && params.risk_volatility_thresholds_bps == crate::APC_RISK_VOLATILITY_THRESHOLDS_BPS
+            && params.risk_price_impact_thresholds_bps
+                == crate::APC_RISK_PRICE_IMPACT_THRESHOLDS_BPS
+            && params.band_interval_bps_by_risk == crate::APC_INTERVAL_BPS_BY_RISK
+            && params.band_release_bps_by_risk == crate::APC_RELEASE_BPS_BY_RISK
+            && params.cascade_reduction_bps == crate::APC_CASCADE_REDUCTION_BPS
+            && params.recovery_spending_cap == crate::APC_RECOVERY_TOTAL_SPENDING_CAP
+            && params.deferred_burn_window_cap == crate::APC_DEFERRED_BURN_WINDOW_CAP
+            && params.deferred_burn_window_seconds == crate::APC_DEFERRED_BURN_WINDOW_SECONDS
+            && params.deferred_burn_cooldown_seconds == crate::APC_DEFERRED_BURN_COOLDOWN_SECONDS
+            && params.deferred_burn_resumption_rate_bps
+                == crate::APC_DEFERRED_BURN_RESUMPTION_RATE_BPS
+            && params.maximum_recovery_purchase_bps == crate::APC_MAXIMUM_RECOVERY_PURCHASE_BPS
+            && params.minimum_counterweight_reserve_bps
+                == crate::APC_MINIMUM_COUNTERWEIGHT_RESERVE_BPS
+            && params.recovery_window_cap == crate::APC_RECOVERY_WINDOW_CAP
+            && params.recovery_window_seconds == crate::APC_RECOVERY_WINDOW_SECONDS
+            && params.recovery_cooldown_seconds == crate::APC_RECOVERY_COOLDOWN_SECONDS
+            && params.recovery_support_drawdown_bps == crate::APC_RECOVERY_SUPPORT_DRAWDOWN_BPS
+            && params.recovery_purchase_bps_by_support
+                == crate::APC_RECOVERY_PURCHASE_BPS_BY_SUPPORT,
+        PeraxError::InvalidApcPolicy
+    );
+    Ok(())
+}
+
 pub(crate) fn validate_apc_policy(state: &PeraxState, params: &InitializeApcParams) -> Result<()> {
+    validate_exact_apc_policy_v1(params)?;
     require!(
         params.quote_mint != Pubkey::default(),
         PeraxError::InvalidCounterweightMint
@@ -437,6 +493,10 @@ pub(crate) fn validate_apc_market_gates(
     );
     require!(
         observation.liquidity_usd >= config.minimum_liquidity_usd,
+        PeraxError::LiquidityGateNotMet
+    );
+    require!(
+        observation.quote_liquidity_usd >= config.minimum_quote_liquidity_usd,
         PeraxError::LiquidityGateNotMet
     );
     require!(
@@ -685,6 +745,14 @@ pub(crate) fn validate_deferred_burn_limits(
             PeraxError::DeferredBurnCooldownActive
         );
     }
+    let resumption_cap = amount_bps(
+        apc_state.deferred_burn_amount,
+        config.deferred_burn_resumption_rate_bps,
+    )?;
+    require!(
+        resumption_cap > 0 && requested_amount <= resumption_cap,
+        PeraxError::DeferredBurnWindowCapExceeded
+    );
     require_checked_cap(
         apc_state.deferred_burn_window_executed,
         requested_amount,
@@ -700,12 +768,39 @@ pub(crate) fn validate_deferred_burn_limits(
     Ok(())
 }
 
+pub fn recovery_purchase_bps_for_price_support(
+    config: &ApcConfig,
+    effective_price: u64,
+    reference_price: u64,
+) -> Result<u16> {
+    require!(
+        effective_price > 0 && reference_price > 0 && effective_price < reference_price,
+        PeraxError::RecoveryNotActive
+    );
+    let drawdown = (u128::from(reference_price - effective_price))
+        .checked_mul(APC_BPS_DENOMINATOR)
+        .ok_or(PeraxError::InvalidMarketParameter)?
+        .checked_div(u128::from(reference_price))
+        .ok_or(PeraxError::InvalidMarketParameter)?;
+    let drawdown = u16::try_from(drawdown.min(u128::from(u16::MAX)))
+        .map_err(|_| PeraxError::InvalidMarketParameter)?;
+    let mut selected = None;
+    for (index, threshold) in config.recovery_support_drawdown_bps.iter().enumerate() {
+        if drawdown >= *threshold {
+            selected = Some(config.recovery_purchase_bps_by_support[index]);
+        }
+    }
+    selected.ok_or(PeraxError::RecoverySupportBandNotMet.into())
+}
+
 pub(crate) fn validate_recovery_purchase_limits(
     config: &ApcConfig,
     apc_state: &ApcState,
     requested_maximum: u64,
     tracked_available: u64,
     actual_vault_balance: u64,
+    effective_price: u64,
+    reference_price: u64,
     now: i64,
 ) -> Result<()> {
     if apc_state.last_recovery_purchase_timestamp > 0 {
@@ -720,7 +815,13 @@ pub(crate) fn validate_recovery_purchase_limits(
         requested_maximum <= tracked_available && requested_maximum <= actual_vault_balance,
         PeraxError::InvalidCounterweightVault
     );
-    let single_purchase_cap = amount_bps(tracked_available, config.maximum_recovery_purchase_bps)?;
+    let support_bps =
+        recovery_purchase_bps_for_price_support(config, effective_price, reference_price)?;
+    require!(
+        support_bps <= config.maximum_recovery_purchase_bps,
+        PeraxError::InvalidApcPolicy
+    );
+    let single_purchase_cap = amount_bps(tracked_available, support_bps)?;
     require!(
         requested_maximum <= single_purchase_cap,
         PeraxError::RecoveryPurchaseCapExceeded
