@@ -113,6 +113,8 @@ export type SettlementRecordView = {
   marketPexReceived: bigint;
   policyVaultPexReceived: bigint;
   directPexReceived: bigint;
+  settlementRecordAddress?: string;
+  transactionSignature?: string;
 };
 
 export type AtomicMarketPurchase = {
@@ -146,3 +148,30 @@ export interface SettlementProgramClient {
     settlementId: Uint8Array,
   ): Promise<SettlementRecordView>;
 }
+
+export interface SettlementObservationProvider {
+  getFreshObservationId(): Promise<Uint8Array>;
+}
+
+export type SettlementExecutorRequest = {
+  solanaRpcUrl: string;
+  programId: string;
+  statePda: string;
+  pexMintAddress: string;
+  orderReference: string;
+  settlementIdHex: string;
+  productIdHex: string;
+  fundingMethod: SettlementFundingMethod;
+  quantity: number;
+  beneficiaryWallet: string;
+  previousStatus: string;
+  attempt: number;
+};
+
+export type SettlementExecutorResponse = {
+  status: "finalized" | "failed";
+  terminalFailure: boolean;
+  settlementRecordAddress?: string;
+  transactionSignature?: string;
+  error?: string;
+};
