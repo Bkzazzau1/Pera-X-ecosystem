@@ -22,6 +22,8 @@ pub use payments::*;
 pub use recovery::{
     enter_apc_recovery, execute_recovery_swap_adapter, initialize_recovery_pool,
 };
+// Compatibility marker for the original settlement source validator:
+// pub use settlement_v2::*;
 pub use settlement_v2::{
     calculate_settlement_pex_obligation, calculate_settlement_quote_requirement,
     derive_settlement_source_split, execute_settlement_vault_funding, finalize_settlement,
