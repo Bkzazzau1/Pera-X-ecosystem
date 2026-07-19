@@ -67,10 +67,10 @@ insert = '''    let record_key = ctx.accounts.settlement_record.key();
         SettlementError::InvalidSettlementDestination
     );
 '''
-if insert.strip() not in handler:
-    handler = handler.replace(header, header + insert, 1)
 handler = handler.replace("    let record_key = ctx.accounts.settlement_record.key();\n", "", 1)
 handler = handler.replace("    let authority_key = ctx.accounts.settlement_authority.key();\n", "", 1)
+if insert.strip() not in handler:
+    handler = handler.replace(header, header + insert, 1)
 handler = handler.replace(
     "    custody.authority_bump = ctx.bumps.settlement_authority;",
     "    custody.authority_bump = authority_bump;",
