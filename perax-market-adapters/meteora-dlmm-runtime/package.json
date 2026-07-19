@@ -4,21 +4,23 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "bootstrap": "node scripts/bootstrap.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node --test --import tsx test/*.test.ts",
     "build": "tsc",
+    "verify": "npm run typecheck && npm test && npm run build && npm run audit:runtime",
     "audit:runtime": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.31.0",
     "@meteora-ag/dlmm": "1.9.13",
-    "@solana/web3.js": "^1.95.3",
+    "@solana/web3.js": "1.98.4",
     "bigint-buffer": "file:vendor/bigint-buffer-safe"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
-    "tsx": "^4.19.2",
-    "typescript": "^5.5.4"
+    "@types/node": "22.19.2",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
   },
   "overrides": {
     "bigint-buffer": "file:vendor/bigint-buffer-safe",
