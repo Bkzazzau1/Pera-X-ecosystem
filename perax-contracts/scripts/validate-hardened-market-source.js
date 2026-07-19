@@ -18,9 +18,11 @@ const assertNotContains = (text, forbidden, label) => {
 
 const modules = read("programs/perax-core/src/instructions/mod.rs");
 const hardened = read("programs/perax-core/src/instructions/hardened_market.rs");
+const product = read("programs/perax-core/src/instructions/hardened_product.rs");
 const validator = read("programs/perax-core/src/market_cpi.rs");
 
 assertContains(modules, "mod hardened_market;", "instructions/mod.rs");
+assertContains(modules, "mod hardened_product;", "instructions/mod.rs");
 assertContains(modules, 'path = "../market_cpi.rs"', "instructions/mod.rs");
 assertContains(
   modules,
@@ -30,6 +32,11 @@ assertContains(
 assertContains(
   modules,
   "execute_settlement_market_purchase_hardened as execute_settlement_market_purchase",
+  "instructions/mod.rs",
+);
+assertContains(
+  modules,
+  "update_product_settlement_policy_hardened as update_product_settlement_policy",
   "instructions/mod.rs",
 );
 assertNotContains(modules, "pub use recovery::*;", "instructions/mod.rs");
@@ -67,6 +74,22 @@ assertContains(
 assertNotContains(hardened, "let mut metas = vec![", "hardened handlers");
 
 assertContains(
+  product,
+  "requested_disposition == current.disposition",
+  "hardened product policy",
+);
+assertContains(
+  product,
+  "policy.disposition",
+  "hardened product policy",
+);
+assertNotContains(
+  product,
+  "policy.disposition =",
+  "hardened product policy",
+);
+
+assertContains(
   validator,
   "METEORA_SWAP_EXACT_OUT2_DISCRIMINATOR",
   "market CPI validator",
@@ -97,4 +120,4 @@ assertContains(
   "market CPI validator",
 );
 
-console.log("Hardened exact-out market source guards passed.");
+console.log("Hardened market and immutable product policy source guards passed.");
