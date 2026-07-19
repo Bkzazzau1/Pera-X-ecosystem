@@ -1,0 +1,61 @@
+name: Install Meteora Runtime
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/scripts/install-meteora-runtime.py"
+      - ".github/workflows/install-meteora-runtime.yml"
+      - "perax-market-adapters/meteora-dlmm-runtime/package.json"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  install-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: perax-market-adapters/meteora-dlmm-runtime/package-lock.json
+
+      - name: Install tested runtime source
+        run: python3 .github/scripts/install-meteora-runtime.py
+
+      - name: Generate deterministic dependency lock
+        working-directory: perax-market-adapters/meteora-dlmm-runtime
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Verify clean installation and runtime
+        working-directory: perax-market-adapters/meteora-dlmm-runtime
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+          npm test
+          npm run build
+          npm run audit:runtime
+
+      - name: Commit verified runtime to main
+        run: |
+          git diff --check
+          git add perax-market-adapters/meteora-dlmm-runtime
+          if git diff --cached --quiet; then
+            echo "Meteora runtime is already synchronized."
+            exit 0
+          fi
+          git config user.name "Pera-X policy automation"
+          git config user.email "actions@github.com"
+          git commit -m "Implement verified Meteora DLMM runtime"
+          git push origin HEAD:main
