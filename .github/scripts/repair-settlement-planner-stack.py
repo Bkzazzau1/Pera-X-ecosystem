@@ -135,4 +135,8 @@ assertContains(
 );'''
 if old_guard in source_guard:
     source_guard = source_guard.replace(old_guard, new_guard, 1)
+source_guard = source_guard.replace(
+    'settlement_pex_vault.owner == ctx.accounts.settlement_authority.key()',
+    'settlement_pex_vault.owner == authority_key',
+)
 source_guard_path.write_text(source_guard)
