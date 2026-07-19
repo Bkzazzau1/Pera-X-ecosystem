@@ -80,38 +80,34 @@ pub struct InitializeSettlementPolicyV2<'info> {
 #[derive(Accounts)]
 #[instruction(params: PlanSettlementParams)]
 pub struct PlanSettlementV2<'info> {
-    #[account(seeds = [b"perax-state"], bump = state.bump)]
+    #[account(
+        seeds = [b"perax-state"],
+        bump = state.bump
+    )]
     pub state: Box<Account<'info, PeraxState>>,
     #[account(
         seeds = [b"settlement-policy", state.key().as_ref()],
-        bump = settlement_policy.bump,
-        constraint = settlement_policy.state == state.key() @ SettlementError::InvalidPolicy
+        bump = settlement_policy.bump
     )]
     pub settlement_policy: Box<Account<'info, SettlementPolicy>>,
     #[account(
         seeds = [b"product-settlement", params.product_id.as_ref()],
-        bump = product_policy.bump,
-        constraint = product_policy.settlement_policy == settlement_policy.key() @ SettlementError::InvalidPolicy,
-        constraint = product_policy.product_id == params.product_id @ SettlementError::InvalidPolicy
+        bump = product_policy.bump
     )]
     pub product_policy: Box<Account<'info, ProductSettlementPolicy>>,
     #[account(
         seeds = [b"apc-config", state.key().as_ref()],
-        bump = apc_config.bump,
-        constraint = apc_config.key() == settlement_policy.apc_config @ SettlementError::InvalidPolicy
+        bump = apc_config.bump
     )]
     pub apc_config: Box<Account<'info, ApcConfig>>,
     #[account(
         seeds = [b"apc-state", apc_config.key().as_ref()],
-        bump = apc_state.bump,
-        constraint = apc_state.config == apc_config.key() @ PeraxError::ApcNotInitialized
+        bump = apc_state.bump
     )]
     pub apc_state: Box<Account<'info, ApcState>>,
     #[account(
         seeds = [b"apc-observation", params.observation_id.as_ref()],
-        bump = observation.bump,
-        constraint = observation.observation_id == params.observation_id @ PeraxError::InvalidReference,
-        constraint = observation.oracle_feed == apc_config.oracle_feed @ PeraxError::Unauthorized
+        bump = observation.bump
     )]
     pub observation: Box<Account<'info, ApcObservation>>,
     #[account(
@@ -143,7 +139,7 @@ pub struct PlanSettlementV2<'info> {
         associated_token::authority = settlement_authority
     )]
     pub settlement_pex_vault: Box<Account<'info, TokenAccount>>,
-    #[account(address = settlement_policy.pex_mint @ PeraxError::InvalidTokenMint)]
+
     pub pex_mint: Box<Account<'info, Mint>>,
     #[account(mut)]
     pub initiator: Signer<'info>,

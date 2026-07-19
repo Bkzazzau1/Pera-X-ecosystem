@@ -197,6 +197,54 @@ pub fn execute_counterweight_purchase_hardened<'info>(
     params: ExecuteCounterweightPurchaseParams,
 ) -> Result<()> {
     validate_reference(params.recovery_id)?;
+    require_keys_eq!(
+        ctx.accounts.state.token_mint,
+        ctx.accounts.pex_mint.key(),
+        PeraxError::InvalidTokenMint
+    );
+    require_keys_eq!(
+        ctx.accounts.apc_config.oracle_feed,
+        ctx.accounts.oracle_feed.key(),
+        PeraxError::Unauthorized
+    );
+    require!(
+        ctx.accounts.observation.observation_id == params.observation_id
+            && ctx.accounts.observation.oracle_feed == ctx.accounts.oracle_feed.key(),
+        PeraxError::InvalidReference
+    );
+    require!(
+        ctx.accounts.counterweight_vault.key()
+            == ctx.accounts.counterweight_config.counterweight_vault
+            && ctx.accounts.counterweight_vault.owner == ctx.accounts.counterweight_authority.key()
+            && ctx.accounts.counterweight_vault.mint == ctx.accounts.quote_mint.key(),
+        PeraxError::InvalidCounterweightVault
+    );
+    require!(
+        ctx.accounts.recovery_vault.key() == ctx.accounts.counterweight_config.recovery_vault
+            && ctx.accounts.recovery_vault.owner
+                == ctx.accounts.counterweight_config.recovery_authority
+            && ctx.accounts.recovery_vault.mint == ctx.accounts.pex_mint.key(),
+        PeraxError::InvalidCounterweightVault
+    );
+    require_keys_eq!(
+        ctx.accounts.quote_mint.key(),
+        ctx.accounts.counterweight_config.quote_mint,
+        PeraxError::InvalidCounterweightMint
+    );
+    require_keys_eq!(
+        ctx.accounts.approved_pool.key(),
+        ctx.accounts.apc_config.approved_pool,
+        PeraxError::InvalidApcPool
+    );
+    require_keys_eq!(
+        ctx.accounts.recovery_program.key(),
+        ctx.accounts.apc_config.approved_recovery_program,
+        PeraxError::InvalidRecoveryProgram
+    );
+    require!(
+        ctx.accounts.recovery_program.to_account_info().executable,
+        PeraxError::InvalidRecoveryProgram
+    );
     validate_reference(params.observation_id)?;
     require!(
         params.maximum_quote_amount > 0 && params.minimum_pex_out > 0,

@@ -16,6 +16,16 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, TransferChecked};
 
 pub fn initialize_apc(ctx: Context<InitializeApc>, params: InitializeApcParams) -> Result<()> {
+    require_keys_eq!(
+        ctx.accounts.token_mint.key(),
+        ctx.accounts.state.token_mint,
+        PeraxError::InvalidTokenMint
+    );
+    require_keys_eq!(
+        ctx.accounts.quote_mint.key(),
+        params.quote_mint,
+        PeraxError::InvalidCounterweightMint
+    );
     validate_apc_policy(&ctx.accounts.state, &params)?;
     require!(
         ctx.accounts.token_mint.decimals == PEX_MINT_DECIMALS,
@@ -337,6 +347,73 @@ pub fn execute_apc_release(
     validate_reference(params.release_id)?;
     validate_reference(params.observation_id)?;
     require!(params.amount > 0, PeraxError::InvalidAmount);
+    require_keys_eq!(
+        ctx.accounts.token_mint.key(),
+        ctx.accounts.state.token_mint,
+        PeraxError::InvalidTokenMint
+    );
+    require_keys_eq!(
+        ctx.accounts.apc_config.oracle_feed,
+        ctx.accounts.oracle_feed.key(),
+        PeraxError::Unauthorized
+    );
+    require_keys_eq!(
+        ctx.accounts.apc_state.config,
+        ctx.accounts.apc_config.key(),
+        PeraxError::ApcNotInitialized
+    );
+    require!(
+        ctx.accounts.observation.observation_id == params.observation_id
+            && ctx.accounts.observation.oracle_feed == ctx.accounts.oracle_feed.key(),
+        PeraxError::InvalidReference
+    );
+    require!(
+        ctx.accounts.band_record.band_index == params.band_index
+            && ctx.accounts.band_record.apc_state == ctx.accounts.apc_state.key(),
+        PeraxError::InvalidBandIndex
+    );
+    require!(
+        ctx.accounts.reserve_vault_config.state == ctx.accounts.state.key()
+            && ctx.accounts.reserve_vault_config.allocation_id == params.allocation_id
+            && ctx.accounts.reserve_vault_config.token_mint == ctx.accounts.token_mint.key(),
+        PeraxError::InvalidVaultConfiguration
+    );
+    require_keys_eq!(
+        ctx.accounts.vault_authority.key(),
+        ctx.accounts.reserve_vault_config.vault_authority,
+        PeraxError::InvalidVaultAuthority
+    );
+    require!(
+        ctx.accounts.vault_token_account.key()
+            == ctx.accounts.reserve_vault_config.vault_token_account
+            && ctx.accounts.vault_token_account.owner == ctx.accounts.vault_authority.key()
+            && ctx.accounts.vault_token_account.mint == ctx.accounts.token_mint.key(),
+        PeraxError::InvalidVaultTokenAccount
+    );
+    require!(
+        ctx.accounts.destination_token_account.key()
+            == ctx
+                .accounts
+                .reserve_vault_config
+                .approved_destination_token_account
+            && ctx.accounts.destination_token_account.owner
+                == ctx.accounts.reserve_vault_config.approved_destination_owner
+            && ctx.accounts.destination_token_account.mint == ctx.accounts.token_mint.key(),
+        PeraxError::InvalidApprovedDestination
+    );
+    require_keys_eq!(
+        ctx.accounts.counterweight_config.apc_config,
+        ctx.accounts.apc_config.key(),
+        PeraxError::InvalidCounterweightVault
+    );
+    require!(
+        ctx.accounts.counterweight_vault.key()
+            == ctx.accounts.counterweight_config.counterweight_vault
+            && ctx.accounts.counterweight_vault.owner
+                == ctx.accounts.counterweight_config.counterweight_authority
+            && ctx.accounts.counterweight_vault.mint == ctx.accounts.apc_config.quote_mint,
+        PeraxError::InvalidCounterweightVault
+    );
     require!(!ctx.accounts.state.is_paused, PeraxError::ProgramPaused);
     require!(
         !ctx.accounts.state.emergency_pause,

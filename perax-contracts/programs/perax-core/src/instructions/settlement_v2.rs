@@ -177,6 +177,36 @@ pub fn plan_settlement(ctx: Context<PlanSettlementV2>, params: PlanSettlementPar
     validate_reference(params.settlement_id)?;
     validate_reference(params.product_id)?;
     validate_reference(params.observation_id)?;
+    require_keys_eq!(
+        ctx.accounts.settlement_policy.state,
+        ctx.accounts.state.key(),
+        SettlementError::InvalidPolicy
+    );
+    require!(
+        ctx.accounts.product_policy.settlement_policy == ctx.accounts.settlement_policy.key()
+            && ctx.accounts.product_policy.product_id == params.product_id,
+        SettlementError::InvalidPolicy
+    );
+    require_keys_eq!(
+        ctx.accounts.apc_config.key(),
+        ctx.accounts.settlement_policy.apc_config,
+        SettlementError::InvalidPolicy
+    );
+    require_keys_eq!(
+        ctx.accounts.apc_state.config,
+        ctx.accounts.apc_config.key(),
+        crate::PeraxError::ApcNotInitialized
+    );
+    require!(
+        ctx.accounts.observation.observation_id == params.observation_id
+            && ctx.accounts.observation.oracle_feed == ctx.accounts.apc_config.oracle_feed,
+        crate::PeraxError::InvalidReference
+    );
+    require_keys_eq!(
+        ctx.accounts.pex_mint.key(),
+        ctx.accounts.settlement_policy.pex_mint,
+        crate::PeraxError::InvalidTokenMint
+    );
     require!(
         !ctx.accounts.state.is_paused,
         crate::PeraxError::ProgramPaused
