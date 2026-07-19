@@ -4,12 +4,10 @@ on:
   push:
     branches: [main]
     paths:
-      - ".github/scripts/install-meteora-runtime.py"
       - "perax-market-adapters/meteora-dlmm-runtime/**"
       - ".github/workflows/meteora-runtime-ci.yml"
   pull_request:
     paths:
-      - ".github/scripts/install-meteora-runtime.py"
       - "perax-market-adapters/meteora-dlmm-runtime/**"
       - ".github/workflows/meteora-runtime-ci.yml"
   workflow_dispatch:
@@ -29,9 +27,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "24"
-
-      - name: Reproduce checked-in source and lock
-        run: node scripts/bootstrap.mjs
+          cache: npm
+          cache-dependency-path: perax-market-adapters/meteora-dlmm-runtime/package-lock.json
 
       - name: Install exact dependency tree
         run: npm ci --ignore-scripts --no-audit --no-fund
