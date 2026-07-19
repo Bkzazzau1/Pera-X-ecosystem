@@ -30,18 +30,30 @@ jobs:
         run: |
           python3 .github/scripts/repair-settlement-planner-stack.py
           cargo +1.79.0 fmt --manifest-path perax-contracts/programs/perax-core/Cargo.toml
-      - name: Verify source and client
-        run: |
-          cd perax-contracts
-          npm ci --ignore-scripts --no-audit --no-fund
-          npm run validate:settlement
-          cargo +1.79.0 test --locked --manifest-path programs/perax-core/Cargo.toml
-          cargo +1.79.0 check --locked --all-targets
-          cd ../perax-market-engine
-          npm ci --ignore-scripts --no-audit --no-fund
-          npm run typecheck
-          npm test
-          npm run build
+      - name: Install contract dependencies
+        working-directory: perax-contracts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate settlement source guards
+        working-directory: perax-contracts
+        run: npm run validate:settlement
+      - name: Run Rust unit tests
+        working-directory: perax-contracts
+        run: cargo +1.79.0 test --locked --manifest-path programs/perax-core/Cargo.toml
+      - name: Check Rust contracts
+        working-directory: perax-contracts
+        run: cargo +1.79.0 check --locked --all-targets
+      - name: Install market engine dependencies
+        working-directory: perax-market-engine
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Typecheck market engine
+        working-directory: perax-market-engine
+        run: npm run typecheck
+      - name: Test market engine
+        working-directory: perax-market-engine
+        run: npm test
+      - name: Build market engine
+        working-directory: perax-market-engine
+        run: npm run build
       - name: Verify planner frame is gone
         working-directory: perax-contracts
         run: |
