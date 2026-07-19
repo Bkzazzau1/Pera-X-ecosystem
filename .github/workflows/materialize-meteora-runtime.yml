@@ -20,16 +20,22 @@ jobs:
           ref: verify/apc-settlement-completion-20260719
           fetch-depth: 0
 
-      - name: Set up Node.js 24
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
+      - name: Restore reviewed runtime from the verified pre-cleanup commit
+        run: |
+          git show 8f56b64d57af30cfcb2590b816ba576b09a86e05:.github/scripts/install-meteora-runtime.py > /tmp/install-meteora-runtime.py
+          git show 8f56b64d57af30cfcb2590b816ba576b09a86e05:perax-market-adapters/meteora-dlmm-runtime/generated/package-lock.gz.b64.001 > /tmp/package-lock.001
+          git show 8f56b64d57af30cfcb2590b816ba576b09a86e05:perax-market-adapters/meteora-dlmm-runtime/generated/package-lock.gz.b64.002 > /tmp/package-lock.002
+          python3 /tmp/install-meteora-runtime.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, gzip
+          encoded = Path('/tmp/package-lock.001').read_text() + Path('/tmp/package-lock.002').read_text()
+          lock = gzip.decompress(base64.b64decode(encoded))
+          target = Path('perax-market-adapters/meteora-dlmm-runtime/package-lock.json')
+          target.write_bytes(lock)
+          PY
 
-      - name: Reconstruct reviewed source and deterministic lock
-        working-directory: perax-market-adapters/meteora-dlmm-runtime
-        run: node scripts/bootstrap.mjs
-
-      - name: Remove temporary generator and update package documentation
+      - name: Keep only transparent source and update package documentation
         run: |
           node - <<'NODE'
           const fs = require('fs');
@@ -84,20 +90,24 @@ jobs:
           Production activation remains blocked until the APC numerical policy, settlement policy, pool, quote source, and product policies are formally approved and initialized.
           EOF
           rm -f .github/scripts/install-meteora-runtime.py
-          rm -f perax-market-adapters/meteora-dlmm-runtime/scripts/bootstrap.mjs
-          rm -f perax-market-adapters/meteora-dlmm-runtime/generated/package-lock.gz.b64.001
-          rm -f perax-market-adapters/meteora-dlmm-runtime/generated/package-lock.gz.b64.002
-          rmdir perax-market-adapters/meteora-dlmm-runtime/scripts 2>/dev/null || true
-          rmdir perax-market-adapters/meteora-dlmm-runtime/generated 2>/dev/null || true
+          rm -rf perax-market-adapters/meteora-dlmm-runtime/scripts
+          rm -rf perax-market-adapters/meteora-dlmm-runtime/generated
 
       - name: Commit transparent runtime package
         run: |
-          git add -A .github/scripts/install-meteora-runtime.py perax-market-adapters/meteora-dlmm-runtime
+          git add -u .github/scripts/install-meteora-runtime.py perax-market-adapters/meteora-dlmm-runtime
+          git add -f \
+            perax-market-adapters/meteora-dlmm-runtime/src \
+            perax-market-adapters/meteora-dlmm-runtime/test \
+            perax-market-adapters/meteora-dlmm-runtime/package-lock.json \
+            perax-market-adapters/meteora-dlmm-runtime/tsconfig.json \
+            perax-market-adapters/meteora-dlmm-runtime/vendor
+          git add perax-market-adapters/meteora-dlmm-runtime/package.json perax-market-adapters/meteora-dlmm-runtime/README.md
           if git diff --cached --quiet; then
             echo 'Meteora runtime is already transparent and materialized.'
             exit 0
           fi
           git config user.name 'Pera-X verification automation'
           git config user.email 'actions@github.com'
-          git commit -m 'Materialize transparent Meteora runtime source'
+          git commit -m 'Force-add transparent Meteora runtime source'
           git push origin HEAD:verify/apc-settlement-completion-20260719
