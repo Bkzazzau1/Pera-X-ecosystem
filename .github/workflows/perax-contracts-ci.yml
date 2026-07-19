@@ -93,8 +93,11 @@ jobs:
             --force \
             --outfile .local/devnet-deployer.json
 
-      - name: Install JavaScript dependencies
-        run: npm install
+      - name: Install exact JavaScript dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Audit production JavaScript dependencies
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Validate tokenomics
         run: npm run validate:tokenomics
@@ -112,11 +115,17 @@ jobs:
           node scripts/check-devnet-readiness.js
           node scripts/check-anchor-deploy-readiness.js
 
-      - name: Build Anchor program
+      - name: Build SBF program without Anchor IDL pass
         shell: bash
         run: |
           set -o pipefail
-          RUSTUP_TOOLCHAIN=1.85.0 anchor build 2>&1 | tee /tmp/anchor-build.log
+          RUSTUP_TOOLCHAIN=1.85.0 anchor build --no-idl 2>&1 | tee /tmp/anchor-build.log
+
+      - name: Generate IDL through plain Rust metadata pass
+        shell: bash
+        run: |
+          set -o pipefail
+          bash scripts/build-idl-safe.sh 2>&1 | tee -a /tmp/anchor-build.log
 
       - name: Validate generated settlement IDL
         run: npm run validate:settlement-idl
@@ -150,9 +159,11 @@ jobs:
       - name: Validate APC market engine
         working-directory: perax-market-engine
         run: |
-          npm ci
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run typecheck
           npm test
+          npm run build
+          npm audit --omit=dev --audit-level=high
 
-      - name: Run local-validator transaction tests
-        run: RUSTUP_TOOLCHAIN=1.85.0 anchor test --provider.cluster localnet
+      - name: Run local-validator transaction tests against existing build
+        run: RUSTUP_TOOLCHAIN=1.85.0 anchor test --skip-build --provider.cluster localnet
