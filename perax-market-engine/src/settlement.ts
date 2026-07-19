@@ -14,31 +14,50 @@ export class SettlementCoordinator {
   async execute(input: SettlementPlanInput): Promise<SettlementRecordView> {
     let settlement = await this.program.planSettlement(input);
 
+    if (settlement.status === "finalized") {
+      return settlement;
+    }
+    if (settlement.status === "ready") {
+      return this.program.finalizeSettlement(settlement.settlementId);
+    }
+
     switch (settlement.marketMode) {
-      case "directPex":
-        settlement = await this.program.fundDirectPex(
-          settlement.settlementId,
-          remainingDirectPex(settlement),
-        );
+      case "directPex": {
+        const remaining = remainingDirectPex(settlement);
+        if (remaining > 0n) {
+          settlement = await this.program.fundDirectPex(
+            settlement.settlementId,
+            remaining,
+          );
+        }
         break;
+      }
       case "marketPurchase":
         settlement = await this.executeMarketStage(settlement);
         break;
-      case "policyVault":
-        settlement = await this.program.executePolicyVaultFunding(
-          settlement.settlementId,
-        );
+      case "policyVault": {
+        if (remainingPolicyVaultPex(settlement) > 0n) {
+          settlement = await this.program.executePolicyVaultFunding(
+            settlement.settlementId,
+          );
+        }
         break;
+      }
       case "hybrid":
         settlement = await this.executeMarketStage(settlement);
-        settlement = await this.program.executePolicyVaultFunding(
-          settlement.settlementId,
-        );
+        if (remainingPolicyVaultPex(settlement) > 0n) {
+          settlement = await this.program.executePolicyVaultFunding(
+            settlement.settlementId,
+          );
+        }
         break;
       default:
         return assertNever(settlement.marketMode);
     }
 
+    if (settlement.status === "finalized") {
+      return settlement;
+    }
     if (settlement.status !== "ready") {
       throw new Error(
         `Settlement is not ready after contract-permitted funding: ${settlement.status}`,
