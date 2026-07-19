@@ -1,0 +1,183 @@
+name: Precreate Policy Vaults Safely
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.head_ref == 'verify/apc-settlement-completion-20260719'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout verification branch
+        uses: actions/checkout@v4
+        with:
+          ref: verify/apc-settlement-completion-20260719
+          fetch-depth: 0
+
+      - name: Set up toolchains
+        uses: dtolnay/rust-toolchain@1.79.0
+        with:
+          components: rustfmt
+
+      - name: Install Cargo 1.85 and Agave SBF tools
+        shell: bash
+        run: |
+          rustup toolchain install 1.85.0 --profile minimal
+          sh -c "$(curl -sSfL https://release.anza.xyz/v3.1.14/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Require pre-created PDA-owned token vaults
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          ROOT = Path('perax-contracts/programs/perax-core/src')
+
+          def find_struct(text: str, name: str):
+              marker = f'pub struct {name}'
+              pos = text.index(marker)
+              start = text.rfind('#[derive(Accounts)]', 0, pos)
+              end = text.index('\n}', pos) + 2
+              return start, end
+
+          def replace_field_account_attribute(block: str, field: str, replacement: str):
+              marker = f'pub {field}:'
+              field_pos = block.index(marker)
+              attr_start = block.rfind('#[account(', 0, field_pos)
+              if attr_start < 0:
+                  raise RuntimeError(f'Account attribute for {field} was not found')
+              i = attr_start + len('#[account(')
+              depth = 1
+              while i < len(block) and depth:
+                  if block[i] == '(':
+                      depth += 1
+                  elif block[i] == ')':
+                      depth -= 1
+                  i += 1
+              if depth != 0 or i >= len(block) or block[i] != ']':
+                  raise RuntimeError(f'Unbalanced account attribute for {field}')
+              return block[:attr_start] + replacement + block[i + 1:]
+
+          contexts_path = ROOT / 'contexts.rs'
+          contexts = contexts_path.read_text()
+          for name, fields in [
+              ('InitializeRecoveryPool', ('pool_quote_vault', 'pool_pex_vault')),
+              ('InitializeApc', ('counterweight_vault', 'deferred_burn_vault', 'recovery_vault')),
+          ]:
+              start, end = find_struct(contexts, name)
+              block = contexts[start:end]
+              for field in fields:
+                  block = replace_field_account_attribute(block, field, '#[account(mut)]')
+              block = block.replace("    pub token_program: Program<'info, Token>,\n", '')
+              block = block.replace("    pub associated_token_program: Program<'info, AssociatedToken>,\n", '')
+              contexts = contexts[:start] + block + contexts[end:]
+          contexts_path.write_text(contexts)
+
+          settlement_path = ROOT / 'settlement_v2.rs'
+          settlement = settlement_path.read_text()
+          start, end = find_struct(settlement, 'PlanSettlementV2')
+          block = settlement[start:end]
+          block = replace_field_account_attribute(block, 'settlement_pex_vault', '#[account(mut)]')
+          block = block.replace("    pub token_program: Program<'info, Token>,\n", '')
+          block = block.replace("    pub associated_token_program: Program<'info, AssociatedToken>,\n", '')
+          settlement_path.write_text(settlement[:start] + block + settlement[end:])
+
+          def insert_once(path: Path, marker: str, insertion: str):
+              text = path.read_text()
+              if insertion.strip() in text:
+                  return
+              if marker not in text:
+                  raise RuntimeError(f'Marker not found in {path}: {marker}')
+              path.write_text(text.replace(marker, marker + insertion, 1))
+
+          recovery = ROOT / 'instructions' / 'recovery.rs'
+          insert_once(
+              recovery,
+              '    require!(params.fee_bps <= 1_000, PeraxError::InvalidRecoveryPool);\n',
+              '''    require!(\n        ctx.accounts.pool_quote_vault.owner == ctx.accounts.pool_authority.key()\n            && ctx.accounts.pool_quote_vault.mint == ctx.accounts.quote_mint.key(),\n        PeraxError::InvalidRecoveryPool\n    );\n    require!(\n        ctx.accounts.pool_pex_vault.owner == ctx.accounts.pool_authority.key()\n            && ctx.accounts.pool_pex_vault.mint == ctx.accounts.pex_mint.key(),\n        PeraxError::InvalidRecoveryPool\n    );\n    require!(\n        ctx.accounts.pool_quote_vault.key() != ctx.accounts.pool_pex_vault.key(),\n        PeraxError::InvalidRecoveryPool\n    );\n''',
+          )
+
+          apc = ROOT / 'instructions' / 'apc.rs'
+          insert_once(
+              apc,
+              '    validate_apc_policy(&ctx.accounts.state, &params)?;\n',
+              '''    require!(\n        ctx.accounts.counterweight_vault.owner == ctx.accounts.counterweight_authority.key()\n            && ctx.accounts.counterweight_vault.mint == ctx.accounts.quote_mint.key(),\n        PeraxError::InvalidCounterweightVault\n    );\n    require!(\n        ctx.accounts.deferred_burn_vault.owner == ctx.accounts.deferred_burn_authority.key()\n            && ctx.accounts.deferred_burn_vault.mint == ctx.accounts.token_mint.key(),\n        PeraxError::InvalidCounterweightVault\n    );\n    require!(\n        ctx.accounts.recovery_vault.owner == ctx.accounts.recovery_authority.key()\n            && ctx.accounts.recovery_vault.mint == ctx.accounts.token_mint.key(),\n        PeraxError::InvalidCounterweightVault\n    );\n    require!(\n        ctx.accounts.counterweight_vault.key() != ctx.accounts.deferred_burn_vault.key()\n            && ctx.accounts.counterweight_vault.key() != ctx.accounts.recovery_vault.key()\n            && ctx.accounts.deferred_burn_vault.key() != ctx.accounts.recovery_vault.key(),\n        PeraxError::InvalidCounterweightVault\n    );\n''',
+          )
+
+          settlement_handler = ROOT / 'instructions' / 'settlement_v2.rs'
+          insert_once(
+              settlement_handler,
+              '    require_keys_eq!(ctx.accounts.pex_mint.key(), ctx.accounts.settlement_policy.pex_mint, crate::PeraxError::InvalidTokenMint);\n',
+              '''    require!(\n        ctx.accounts.settlement_pex_vault.owner == ctx.accounts.settlement_authority.key()\n            && ctx.accounts.settlement_pex_vault.mint == ctx.accounts.pex_mint.key(),\n        SettlementError::InvalidSettlementDestination\n    );\n''',
+          )
+
+          client_path = Path('perax-market-engine/src/anchor-client.ts')
+          client = client_path.read_text()
+          old_accounts = '''        settlementPexVault: addresses.settlementPexVault,\n        pexMint: this.pexMint,\n        initiator: this.config.provider.publicKey,\n        tokenProgram: TOKEN_PROGRAM_ID,\n        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,\n        systemProgram: web3.SystemProgram.programId,\n      }),\n    );'''
+          new_accounts = '''        settlementPexVault: addresses.settlementPexVault,\n        pexMint: this.pexMint,\n        initiator: this.config.provider.publicKey,\n        systemProgram: web3.SystemProgram.programId,\n      }).preInstructions([\n        createAssociatedTokenAccountIdempotentInstruction(\n          this.config.provider.publicKey,\n          addresses.settlementPexVault,\n          addresses.settlementAuthority,\n          this.pexMint,\n          TOKEN_PROGRAM_ID,\n          ASSOCIATED_TOKEN_PROGRAM_ID,\n        ),\n      ]),\n    );'''
+          if new_accounts not in client:
+              if old_accounts not in client:
+                  raise RuntimeError('Anchor client plan account block was not found')
+              client = client.replace(old_accounts, new_accounts, 1)
+              client_path.write_text(client)
+          PY
+          cargo +1.79.0 fmt --manifest-path perax-contracts/programs/perax-core/Cargo.toml
+
+      - name: Verify contract and market engine
+        shell: bash
+        run: |
+          cd perax-contracts
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run validate:settlement
+          cargo +1.79.0 test --locked --manifest-path programs/perax-core/Cargo.toml
+          cargo +1.79.0 check --locked --all-targets
+          cd ../perax-market-engine
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Build SBF and reject every unsafe frame
+        working-directory: perax-contracts
+        shell: bash
+        run: |
+          set -o pipefail
+          RUSTUP_TOOLCHAIN=1.85.0 cargo build-sbf --manifest-path programs/perax-core/Cargo.toml --sbf-out-dir target/deploy 2>&1 | tee /tmp/precreated-vaults-sbf.log
+          if grep -E "Stack offset of [0-9]+ exceeded max offset|overwrites values in the frame" /tmp/precreated-vaults-sbf.log; then
+            echo 'Unsafe SBF stack diagnostics remain.'
+            exit 1
+          fi
+
+      - name: Upload SBF evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: precreated-vaults-sbf-evidence
+          path: /tmp/precreated-vaults-sbf.log
+          if-no-files-found: warn
+
+      - name: Commit verified vault precreation repair
+        shell: bash
+        run: |
+          git add \
+            perax-contracts/programs/perax-core/src/contexts.rs \
+            perax-contracts/programs/perax-core/src/settlement_v2.rs \
+            perax-contracts/programs/perax-core/src/instructions/apc.rs \
+            perax-contracts/programs/perax-core/src/instructions/recovery.rs \
+            perax-contracts/programs/perax-core/src/instructions/settlement_v2.rs \
+            perax-market-engine/src/anchor-client.ts
+          if git diff --cached --quiet; then
+            echo 'Vault precreation repair is already applied.'
+            exit 0
+          fi
+          git config user.name 'Pera-X verification automation'
+          git config user.email 'actions@github.com'
+          git commit -m 'Precreate PDA token vaults outside stack-heavy instructions'
+          git push origin HEAD:verify/apc-settlement-completion-20260719
