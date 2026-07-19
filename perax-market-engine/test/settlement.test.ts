@@ -159,3 +159,51 @@ test("coordinator rejects an adapter that weakens minimum output", async () => {
   );
   assert.deepEqual(program.calls, ["plan"]);
 });
+
+test("already-finalized settlement returns without repeating financial actions", async () => {
+  const program = new MockProgram(record({ status: "finalized" }));
+  const venue = new MockVenue();
+  const coordinator = new SettlementCoordinator(program, venue);
+
+  const result = await coordinator.execute(input);
+
+  assert.equal(result.status, "finalized");
+  assert.deepEqual(program.calls, ["plan"]);
+  assert.deepEqual(venue.calls, []);
+});
+
+test("ready settlement resumes at finalization only", async () => {
+  const program = new MockProgram(
+    record({
+      status: "ready",
+      marketPexReceived: 400n,
+      policyVaultPexReceived: 600n,
+    }),
+  );
+  const venue = new MockVenue();
+  const coordinator = new SettlementCoordinator(program, venue);
+
+  const result = await coordinator.execute(input);
+
+  assert.equal(result.status, "finalized");
+  assert.deepEqual(program.calls, ["plan", "finalize"]);
+  assert.deepEqual(venue.calls, []);
+});
+
+test("partially funded hybrid settlement skips the completed market stage", async () => {
+  const program = new MockProgram(
+    record({
+      status: "funding",
+      marketPexReceived: 400n,
+      policyVaultPexReceived: 0n,
+    }),
+  );
+  const venue = new MockVenue();
+  const coordinator = new SettlementCoordinator(program, venue);
+
+  const result = await coordinator.execute(input);
+
+  assert.equal(result.status, "finalized");
+  assert.deepEqual(program.calls, ["plan", "vault", "finalize"]);
+  assert.deepEqual(venue.calls, []);
+});
