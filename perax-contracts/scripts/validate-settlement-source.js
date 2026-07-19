@@ -29,6 +29,7 @@ const idlGate = read("../perax-market-engine/src/idl.ts");
 const anchorClient = read("../perax-market-engine/src/anchor-client.ts");
 const runtimeBindings = read("../perax-market-engine/src/runtime.ts");
 const runtimeBootstrap = read("../perax-market-engine/src/start-executor.ts");
+const tokenUtilities = read("../perax-market-engine/src/token.ts");
 const marketIndex = read("../perax-market-engine/src/index.ts");
 const marketPackage = read("../perax-market-engine/package.json");
 const marketLock = read("../perax-market-engine/package-lock.json");
@@ -241,7 +242,8 @@ assertContains(
 );
 
 assertContains(marketPackage, '"@coral-xyz/anchor": "0.30.1"', "market-engine package");
-assertContains(marketPackage, '"@solana/spl-token": "^0.4.8"', "market-engine package");
+assertNotContains(marketPackage, '"@solana/spl-token"', "market-engine package");
+assertContains(marketPackage, '"uuid": "11.1.1"', "market-engine package");
 assertContains(marketPackage, '"build": "tsc"', "market-engine package");
 assertContains(
   marketPackage,
@@ -249,12 +251,22 @@ assertContains(
   "market-engine package",
 );
 assertContains(marketLock, '"node_modules/@coral-xyz/anchor"', "market-engine lock");
-assertContains(marketLock, '"node_modules/@solana/spl-token"', "market-engine lock");
+assertNotContains(marketLock, '"node_modules/@solana/spl-token"', "market-engine lock");
+assertNotContains(marketLock, '"node_modules/bigint-buffer"', "market-engine lock");
+
+assertContains(tokenUtilities, "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "token utilities");
+assertContains(tokenUtilities, "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", "token utilities");
+assertContains(tokenUtilities, "PublicKey.findProgramAddressSync", "token utilities");
+assertContains(tokenUtilities, "Buffer.from([1])", "token utilities");
+assertContains(tokenUtilities, "SystemProgram.programId", "token utilities");
+assertContains(anchorClient, '} from "./token.js";', "Anchor settlement client");
+assertNotContains(anchorClient, 'from "@solana/spl-token"', "Anchor settlement client");
 
 assertContains(marketIndex, 'export * from "./executor.js";', "market-engine index");
 assertContains(marketIndex, 'export * from "./idl.js";', "market-engine index");
 assertContains(marketIndex, 'export * from "./anchor-client.js";', "market-engine index");
 assertContains(marketIndex, 'export * from "./runtime.js";', "market-engine index");
 assertContains(marketIndex, 'export * from "./start-executor.js";', "market-engine index");
+assertContains(marketIndex, 'export * from "./token.js";', "market-engine index");
 
 console.log("Settlement source guards passed.");
