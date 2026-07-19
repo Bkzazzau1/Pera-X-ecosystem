@@ -1,0 +1,38 @@
+name: Fix Precreation Marker
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.head_ref == 'verify/apc-settlement-completion-20260719'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: verify/apc-settlement-completion-20260719
+          fetch-depth: 0
+      - name: Anchor settlement vault validation to function header
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/precreate-policy-vaults.yml')
+          text = path.read_text()
+          old = "              '    require_keys_eq!(ctx.accounts.pex_mint.key(), ctx.accounts.settlement_policy.pex_mint, crate::PeraxError::InvalidTokenMint);\\n',"
+          new = "              'pub fn plan_settlement(ctx: Context<PlanSettlementV2>, params: PlanSettlementParams) -> Result<()> {\\n',"
+          if new in text:
+              raise SystemExit(0)
+          if old not in text:
+              raise SystemExit('Expected precreation marker was not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          git add .github/workflows/precreate-policy-vaults.yml
+          git config user.name 'Pera-X verification automation'
+          git config user.email 'actions@github.com'
+          git commit -m 'Anchor vault check to settlement planner entrypoint'
+          git push origin HEAD:verify/apc-settlement-completion-20260719
