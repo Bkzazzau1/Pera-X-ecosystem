@@ -1,0 +1,40 @@
+name: Pera-X Meteora Runtime CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/scripts/install-meteora-runtime.py"
+      - "perax-market-adapters/meteora-dlmm-runtime/**"
+      - ".github/workflows/meteora-runtime-ci.yml"
+  pull_request:
+    paths:
+      - ".github/scripts/install-meteora-runtime.py"
+      - "perax-market-adapters/meteora-dlmm-runtime/**"
+      - ".github/workflows/meteora-runtime-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  verify-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: perax-market-adapters/meteora-dlmm-runtime
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Reproduce checked-in source and lock
+        run: node scripts/bootstrap.mjs
+
+      - name: Install exact dependency tree
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Typecheck, test, build and audit
+        run: npm run verify
