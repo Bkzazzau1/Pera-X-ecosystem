@@ -1,0 +1,62 @@
+name: Verify Meteora Runtime Only
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-meteora-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout verification branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Reconstruct and verify runtime
+        working-directory: perax-market-adapters/meteora-dlmm-runtime
+        run: |
+          mkdir -p ../../verification-logs
+          set +e
+          timeout 60 node scripts/bootstrap.mjs > ../../verification-logs/meteora-bootstrap.log 2>&1
+          bootstrap_status=$?
+          timeout 600 npm ci --ignore-scripts --no-audit --no-fund > ../../verification-logs/meteora-npm-ci.log 2>&1
+          ci_status=$?
+          timeout 120 npm run typecheck > ../../verification-logs/meteora-typecheck.log 2>&1
+          typecheck_status=$?
+          timeout 120 npm test > ../../verification-logs/meteora-test.log 2>&1
+          test_status=$?
+          timeout 120 npm run build > ../../verification-logs/meteora-build.log 2>&1
+          build_status=$?
+          timeout 120 npm run audit:runtime > ../../verification-logs/meteora-audit.log 2>&1
+          audit_status=$?
+          set -e
+          for log in ../../verification-logs/meteora-*.log; do
+            echo "===== ${log} tail ====="
+            tail -n 160 "${log}" || true
+          done
+          if [ "${bootstrap_status}" -ne 0 ] || [ "${ci_status}" -ne 0 ] || [ "${typecheck_status}" -ne 0 ] || [ "${test_status}" -ne 0 ] || [ "${build_status}" -ne 0 ] || [ "${audit_status}" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteora-runtime-completion-evidence
+          if-no-files-found: warn
+          path: |
+            verification-logs
+            perax-market-adapters/meteora-dlmm-runtime/src
+            perax-market-adapters/meteora-dlmm-runtime/test
+            perax-market-adapters/meteora-dlmm-runtime/package-lock.json
+            perax-market-adapters/meteora-dlmm-runtime/tsconfig.json
+            perax-market-adapters/meteora-dlmm-runtime/vendor
