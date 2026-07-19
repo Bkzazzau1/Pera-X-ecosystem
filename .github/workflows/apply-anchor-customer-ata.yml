@@ -1,0 +1,121 @@
+name: Apply Anchor Customer ATA Hardening
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/apply-anchor-customer-ata.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply deterministic source patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one source match, found {count}")
+              return text.replace(old, new, 1)
+
+          client_path = Path("perax-market-engine/src/anchor-client.ts")
+          client = client_path.read_text(encoding="utf-8")
+          client = replace_once(
+              client,
+              '''  ASSOCIATED_TOKEN_PROGRAM_ID,\n  getAssociatedTokenAddressSync,\n  TOKEN_PROGRAM_ID,\n''',
+              '''  ASSOCIATED_TOKEN_PROGRAM_ID,\n  createAssociatedTokenAccountIdempotentInstruction,\n  getAssociatedTokenAddressSync,\n  TOKEN_PROGRAM_ID,\n''',
+              "SPL token imports",
+          )
+          client = replace_once(
+              client,
+              '''  PublicKey,\n  Signer,\n} from "@solana/web3.js";\n''',
+              '''  PublicKey,\n  Signer,\n  TransactionInstruction,\n} from "@solana/web3.js";\n''',
+              "web3 type imports",
+          )
+          client = replace_once(
+              client,
+              '''  remainingAccounts(accounts: AccountMeta[]): MethodBuilder;\n  signers(signers: Signer[]): MethodBuilder;\n''',
+              '''  remainingAccounts(accounts: AccountMeta[]): MethodBuilder;\n  preInstructions(instructions: TransactionInstruction[]): MethodBuilder;\n  signers(signers: Signer[]): MethodBuilder;\n''',
+              "Anchor method builder",
+          )
+          client = replace_once(
+              client,
+              '''    const destinationTokenAccount = await this.resolveDestination(\n      current,\n      rawRecord,\n      policy,\n    );\n\n    const method = this.method("finalizeSettlement")({\n      settlementId: Array.from(settlementId),\n    });\n    const signature = await this.send(\n      method.accountsStrict({\n        state: this.statePda,\n        settlementPolicy: this.settlementPolicyPda,\n        productPolicy,\n        settlementRecord: recordAddress,\n        settlementCustody,\n        settlementAuthority,\n        settlementPexVault,\n        destinationTokenAccount,\n        lockVault: publicKeyField(policy, "lockVault"),\n        pexMint: this.pexMint,\n        tokenProgram: TOKEN_PROGRAM_ID,\n      }),\n    );\n''',
+              '''    const destination = await this.resolveDestination(\n      current,\n      rawRecord,\n      policy,\n    );\n\n    let method = this.method("finalizeSettlement")({\n      settlementId: Array.from(settlementId),\n    }).accountsStrict({\n      state: this.statePda,\n      settlementPolicy: this.settlementPolicyPda,\n      productPolicy,\n      settlementRecord: recordAddress,\n      settlementCustody,\n      settlementAuthority,\n      settlementPexVault,\n      destinationTokenAccount: destination.tokenAccount,\n      lockVault: publicKeyField(policy, "lockVault"),\n      pexMint: this.pexMint,\n      tokenProgram: TOKEN_PROGRAM_ID,\n    });\n    if (destination.preInstructions.length > 0) {\n      method = method.preInstructions(destination.preInstructions);\n    }\n    const signature = await this.send(method);\n''',
+              "settlement finalization",
+          )
+          client = replace_once(
+              client,
+              '''  private async resolveDestination(\n    current: SettlementRecordView,\n    rawRecord: DynamicRecord,\n    policy: DynamicRecord,\n  ): Promise<PublicKey> {\n    switch (current.disposition) {\n      case "utilityPayment":\n        return publicKeyField(rawRecord, "destinationTokenAccount");\n      case "customerDelivery": {\n        const beneficiary = publicKeyField(rawRecord, "beneficiary");\n        if (this.config.resolveCustomerDestination) {\n          return this.config.resolveCustomerDestination(\n            beneficiary,\n            this.pexMint,\n            current,\n          );\n        }\n        return getAssociatedTokenAddressSync(\n          this.pexMint,\n          beneficiary,\n          true,\n          TOKEN_PROGRAM_ID,\n          ASSOCIATED_TOKEN_PROGRAM_ID,\n        );\n      }\n      case "burn":\n      case "lock":\n        return publicKeyField(policy, "lockVault");\n      default:\n        return assertNever(current.disposition);\n    }\n  }\n''',
+              '''  private async resolveDestination(\n    current: SettlementRecordView,\n    rawRecord: DynamicRecord,\n    policy: DynamicRecord,\n  ): Promise<{ tokenAccount: PublicKey; preInstructions: TransactionInstruction[] }> {\n    switch (current.disposition) {\n      case "utilityPayment":\n        return {\n          tokenAccount: publicKeyField(rawRecord, "destinationTokenAccount"),\n          preInstructions: [],\n        };\n      case "customerDelivery": {\n        const beneficiary = publicKeyField(rawRecord, "beneficiary");\n        if (this.config.resolveCustomerDestination) {\n          return {\n            tokenAccount: await this.config.resolveCustomerDestination(\n              beneficiary,\n              this.pexMint,\n              current,\n            ),\n            preInstructions: [],\n          };\n        }\n        const tokenAccount = getAssociatedTokenAddressSync(\n          this.pexMint,\n          beneficiary,\n          true,\n          TOKEN_PROGRAM_ID,\n          ASSOCIATED_TOKEN_PROGRAM_ID,\n        );\n        return {\n          tokenAccount,\n          preInstructions: [\n            createAssociatedTokenAccountIdempotentInstruction(\n              this.config.provider.publicKey,\n              tokenAccount,\n              beneficiary,\n              this.pexMint,\n              TOKEN_PROGRAM_ID,\n              ASSOCIATED_TOKEN_PROGRAM_ID,\n            ),\n          ],\n        };\n      }\n      case "burn":\n      case "lock":\n        return {\n          tokenAccount: publicKeyField(policy, "lockVault"),\n          preInstructions: [],\n        };\n      default:\n        return assertNever(current.disposition);\n    }\n  }\n''',
+              "destination resolution",
+          )
+          client_path.write_text(client, encoding="utf-8")
+
+          test_path = Path("perax-market-engine/test/anchor-client.test.ts")
+          tests = test_path.read_text(encoding="utf-8")
+          tests = replace_once(
+              tests,
+              'import { Keypair, PublicKey } from "@solana/web3.js";\n',
+              'import { Keypair, PublicKey, type TransactionInstruction } from "@solana/web3.js";\nimport { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";\n',
+              "test imports",
+          )
+          tests = replace_once(
+              tests,
+              '''  remaining?: Array<{ pubkey: PublicKey; isWritable: boolean; isSigner: boolean }>;\n};\n''',
+              '''  remaining?: Array<{ pubkey: PublicKey; isWritable: boolean; isSigner: boolean }>;\n  preInstructions?: TransactionInstruction[];\n};\n''',
+              "test call metadata",
+          )
+          tests = replace_once(
+              tests,
+              '''  signers(): this {\n    return this;\n  }\n''',
+              '''  preInstructions(instructions: TransactionInstruction[]): this {\n    this.call.preInstructions = instructions;\n    return this;\n  }\n  signers(): this {\n    return this;\n  }\n''',
+              "test method builder",
+          )
+          tests = replace_once(
+              tests,
+              '''    fixedDestination,\n    lockVault,\n    get finalSignatureLookupCount() {\n''',
+              '''    fixedDestination,\n    lockVault,\n    pexMint,\n    get finalSignatureLookupCount() {\n''',
+              "test harness return",
+          )
+          tests += '''\n\ntest("Anchor client creates a customer PEX ATA idempotently during finalization", async () => {\n  const harness = createHarness();\n  const input = planInput(harness.beneficiary);\n  const planned = await harness.client.planSettlement(input);\n  const raw = harness.records.get(planned.settlementRecordAddress!)!;\n  raw.status = { ready: {} };\n  raw.disposition = { customerDelivery: {} };\n  raw.policyVaultPexReceived = new BN(1_000);\n\n  await harness.client.finalizeSettlement(input.settlementId);\n\n  const call = harness.calls.find((item) => item.name === "finalizeSettlement")!;\n  const expectedAta = getAssociatedTokenAddressSync(\n    harness.pexMint,\n    harness.beneficiary,\n    true,\n    TOKEN_PROGRAM_ID,\n    ASSOCIATED_TOKEN_PROGRAM_ID,\n  );\n  assert.equal(\n    account(call, "destinationTokenAccount").toBase58(),\n    expectedAta.toBase58(),\n  );\n  assert.equal(call.preInstructions?.length, 1);\n});\n'''
+          test_path.write_text(tests, encoding="utf-8")
+          PY
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: perax-market-engine/package-lock.json
+
+      - name: Install, typecheck, and test market engine
+        working-directory: perax-market-engine
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+          npm test
+
+      - name: Commit tested hardening
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add perax-market-engine/src/anchor-client.ts perax-market-engine/test/anchor-client.test.ts
+          git commit -m "Create customer PEX account during settlement finalization"
+          git push origin HEAD:main
