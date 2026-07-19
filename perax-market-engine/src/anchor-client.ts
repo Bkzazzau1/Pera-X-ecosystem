@@ -11,7 +11,7 @@ import {
   createAssociatedTokenAccountIdempotentInstruction,
   getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
-} from "@solana/spl-token";
+} from "./token.js";
 import type {
   AccountMeta,
   Commitment,

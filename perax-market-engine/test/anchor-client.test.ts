@@ -5,7 +5,7 @@ import anchor, { AnchorProvider, type Idl } from "@coral-xyz/anchor";
 const { BN } = anchor;
 type AnchorBn = InstanceType<typeof BN>;
 import { Keypair, PublicKey, type TransactionInstruction } from "@solana/web3.js";
-import { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "../src/token.js";
 
 import { AnchorSettlementProgramClient } from "../src/anchor-client.js";
 import type { SettlementIdl } from "../src/idl.js";

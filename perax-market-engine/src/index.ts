@@ -7,3 +7,4 @@ export * from "./idl.js";
 export * from "./anchor-client.js";
 export * from "./runtime.js";
 export * from "./start-executor.js";
+export * from "./token.js";
