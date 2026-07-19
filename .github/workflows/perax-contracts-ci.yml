@@ -127,17 +127,28 @@ jobs:
           set -o pipefail
           bash scripts/build-idl-safe.sh 2>&1 | tee -a /tmp/anchor-build.log
 
-      - name: Validate generated settlement IDL
-        run: npm run validate:settlement-idl
-
       - name: Upload generated contract interface
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: perax-core-contract-interface
           path: |
             perax-contracts/target/idl/perax_core.json
             perax-contracts/target/types/perax_core.ts
-          if-no-files-found: error
+          if-no-files-found: warn
+
+      - name: Validate generated settlement IDL
+        if: always()
+        run: npm run validate:settlement-idl
+
+      - name: Reject unsafe SBF stack frames
+        if: always()
+        shell: bash
+        run: |
+          if grep -E "Stack offset of [0-9]+ exceeded max offset|overwrites values in the frame" /tmp/anchor-build.log; then
+            echo "Unsafe SBF stack-frame diagnostics were emitted. Box or split the affected Anchor account contexts before release."
+            exit 1
+          fi
 
       - name: Upload Anchor build diagnostics
         if: always()
