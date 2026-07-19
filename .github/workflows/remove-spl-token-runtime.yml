@@ -1,0 +1,104 @@
+name: Remove SPL Token Runtime Dependency
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/remove-spl-token-runtime.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  remove-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Replace dependency with audited local ATA utilities
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one source match, found {count}")
+              return text.replace(old, new, 1)
+
+          client_path = Path("perax-market-engine/src/anchor-client.ts")
+          client = replace_once(
+              client_path.read_text(encoding="utf-8"),
+              '} from "@solana/spl-token";',
+              '} from "./token.js";',
+              "Anchor token utility import",
+          )
+          client_path.write_text(client, encoding="utf-8")
+
+          test_path = Path("perax-market-engine/test/anchor-client.test.ts")
+          tests = replace_once(
+              test_path.read_text(encoding="utf-8"),
+              '} from "@solana/spl-token";',
+              '} from "../src/token.js";',
+              "Anchor test token utility import",
+          )
+          test_path.write_text(tests, encoding="utf-8")
+
+          index_path = Path("perax-market-engine/src/index.ts")
+          index = index_path.read_text(encoding="utf-8")
+          export_line = 'export * from "./token.js";\n'
+          if export_line not in index:
+              index += export_line
+          index_path.write_text(index, encoding="utf-8")
+
+          package_path = Path("perax-market-engine/package.json")
+          package = json.loads(package_path.read_text(encoding="utf-8"))
+          package["dependencies"].pop("@solana/spl-token", None)
+          package["overrides"] = {"jayson": {"uuid": "11.1.1"}}
+          package_path.write_text(
+              json.dumps(package, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: perax-market-engine/package-lock.json
+
+      - name: Synchronize deterministic lockfile
+        working-directory: perax-market-engine
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Clean install and validate
+        working-directory: perax-market-engine
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+          npm test
+          npm run build
+          npm audit --omit=dev --audit-level=moderate
+
+      - name: Commit verified dependency reduction
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            perax-market-engine/package.json \
+            perax-market-engine/package-lock.json \
+            perax-market-engine/src/anchor-client.ts \
+            perax-market-engine/src/index.ts \
+            perax-market-engine/test/anchor-client.test.ts
+          git commit -m "Remove vulnerable SPL token runtime dependency"
+          git push origin HEAD:main
