@@ -5,3 +5,5 @@ export * from "./settlement.js";
 export * from "./executor.js";
 export * from "./idl.js";
 export * from "./anchor-client.js";
+export * from "./runtime.js";
+export * from "./start-executor.js";
