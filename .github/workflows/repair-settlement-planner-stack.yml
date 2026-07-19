@@ -1,0 +1,66 @@
+name: Repair Settlement Planner Stack
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.head_ref == 'verify/apc-settlement-completion-20260719'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: verify/apc-settlement-completion-20260719
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@1.79.0
+        with:
+          components: rustfmt
+      - name: Install tools
+        run: |
+          rustup toolchain install 1.85.0 --profile minimal
+          sh -c "$(curl -sSfL https://release.anza.xyz/v3.1.14/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+      - name: Apply planner repair
+        run: |
+          python3 .github/scripts/repair-settlement-planner-stack.py
+          cargo +1.79.0 fmt --manifest-path perax-contracts/programs/perax-core/Cargo.toml
+      - name: Verify source and client
+        run: |
+          cd perax-contracts
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run validate:settlement
+          cargo +1.79.0 test --locked --manifest-path programs/perax-core/Cargo.toml
+          cargo +1.79.0 check --locked --all-targets
+          cd ../perax-market-engine
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+          npm test
+          npm run build
+      - name: Verify planner frame is gone
+        working-directory: perax-contracts
+        run: |
+          set -o pipefail
+          RUSTUP_TOOLCHAIN=1.85.0 cargo build-sbf --manifest-path programs/perax-core/Cargo.toml --sbf-out-dir target/deploy 2>&1 | tee /tmp/planner-sbf.log
+          if grep -E "PlanSettlementV2.*Stack offset|PlanSettlementV2.*overwrites values" /tmp/planner-sbf.log; then
+            exit 1
+          fi
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: settlement-planner-stack-evidence
+          path: /tmp/planner-sbf.log
+          if-no-files-found: warn
+      - name: Commit verified planner repair
+        run: |
+          git add perax-contracts/programs/perax-core/src/settlement_v2.rs perax-contracts/programs/perax-core/src/instructions/settlement_v2.rs perax-contracts/scripts/validate-settlement-idl.js perax-contracts/scripts/validate-settlement-source.js perax-market-engine/src/anchor-client.ts
+          git config user.name 'Pera-X verification automation'
+          git config user.email 'actions@github.com'
+          git commit -m 'Derive settlement authority without a planner account'
+          git push origin HEAD:verify/apc-settlement-completion-20260719
