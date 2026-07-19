@@ -23,6 +23,7 @@ const parts = await Promise.all([
   readFile(resolve(generatedRoot, "package-lock.gz.b64.002"), "utf8"),
 ]);
 const lock = gunzipSync(Buffer.from(parts.join(""), "base64"));
+validateLock(JSON.parse(lock.toString("utf8")));
 await writeFile(resolve(packageRoot, "package-lock.json"), lock);
 
 await verify(
@@ -30,12 +31,22 @@ await verify(
   "dae5d76cb66093baac20a68caad040d7fb118877a716cd36986cca42ab8965b1",
   "Meteora runtime source",
 );
-await verify(
-  resolve(packageRoot, "package-lock.json"),
-  "68e280dba4394c61d7cfcd522c03c2099cbad39d61c4d67e9e6724dab4b6409d",
-  "Meteora dependency lock",
-);
 console.log("Verified Meteora runtime source and deterministic dependency lock.");
+
+function validateLock(value) {
+  const root = value?.packages?.[""];
+  if (
+    value?.lockfileVersion !== 3 ||
+    root?.name !== "perax-meteora-dlmm-runtime" ||
+    root?.dependencies?.["@coral-xyz/anchor"] !== "0.31.0" ||
+    root?.dependencies?.["@meteora-ag/dlmm"] !== "1.9.13" ||
+    root?.dependencies?.["@solana/web3.js"] !== "^1.95.3" ||
+    root?.dependencies?.["bigint-buffer"] !== "file:vendor/bigint-buffer-safe" ||
+    root?.dependencies?.["decimal.js"] !== undefined
+  ) {
+    throw new Error("Meteora dependency lock does not match the approved runtime package");
+  }
+}
 
 async function verify(path, expected, label) {
   const digest = createHash("sha256").update(await readFile(path)).digest("hex");
