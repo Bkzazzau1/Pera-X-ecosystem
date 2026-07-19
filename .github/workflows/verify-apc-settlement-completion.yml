@@ -71,10 +71,24 @@ jobs:
       - name: Verify contract source, tokenomics, and TypeScript
         working-directory: perax-contracts
         run: |
-          npm ci --ignore-scripts --no-audit --no-fund
-          npm run validate:tokenomics
-          npm run validate:settlement
-          npm run typecheck
+          mkdir -p ../verification-logs
+          set +e
+          npm ci --ignore-scripts --no-audit --no-fund > ../verification-logs/contract-npm-ci.log 2>&1
+          ci_status=$?
+          npm run validate:tokenomics > ../verification-logs/contract-tokenomics.log 2>&1
+          tokenomics_status=$?
+          npm run validate:settlement > ../verification-logs/contract-settlement.log 2>&1
+          settlement_status=$?
+          npm run typecheck > ../verification-logs/contract-typecheck.log 2>&1
+          typecheck_status=$?
+          set -e
+          for log in ../verification-logs/contract-*.log; do
+            echo "===== ${log} tail ====="
+            tail -n 120 "${log}" || true
+          done
+          if [ "${ci_status}" -ne 0 ] || [ "${tokenomics_status}" -ne 0 ] || [ "${settlement_status}" -ne 0 ] || [ "${typecheck_status}" -ne 0 ]; then
+            exit 1
+          fi
 
       - name: Verify market engine
         working-directory: perax-market-engine
