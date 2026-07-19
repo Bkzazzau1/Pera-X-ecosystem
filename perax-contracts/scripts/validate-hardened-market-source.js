@@ -19,11 +19,12 @@ const assertNotContains = (text, forbidden, label) => {
 const modules = read("programs/perax-core/src/instructions/mod.rs");
 const hardened = read("programs/perax-core/src/instructions/hardened_market.rs");
 const product = read("programs/perax-core/src/instructions/hardened_product.rs");
-const validator = read("programs/perax-core/src/market_cpi.rs");
+const validator = read("programs/perax-core/src/instructions/market_cpi.rs");
 
 assertContains(modules, "mod hardened_market;", "instructions/mod.rs");
 assertContains(modules, "mod hardened_product;", "instructions/mod.rs");
-assertContains(modules, 'path = "../market_cpi.rs"', "instructions/mod.rs");
+assertContains(modules, "mod market_cpi;", "instructions/mod.rs");
+assertNotContains(modules, 'path = "../market_cpi.rs"', "instructions/mod.rs");
 assertContains(
   modules,
   "execute_counterweight_purchase_hardened as execute_counterweight_purchase",

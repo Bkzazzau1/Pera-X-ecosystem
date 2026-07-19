@@ -18,6 +18,11 @@ pub fn initialize_recovery_pool(
     params: InitializeRecoveryPoolParams,
 ) -> Result<()> {
     validate_reference(params.pool_id)?;
+    require_keys_eq!(
+        ctx.accounts.pex_mint.key(),
+        ctx.accounts.state.token_mint,
+        PeraxError::InvalidTokenMint
+    );
     require!(params.fee_bps <= 1_000, PeraxError::InvalidRecoveryPool);
     require!(
         ctx.accounts.quote_mint.key() != ctx.accounts.pex_mint.key(),

@@ -93,8 +93,11 @@ jobs:
             --force \
             --outfile .local/devnet-deployer.json
 
-      - name: Install JavaScript dependencies
-        run: npm install
+      - name: Install exact JavaScript dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Audit production JavaScript dependencies
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Validate tokenomics
         run: npm run validate:tokenomics
@@ -112,23 +115,40 @@ jobs:
           node scripts/check-devnet-readiness.js
           node scripts/check-anchor-deploy-readiness.js
 
-      - name: Build Anchor program
+      - name: Build SBF program without Anchor IDL pass
         shell: bash
         run: |
           set -o pipefail
-          RUSTUP_TOOLCHAIN=1.85.0 anchor build 2>&1 | tee /tmp/anchor-build.log
+          RUSTUP_TOOLCHAIN=1.85.0 anchor build --no-idl 2>&1 | tee /tmp/anchor-build.log
 
-      - name: Validate generated settlement IDL
-        run: npm run validate:settlement-idl
+      - name: Generate IDL through plain Rust metadata pass
+        shell: bash
+        run: |
+          set -o pipefail
+          bash scripts/build-idl-safe.sh 2>&1 | tee -a /tmp/anchor-build.log
 
       - name: Upload generated contract interface
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: perax-core-contract-interface
           path: |
             perax-contracts/target/idl/perax_core.json
             perax-contracts/target/types/perax_core.ts
-          if-no-files-found: error
+          if-no-files-found: warn
+
+      - name: Validate generated settlement IDL
+        if: always()
+        run: npm run validate:settlement-idl
+
+      - name: Reject unsafe SBF stack frames
+        if: always()
+        shell: bash
+        run: |
+          if grep -E "Stack offset of [0-9]+ exceeded max offset|overwrites values in the frame" /tmp/anchor-build.log; then
+            echo "Unsafe SBF stack-frame diagnostics were emitted. Box or split the affected Anchor account contexts before release."
+            exit 1
+          fi
 
       - name: Upload Anchor build diagnostics
         if: always()
@@ -150,9 +170,11 @@ jobs:
       - name: Validate APC market engine
         working-directory: perax-market-engine
         run: |
-          npm ci
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run typecheck
           npm test
+          npm run build
+          npm audit --omit=dev --audit-level=high
 
-      - name: Run local-validator transaction tests
-        run: RUSTUP_TOOLCHAIN=1.85.0 anchor test --provider.cluster localnet
+      - name: Run local-validator transaction tests against existing build
+        run: RUSTUP_TOOLCHAIN=1.85.0 anchor test --skip-build --provider.cluster localnet

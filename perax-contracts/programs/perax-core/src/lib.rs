@@ -280,8 +280,8 @@ pub mod perax_core {
 }
 
 #[cfg(test)]
+mod settlement_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod vault_tests;
-#[cfg(test)]
-mod settlement_tests;

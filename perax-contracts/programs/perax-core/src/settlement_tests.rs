@@ -1,8 +1,8 @@
-use crate::{ApcStatus, SettlementFundingMethod, SettlementMarketMode};
 use crate::instructions::{
     calculate_settlement_pex_obligation, calculate_settlement_quote_requirement,
     derive_settlement_source_split,
 };
+use crate::{ApcStatus, SettlementFundingMethod, SettlementMarketMode};
 
 #[test]
 fn direct_pex_never_uses_market_or_policy_vault() {

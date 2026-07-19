@@ -1,13 +1,14 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::instruction::AccountMeta;
 
-pub const METEORA_SWAP_EXACT_OUT2_DISCRIMINATOR: [u8; 8] =
-    [43, 215, 247, 132, 137, 60, 243, 81];
+pub const METEORA_SWAP_EXACT_OUT2_DISCRIMINATOR: [u8; 8] = [43, 215, 247, 132, 137, 60, 243, 81];
 pub const METEORA_SWAP_EXACT_OUT2_FIXED_ACCOUNT_COUNT: usize = 16;
 pub const METEORA_SWAP_EXACT_OUT2_MIN_ACCOUNT_COUNT: usize = 17;
 pub const METEORA_SWAP_EXACT_OUT2_DATA_LENGTH_WITHOUT_HOOKS: usize = 28;
-pub const MEMO_PROGRAM_ID: Pubkey =
-    anchor_lang::solana_program::pubkey!("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+pub const MEMO_PROGRAM_ID: Pubkey = Pubkey::new_from_array([
+    5, 74, 83, 90, 153, 41, 33, 6, 77, 36, 232, 113, 96, 218, 56, 124, 124, 53, 181, 221, 188, 146,
+    187, 129, 228, 31, 168, 64, 65, 5, 68, 141,
+]);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct MarketAccountView {
@@ -71,11 +72,7 @@ pub(crate) fn validate_exact_out_market_instruction(
     data: &[u8],
     expected: ExactOutMarketValidation,
 ) -> Option<()> {
-    validate_exact_out_data(
-        data,
-        expected.maximum_quote_amount,
-        expected.exact_pex_out,
-    )?;
+    validate_exact_out_data(data, expected.maximum_quote_amount, expected.exact_pex_out)?;
     if accounts.len() < METEORA_SWAP_EXACT_OUT2_MIN_ACCOUNT_COUNT || accounts.len() > 64 {
         return None;
     }
@@ -92,11 +89,8 @@ pub(crate) fn validate_exact_out_market_instruction(
         return None;
     }
 
-    let event_authority = Pubkey::find_program_address(
-        &[b"__event_authority"],
-        &expected.market_program,
-    )
-    .0;
+    let event_authority =
+        Pubkey::find_program_address(&[b"__event_authority"], &expected.market_program).0;
 
     // Fixed Meteora swap_exact_out2 account order.
     require_account(accounts, 0, expected.approved_pool, false, true)?;
@@ -122,10 +116,8 @@ pub(crate) fn validate_exact_out_market_instruction(
         || token_x_mint.is_writable
         || token_y_mint.is_signer
         || token_y_mint.is_writable
-        || !((token_x_mint.key == expected.quote_mint
-            && token_y_mint.key == expected.pex_mint)
-            || (token_x_mint.key == expected.pex_mint
-                && token_y_mint.key == expected.quote_mint))
+        || !((token_x_mint.key == expected.quote_mint && token_y_mint.key == expected.pex_mint)
+            || (token_x_mint.key == expected.pex_mint && token_y_mint.key == expected.quote_mint))
     {
         return None;
     }
@@ -156,7 +148,10 @@ pub(crate) fn validate_exact_out_market_instruction(
             return None;
         }
     }
-    for account in accounts.iter().skip(METEORA_SWAP_EXACT_OUT2_FIXED_ACCOUNT_COUNT) {
+    for account in accounts
+        .iter()
+        .skip(METEORA_SWAP_EXACT_OUT2_FIXED_ACCOUNT_COUNT)
+    {
         if account.is_signer || !account.is_writable || account.key == Pubkey::default() {
             return None;
         }
@@ -248,23 +243,91 @@ mod tests {
         let event_authority =
             Pubkey::find_program_address(&[b"__event_authority"], &market_program).0;
         let accounts = vec![
-            MarketAccountView { key: pool, is_signer: false, is_writable: true },
-            MarketAccountView { key: market_program, is_signer: false, is_writable: false },
-            MarketAccountView { key: key(9), is_signer: false, is_writable: true },
-            MarketAccountView { key: key(10), is_signer: false, is_writable: true },
-            MarketAccountView { key: quote_source, is_signer: false, is_writable: true },
-            MarketAccountView { key: pex_destination, is_signer: false, is_writable: true },
-            MarketAccountView { key: quote_mint, is_signer: false, is_writable: false },
-            MarketAccountView { key: pex_mint, is_signer: false, is_writable: false },
-            MarketAccountView { key: key(11), is_signer: false, is_writable: true },
-            MarketAccountView { key: market_program, is_signer: false, is_writable: false },
-            MarketAccountView { key: authority, is_signer: !authority_is_pda, is_writable: false },
-            MarketAccountView { key: token_program, is_signer: false, is_writable: false },
-            MarketAccountView { key: token_program, is_signer: false, is_writable: false },
-            MarketAccountView { key: MEMO_PROGRAM_ID, is_signer: false, is_writable: false },
-            MarketAccountView { key: event_authority, is_signer: false, is_writable: false },
-            MarketAccountView { key: market_program, is_signer: false, is_writable: false },
-            MarketAccountView { key: key(12), is_signer: false, is_writable: true },
+            MarketAccountView {
+                key: pool,
+                is_signer: false,
+                is_writable: true,
+            },
+            MarketAccountView {
+                key: market_program,
+                is_signer: false,
+                is_writable: false,
+            },
+            MarketAccountView {
+                key: key(9),
+                is_signer: false,
+                is_writable: true,
+            },
+            MarketAccountView {
+                key: key(10),
+                is_signer: false,
+                is_writable: true,
+            },
+            MarketAccountView {
+                key: quote_source,
+                is_signer: false,
+                is_writable: true,
+            },
+            MarketAccountView {
+                key: pex_destination,
+                is_signer: false,
+                is_writable: true,
+            },
+            MarketAccountView {
+                key: quote_mint,
+                is_signer: false,
+                is_writable: false,
+            },
+            MarketAccountView {
+                key: pex_mint,
+                is_signer: false,
+                is_writable: false,
+            },
+            MarketAccountView {
+                key: key(11),
+                is_signer: false,
+                is_writable: true,
+            },
+            MarketAccountView {
+                key: market_program,
+                is_signer: false,
+                is_writable: false,
+            },
+            MarketAccountView {
+                key: authority,
+                is_signer: !authority_is_pda,
+                is_writable: false,
+            },
+            MarketAccountView {
+                key: token_program,
+                is_signer: false,
+                is_writable: false,
+            },
+            MarketAccountView {
+                key: token_program,
+                is_signer: false,
+                is_writable: false,
+            },
+            MarketAccountView {
+                key: MEMO_PROGRAM_ID,
+                is_signer: false,
+                is_writable: false,
+            },
+            MarketAccountView {
+                key: event_authority,
+                is_signer: false,
+                is_writable: false,
+            },
+            MarketAccountView {
+                key: market_program,
+                is_signer: false,
+                is_writable: false,
+            },
+            MarketAccountView {
+                key: key(12),
+                is_signer: false,
+                is_writable: true,
+            },
         ];
         let expected = ExactOutMarketValidation {
             market_program,
@@ -309,12 +372,10 @@ mod tests {
         let (accounts, expected) = fixture(false);
         let mut wrong_discriminator = instruction_data(500, 1_000);
         wrong_discriminator[0] ^= 1;
-        assert!(validate_exact_out_market_instruction(
-            &accounts,
-            &wrong_discriminator,
-            expected,
-        )
-        .is_none());
+        assert!(
+            validate_exact_out_market_instruction(&accounts, &wrong_discriminator, expected,)
+                .is_none()
+        );
         assert!(validate_exact_out_market_instruction(
             &accounts,
             &instruction_data(501, 1_000),

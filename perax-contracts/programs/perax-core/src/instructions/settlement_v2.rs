@@ -7,13 +7,12 @@ use crate::{
     InitializeProductSettlementPolicy, InitializeProductSettlementPolicyParams,
     InitializeSettlementPolicyParams, InitializeSettlementPolicyV2, PlanSettlementParams,
     PlanSettlementV2, ProductSettlementPolicyInitialized, ProductSettlementPolicyUpdated,
-    SETTLEMENT_ALL_FUNDING_METHODS, SETTLEMENT_FUNDING_FIAT, SETTLEMENT_FUNDING_PEX,
-    SETTLEMENT_FUNDING_STABLECOIN, SETTLEMENT_FUNDING_VIRTUAL_ACCOUNT,
     SettlementDisposition, SettlementError, SettlementFinalized, SettlementFundingMethod,
     SettlementMarketMode, SettlementMarketPurchaseExecuted, SettlementPlanned,
     SettlementPolicyInitialized, SettlementPolicyVaultFunded, SettlementRecord, SettlementStatus,
     UpdateProductSettlementPolicy, UpdateProductSettlementPolicyParams, APC_BPS_DENOMINATOR,
-    APC_QUOTE_DECIMALS, PEX_DECIMALS,
+    APC_QUOTE_DECIMALS, PEX_DECIMALS, SETTLEMENT_ALL_FUNDING_METHODS, SETTLEMENT_FUNDING_FIAT,
+    SETTLEMENT_FUNDING_PEX, SETTLEMENT_FUNDING_STABLECOIN, SETTLEMENT_FUNDING_VIRTUAL_ACCOUNT,
 };
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{
@@ -27,7 +26,10 @@ pub fn initialize_settlement_policy(
     params: InitializeSettlementPolicyParams,
 ) -> Result<()> {
     validate_settlement_policy_params(&params)?;
-    require!(!ctx.accounts.state.is_paused, crate::PeraxError::ProgramPaused);
+    require!(
+        !ctx.accounts.state.is_paused,
+        crate::PeraxError::ProgramPaused
+    );
     require!(
         ctx.accounts.apc_config.is_active && !ctx.accounts.apc_config.is_paused,
         SettlementError::InvalidPolicy
@@ -175,13 +177,56 @@ pub fn plan_settlement(ctx: Context<PlanSettlementV2>, params: PlanSettlementPar
     validate_reference(params.settlement_id)?;
     validate_reference(params.product_id)?;
     validate_reference(params.observation_id)?;
-    require!(!ctx.accounts.state.is_paused, crate::PeraxError::ProgramPaused);
-    require!(ctx.accounts.settlement_policy.is_active, SettlementError::PolicyInactive);
-    require!(ctx.accounts.product_policy.is_active, SettlementError::ProductInactive);
+    require_keys_eq!(
+        ctx.accounts.settlement_policy.state,
+        ctx.accounts.state.key(),
+        SettlementError::InvalidPolicy
+    );
+    require!(
+        ctx.accounts.product_policy.settlement_policy == ctx.accounts.settlement_policy.key()
+            && ctx.accounts.product_policy.product_id == params.product_id,
+        SettlementError::InvalidPolicy
+    );
+    require_keys_eq!(
+        ctx.accounts.apc_config.key(),
+        ctx.accounts.settlement_policy.apc_config,
+        SettlementError::InvalidPolicy
+    );
+    require_keys_eq!(
+        ctx.accounts.apc_state.config,
+        ctx.accounts.apc_config.key(),
+        crate::PeraxError::ApcNotInitialized
+    );
+    require!(
+        ctx.accounts.observation.observation_id == params.observation_id
+            && ctx.accounts.observation.oracle_feed == ctx.accounts.apc_config.oracle_feed,
+        crate::PeraxError::InvalidReference
+    );
+    require_keys_eq!(
+        ctx.accounts.pex_mint.key(),
+        ctx.accounts.settlement_policy.pex_mint,
+        crate::PeraxError::InvalidTokenMint
+    );
+    require!(
+        !ctx.accounts.state.is_paused,
+        crate::PeraxError::ProgramPaused
+    );
+    require!(
+        ctx.accounts.settlement_policy.is_active,
+        SettlementError::PolicyInactive
+    );
+    require!(
+        ctx.accounts.product_policy.is_active,
+        SettlementError::ProductInactive
+    );
     require!(
         params.quantity > 0
             && params.quantity <= ctx.accounts.product_policy.maximum_quantity
-            && params.quantity <= ctx.accounts.settlement_policy.maximum_quantity_per_settlement,
+            && params.quantity
+                <= ctx
+                    .accounts
+                    .settlement_policy
+                    .maximum_quantity_per_settlement,
         SettlementError::InvalidQuantity
     );
     require!(
@@ -191,7 +236,10 @@ pub fn plan_settlement(ctx: Context<PlanSettlementV2>, params: PlanSettlementPar
         ),
         SettlementError::FundingMethodNotAccepted
     );
-    require!(!ctx.accounts.apc_config.is_paused, crate::PeraxError::ApcPaused);
+    require!(
+        !ctx.accounts.apc_config.is_paused,
+        crate::PeraxError::ApcPaused
+    );
 
     let now = Clock::get()?.unix_timestamp;
     validate_apc_observation_fresh(&ctx.accounts.apc_config, &ctx.accounts.observation, now)?;
@@ -311,8 +359,14 @@ pub fn fund_direct_pex_settlement(
     ctx: Context<FundDirectPexSettlementV2>,
     params: FundDirectPexSettlementParams,
 ) -> Result<()> {
-    require!(!ctx.accounts.state.is_paused, crate::PeraxError::ProgramPaused);
-    require!(ctx.accounts.settlement_policy.is_active, SettlementError::PolicyInactive);
+    require!(
+        !ctx.accounts.state.is_paused,
+        crate::PeraxError::ProgramPaused
+    );
+    require!(
+        ctx.accounts.settlement_policy.is_active,
+        SettlementError::PolicyInactive
+    );
     require!(
         ctx.accounts.settlement_record.market_mode == SettlementMarketMode::DirectPex,
         SettlementError::InvalidSettlementMode
@@ -331,7 +385,10 @@ pub fn fund_direct_pex_settlement(
         .pex_obligation
         .checked_sub(ctx.accounts.settlement_record.direct_pex_received)
         .ok_or(SettlementError::SettlementArithmeticError)?;
-    require!(params.amount <= remaining, SettlementError::InvalidMarketSettlement);
+    require!(
+        params.amount <= remaining,
+        SettlementError::InvalidMarketSettlement
+    );
 
     token::transfer_checked(
         CpiContext::new(
@@ -371,8 +428,14 @@ pub fn execute_settlement_market_purchase<'info>(
     ctx: Context<'_, '_, '_, 'info, ExecuteSettlementMarketPurchaseV2<'info>>,
     params: ExecuteSettlementMarketPurchaseParams,
 ) -> Result<()> {
-    require!(!ctx.accounts.state.is_paused, crate::PeraxError::ProgramPaused);
-    require!(ctx.accounts.settlement_policy.is_active, SettlementError::PolicyInactive);
+    require!(
+        !ctx.accounts.state.is_paused,
+        crate::PeraxError::ProgramPaused
+    );
+    require!(
+        ctx.accounts.settlement_policy.is_active,
+        SettlementError::PolicyInactive
+    );
     require!(
         matches!(
             ctx.accounts.settlement_record.market_mode,
@@ -410,7 +473,10 @@ pub fn execute_settlement_market_purchase<'info>(
         .market_pex_required
         .checked_sub(ctx.accounts.settlement_record.market_pex_received)
         .ok_or(SettlementError::SettlementArithmeticError)?;
-    require!(market_remaining > 0, SettlementError::InvalidSettlementStatus);
+    require!(
+        market_remaining > 0,
+        SettlementError::InvalidSettlementStatus
+    );
     require!(
         params.minimum_pex_out >= market_remaining,
         SettlementError::InvalidMarketSettlement
@@ -541,8 +607,14 @@ pub fn execute_settlement_vault_funding(
     ctx: Context<ExecuteSettlementVaultFundingV2>,
     _params: ExecuteSettlementVaultFundingParams,
 ) -> Result<()> {
-    require!(!ctx.accounts.state.is_paused, crate::PeraxError::ProgramPaused);
-    require!(ctx.accounts.settlement_policy.is_active, SettlementError::PolicyInactive);
+    require!(
+        !ctx.accounts.state.is_paused,
+        crate::PeraxError::ProgramPaused
+    );
+    require!(
+        ctx.accounts.settlement_policy.is_active,
+        SettlementError::PolicyInactive
+    );
     require!(
         matches!(
             ctx.accounts.settlement_record.market_mode,
@@ -558,8 +630,7 @@ pub fn execute_settlement_vault_funding(
         SettlementError::InvalidSettlementStatus
     );
     require!(
-        ctx.accounts.reserve_vault_config.is_active
-            && !ctx.accounts.reserve_vault_config.is_paused,
+        ctx.accounts.reserve_vault_config.is_active && !ctx.accounts.reserve_vault_config.is_paused,
         SettlementError::PolicyVaultUnavailable
     );
 
@@ -574,7 +645,10 @@ pub fn execute_settlement_vault_funding(
         &ctx.accounts.reserve_vault_config,
         ctx.accounts.vault_token_account.amount,
     )?;
-    require!(available >= remaining, SettlementError::PolicyVaultUnavailable);
+    require!(
+        available >= remaining,
+        SettlementError::PolicyVaultUnavailable
+    );
 
     let now = Clock::get()?.unix_timestamp;
     reset_settlement_daily_window(&mut ctx.accounts.settlement_policy, now);
@@ -644,8 +718,14 @@ pub fn finalize_settlement(
     ctx: Context<FinalizeSettlementV2>,
     _params: FinalizeSettlementParams,
 ) -> Result<()> {
-    require!(!ctx.accounts.state.is_paused, crate::PeraxError::ProgramPaused);
-    require!(ctx.accounts.settlement_policy.is_active, SettlementError::PolicyInactive);
+    require!(
+        !ctx.accounts.state.is_paused,
+        crate::PeraxError::ProgramPaused
+    );
+    require!(
+        ctx.accounts.settlement_policy.is_active,
+        SettlementError::PolicyInactive
+    );
     require!(
         ctx.accounts.settlement_record.status == SettlementStatus::Ready,
         SettlementError::SettlementNotFunded
@@ -681,11 +761,7 @@ pub fn finalize_settlement(
 
     let bump = [ctx.accounts.settlement_custody.authority_bump];
     let record_key = ctx.accounts.settlement_record.key();
-    let signer_seeds: &[&[u8]] = &[
-        b"settlement-custody-authority",
-        record_key.as_ref(),
-        &bump,
-    ];
+    let signer_seeds: &[&[u8]] = &[b"settlement-custody-authority", record_key.as_ref(), &bump];
     match ctx.accounts.settlement_record.disposition {
         SettlementDisposition::Burn => {
             token::burn(
@@ -833,8 +909,7 @@ fn validate_product_policy_values(
         SettlementError::InvalidQuantity
     );
     require!(
-        accepted_funding_mask > 0
-            && accepted_funding_mask & !SETTLEMENT_ALL_FUNDING_METHODS == 0,
+        accepted_funding_mask > 0 && accepted_funding_mask & !SETTLEMENT_ALL_FUNDING_METHODS == 0,
         SettlementError::FundingMethodNotAccepted
     );
     if disposition == SettlementDisposition::UtilityPayment {
@@ -865,7 +940,10 @@ pub fn derive_settlement_source_split(
     market_share_bps_by_risk: [u16; 4],
     pex_obligation: u64,
 ) -> Result<(SettlementMarketMode, u64, u64)> {
-    require!(pex_obligation > 0, SettlementError::SettlementArithmeticError);
+    require!(
+        pex_obligation > 0,
+        SettlementError::SettlementArithmeticError
+    );
     if funding_method == SettlementFundingMethod::Pex {
         return Ok((SettlementMarketMode::DirectPex, 0, 0));
     }
@@ -886,9 +964,7 @@ pub fn derive_settlement_source_split(
                 market_share_bps_by_risk[index]
             }
         }
-        ApcStatus::Inactive | ApcStatus::Paused => {
-            return err!(SettlementError::PolicyInactive)
-        }
+        ApcStatus::Inactive | ApcStatus::Paused => return err!(SettlementError::PolicyInactive),
     };
     let market_pex = amount_bps_ceiling(pex_obligation, market_share_bps)?;
     let vault_pex = pex_obligation
@@ -1006,7 +1082,10 @@ fn set_or_validate_funding_source(current: Pubkey, supplied: Pubkey) -> Result<P
     if current == Pubkey::default() {
         Ok(supplied)
     } else {
-        require!(current == supplied, SettlementError::InvalidMarketSettlement);
+        require!(
+            current == supplied,
+            SettlementError::InvalidMarketSettlement
+        );
         Ok(current)
     }
 }

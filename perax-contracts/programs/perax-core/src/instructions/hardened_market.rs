@@ -1,15 +1,13 @@
-use super::market_cpi::{
-    validated_exact_out_market_metas, ExactOutMarketValidation,
-};
+use super::market_cpi::{validated_exact_out_market_metas, ExactOutMarketValidation};
 use super::settlement_v2::calculate_settlement_quote_requirement;
 use crate::{
-    calculate_effective_apc_price, reset_recovery_window_if_needed,
-    validate_apc_observation_fresh, validate_recovery_purchase_limits, validate_reference,
-    ApcStatus, CounterweightPurchaseExecuted, ExecuteCounterweightPurchase,
+    calculate_effective_apc_price, reset_recovery_window_if_needed, validate_apc_observation_fresh,
+    validate_recovery_purchase_limits, validate_reference, ApcStatus,
+    CounterweightPurchaseExecuted, ExecuteCounterweightPurchase,
     ExecuteCounterweightPurchaseParams, ExecuteSettlementMarketPurchaseParams,
-    ExecuteSettlementMarketPurchaseV2, PeraxError, SettlementError,
-    SettlementMarketMode, SettlementMarketPurchaseExecuted, SettlementPolicy, SettlementRecord,
-    SettlementStatus, APC_BPS_DENOMINATOR, APC_QUOTE_DECIMALS, PEX_DECIMALS,
+    ExecuteSettlementMarketPurchaseV2, PeraxError, SettlementError, SettlementMarketMode,
+    SettlementMarketPurchaseExecuted, SettlementPolicy, SettlementRecord, SettlementStatus,
+    APC_BPS_DENOMINATOR, APC_QUOTE_DECIMALS, PEX_DECIMALS,
 };
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{
@@ -199,6 +197,54 @@ pub fn execute_counterweight_purchase_hardened<'info>(
     params: ExecuteCounterweightPurchaseParams,
 ) -> Result<()> {
     validate_reference(params.recovery_id)?;
+    require_keys_eq!(
+        ctx.accounts.state.token_mint,
+        ctx.accounts.pex_mint.key(),
+        PeraxError::InvalidTokenMint
+    );
+    require_keys_eq!(
+        ctx.accounts.apc_config.oracle_feed,
+        ctx.accounts.oracle_feed.key(),
+        PeraxError::Unauthorized
+    );
+    require!(
+        ctx.accounts.observation.observation_id == params.observation_id
+            && ctx.accounts.observation.oracle_feed == ctx.accounts.oracle_feed.key(),
+        PeraxError::InvalidReference
+    );
+    require!(
+        ctx.accounts.counterweight_vault.key()
+            == ctx.accounts.counterweight_config.counterweight_vault
+            && ctx.accounts.counterweight_vault.owner == ctx.accounts.counterweight_authority.key()
+            && ctx.accounts.counterweight_vault.mint == ctx.accounts.quote_mint.key(),
+        PeraxError::InvalidCounterweightVault
+    );
+    require!(
+        ctx.accounts.recovery_vault.key() == ctx.accounts.counterweight_config.recovery_vault
+            && ctx.accounts.recovery_vault.owner
+                == ctx.accounts.counterweight_config.recovery_authority
+            && ctx.accounts.recovery_vault.mint == ctx.accounts.pex_mint.key(),
+        PeraxError::InvalidCounterweightVault
+    );
+    require_keys_eq!(
+        ctx.accounts.quote_mint.key(),
+        ctx.accounts.counterweight_config.quote_mint,
+        PeraxError::InvalidCounterweightMint
+    );
+    require_keys_eq!(
+        ctx.accounts.approved_pool.key(),
+        ctx.accounts.apc_config.approved_pool,
+        PeraxError::InvalidApcPool
+    );
+    require_keys_eq!(
+        ctx.accounts.recovery_program.key(),
+        ctx.accounts.apc_config.approved_recovery_program,
+        PeraxError::InvalidRecoveryProgram
+    );
+    require!(
+        ctx.accounts.recovery_program.to_account_info().executable,
+        PeraxError::InvalidRecoveryProgram
+    );
     validate_reference(params.observation_id)?;
     require!(
         params.maximum_quote_amount > 0 && params.minimum_pex_out > 0,
@@ -360,8 +406,7 @@ pub fn execute_counterweight_purchase_hardened<'info>(
         .checked_add(quote_spent)
         .ok_or(PeraxError::RecoveryWindowCapExceeded)?;
     require!(
-        ctx.accounts.apc_state.recovery_window_spent
-            <= ctx.accounts.apc_config.recovery_window_cap,
+        ctx.accounts.apc_state.recovery_window_spent <= ctx.accounts.apc_config.recovery_window_cap,
         PeraxError::RecoveryWindowCapExceeded
     );
     ctx.accounts.apc_state.last_recovery_purchase_timestamp = now;
@@ -405,15 +450,9 @@ fn load_recovery_market_policy(
         info.owner == &crate::ID && !info.is_signer && !info.is_writable,
         PeraxError::InvalidRecoverySettlement
     );
-    let expected = Pubkey::find_program_address(
-        &[b"settlement-policy", state.as_ref()],
-        &crate::ID,
-    )
-    .0;
-    require!(
-        *info.key == expected,
-        PeraxError::InvalidRecoverySettlement
-    );
+    let expected =
+        Pubkey::find_program_address(&[b"settlement-policy", state.as_ref()], &crate::ID).0;
+    require!(*info.key == expected, PeraxError::InvalidRecoverySettlement);
     let data = info.try_borrow_data()?;
     let mut data_slice: &[u8] = &data;
     let policy = SettlementPolicy::try_deserialize(&mut data_slice)
@@ -458,7 +497,11 @@ fn minimum_pex_out_for_quote(
     let denominator = quote_scale
         .checked_mul(u128::from(effective_price))
         .ok_or(PeraxError::InvalidRecoverySettlement)?;
-    let fair_output = ceil_div_u128(numerator, denominator, PeraxError::InvalidRecoverySettlement)?;
+    let fair_output = ceil_div_u128(
+        numerator,
+        denominator,
+        PeraxError::InvalidRecoverySettlement,
+    )?;
     let retained_bps = APC_BPS_DENOMINATOR
         .checked_sub(u128::from(maximum_slippage_bps))
         .ok_or(PeraxError::InvalidRecoverySettlement)?;
@@ -569,12 +612,6 @@ mod tests {
     #[test]
     fn recovery_minimum_output_rejects_unbounded_slippage() {
         assert!(minimum_pex_out_for_quote(1_000_000, 100_000_000, 100_000_000, 0).is_err());
-        assert!(minimum_pex_out_for_quote(
-            1_000_000,
-            100_000_000,
-            100_000_000,
-            10_000
-        )
-        .is_err());
+        assert!(minimum_pex_out_for_quote(1_000_000, 100_000_000, 100_000_000, 10_000).is_err());
     }
 }

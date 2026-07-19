@@ -37,8 +37,7 @@ pub fn update_product_settlement_policy_hardened(
         SettlementError::InvalidQuantity
     );
     require!(
-        accepted_funding_mask > 0
-            && accepted_funding_mask & !SETTLEMENT_ALL_FUNDING_METHODS == 0,
+        accepted_funding_mask > 0 && accepted_funding_mask & !SETTLEMENT_ALL_FUNDING_METHODS == 0,
         SettlementError::FundingMethodNotAccepted
     );
     if current.disposition == SettlementDisposition::UtilityPayment {
@@ -85,6 +84,9 @@ mod tests {
 
     #[test]
     fn all_funding_mask_remains_bounded() {
-        assert_eq!(SETTLEMENT_ALL_FUNDING_METHODS & !SETTLEMENT_ALL_FUNDING_METHODS, 0);
+        assert_eq!(
+            SETTLEMENT_ALL_FUNDING_METHODS & !SETTLEMENT_ALL_FUNDING_METHODS,
+            0
+        );
     }
 }

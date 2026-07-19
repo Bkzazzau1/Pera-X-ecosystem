@@ -4,7 +4,6 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "bootstrap": "node scripts/bootstrap.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node --test --import tsx test/*.test.ts",
     "build": "tsc",
