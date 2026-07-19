@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test --import tsx test/*.test.ts"
+    "test": "node --test --import tsx test/*.test.ts",
+    "build": "tsc",
+    "start:executor": "node dist/src/start-executor.js"
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.30.1",
