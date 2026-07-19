@@ -1,0 +1,103 @@
+name: Materialize Meteora Runtime
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.head_ref == 'verify/apc-settlement-completion-20260719'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout verification branch
+        uses: actions/checkout@v4
+        with:
+          ref: verify/apc-settlement-completion-20260719
+          fetch-depth: 0
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Reconstruct reviewed source and deterministic lock
+        working-directory: perax-market-adapters/meteora-dlmm-runtime
+        run: node scripts/bootstrap.mjs
+
+      - name: Remove temporary generator and update package documentation
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = 'perax-market-adapters/meteora-dlmm-runtime/package.json';
+          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+          delete pkg.scripts.bootstrap;
+          fs.writeFileSync(path, `${JSON.stringify(pkg, null, 2)}\n`);
+          NODE
+          cat > perax-market-adapters/meteora-dlmm-runtime/README.md <<'EOF'
+          # Pera-X Meteora DLMM Runtime
+
+          This isolated runtime executes policy-driven Pera-X market purchases on the APC-approved Meteora DLMM pool. It cannot choose settlement mode, PEX obligation, burn disposition, vault share, recovery entry, or policy limits; those decisions are enforced by the Pera-X smart contract.
+
+          ## Install and verify
+
+          ```bash
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run verify
+          ```
+
+          The reviewed TypeScript source, tests, local `bigint-buffer` replacement, and deterministic `package-lock.json` are committed directly. No generated or compressed source bootstrap is required.
+
+          ## Runtime responsibilities
+
+          - Load only the market program, pool, quote mint, and oracle signer approved on-chain.
+          - Submit fresh APC observations from the approved pool and durable reserve-flow history.
+          - Refuse to fabricate TWAP, volume, buy-pressure, volatility, or price-impact information during warmup.
+          - Build only Meteora `swapExactOut2` instructions.
+          - Preserve ordered market accounts and signer/writable metadata for independent contract validation.
+          - Use the contract-calculated exact PEX output and bounded quote maximum.
+          - Resolve only a configured quote account whose mint, owner, and balance are valid.
+
+          ## Required environment
+
+          ```env
+          METEORA_DLMM_POOL=
+          PERAX_QUOTE_MINT_ADDRESS=
+          PERAX_SETTLEMENT_QUOTE_TOKEN_ACCOUNT=
+          METEORA_MAX_SLIPPAGE_BPS=
+          PERAX_OBSERVATION_TWAP_SECONDS=
+          PERAX_OBSERVATION_FLOW_WINDOW_SECONDS=
+          PERAX_OBSERVATION_PROBE_PEX_AMOUNT=
+          PERAX_OBSERVATION_STATE_PATH=
+          ```
+
+          The settlement executor variables are documented in `perax-market-engine/SETTLEMENT_EXECUTOR.md`.
+
+          ## Security boundary
+
+          The smart contract independently verifies the approved program and pool, exact-out discriminator and amounts, source and destination accounts, token mints and programs, signer privileges, Meteora event authority, absence of host fees and transfer-hook slices, actual quote spent, and actual PEX received.
+
+          Production activation remains blocked until the APC numerical policy, settlement policy, pool, quote source, and product policies are formally approved and initialized.
+          EOF
+          rm -f .github/scripts/install-meteora-runtime.py
+          rm -f perax-market-adapters/meteora-dlmm-runtime/scripts/bootstrap.mjs
+          rm -f perax-market-adapters/meteora-dlmm-runtime/generated/package-lock.gz.b64.001
+          rm -f perax-market-adapters/meteora-dlmm-runtime/generated/package-lock.gz.b64.002
+          rmdir perax-market-adapters/meteora-dlmm-runtime/scripts 2>/dev/null || true
+          rmdir perax-market-adapters/meteora-dlmm-runtime/generated 2>/dev/null || true
+
+      - name: Commit transparent runtime package
+        run: |
+          git add -A .github/scripts/install-meteora-runtime.py perax-market-adapters/meteora-dlmm-runtime
+          if git diff --cached --quiet; then
+            echo 'Meteora runtime is already transparent and materialized.'
+            exit 0
+          fi
+          git config user.name 'Pera-X verification automation'
+          git config user.email 'actions@github.com'
+          git commit -m 'Materialize transparent Meteora runtime source'
+          git push origin HEAD:verify/apc-settlement-completion-20260719
