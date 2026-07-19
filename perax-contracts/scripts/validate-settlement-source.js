@@ -27,6 +27,8 @@ const coordinator = read("../perax-market-engine/src/settlement.ts");
 const executor = read("../perax-market-engine/src/executor.ts");
 const idlGate = read("../perax-market-engine/src/idl.ts");
 const anchorClient = read("../perax-market-engine/src/anchor-client.ts");
+const runtimeBindings = read("../perax-market-engine/src/runtime.ts");
+const runtimeBootstrap = read("../perax-market-engine/src/start-executor.ts");
 const marketIndex = read("../perax-market-engine/src/index.ts");
 const marketPackage = read("../perax-market-engine/package.json");
 const marketLock = read("../perax-market-engine/package-lock.json");
@@ -163,6 +165,12 @@ assertContains(anchorClient, "AnchorSettlementProgramClient", "Anchor settlement
 assertContains(anchorClient, "assertExistingPlanMatches", "Anchor settlement client");
 assertContains(anchorClient, '"settlement-custody-authority"', "Anchor settlement client");
 assertContains(anchorClient, "getAssociatedTokenAddressSync", "Anchor settlement client");
+assertContains(
+  anchorClient,
+  "createAssociatedTokenAccountIdempotentInstruction",
+  "Anchor settlement client",
+);
+assertContains(anchorClient, "preInstructions", "Anchor settlement client");
 assertContains(anchorClient, "confirmTransaction", "Anchor settlement client");
 assertContains(anchorClient, "resolveQuoteSource", "Anchor settlement client");
 assertContains(anchorClient, "assertRemainingSignersAvailable", "Anchor settlement client");
@@ -170,13 +178,83 @@ assertContains(anchorClient, "latestSignature", "Anchor settlement client");
 assertNotContains(anchorClient, "requestedMarketMode", "Anchor settlement client");
 assertNotContains(anchorClient, "overrideMarketMode", "Anchor settlement client");
 
+assertContains(
+  runtimeBindings,
+  "assertSettlementRuntimeBindings",
+  "settlement runtime bindings",
+);
+assertContains(
+  runtimeBindings,
+  "buildAtomicPexPurchase",
+  "settlement runtime bindings",
+);
+assertContains(
+  runtimeBindings,
+  "getFreshObservationId",
+  "settlement runtime bindings",
+);
+assertContains(
+  runtimeBindings,
+  "resolveQuoteSource",
+  "settlement runtime bindings",
+);
+
+assertContains(
+  runtimeBootstrap,
+  "PERAX_SETTLEMENT_IDL_PATH",
+  "settlement runtime bootstrap",
+);
+assertContains(
+  runtimeBootstrap,
+  "PERAX_SETTLEMENT_SIGNER_PATH",
+  "settlement runtime bootstrap",
+);
+assertContains(
+  runtimeBootstrap,
+  "PERAX_SETTLEMENT_RUNTIME_MODULE",
+  "settlement runtime bootstrap",
+);
+assertContains(
+  runtimeBootstrap,
+  "loadSettlementKeypair",
+  "settlement runtime bootstrap",
+);
+assertContains(
+  runtimeBootstrap,
+  "loadSettlementRuntimeModule",
+  "settlement runtime bootstrap",
+);
+assertContains(
+  runtimeBootstrap,
+  "expectedStatePda",
+  "settlement runtime bootstrap",
+);
+assertContains(
+  runtimeBootstrap,
+  "createSettlementExecutorServer",
+  "settlement runtime bootstrap",
+);
+assertContains(
+  runtimeBootstrap,
+  "process.exitCode = 1",
+  "settlement runtime bootstrap",
+);
+
 assertContains(marketPackage, '"@coral-xyz/anchor": "0.30.1"', "market-engine package");
 assertContains(marketPackage, '"@solana/spl-token": "^0.4.8"', "market-engine package");
+assertContains(marketPackage, '"build": "tsc"', "market-engine package");
+assertContains(
+  marketPackage,
+  '"start:executor": "node dist/src/start-executor.js"',
+  "market-engine package",
+);
 assertContains(marketLock, '"node_modules/@coral-xyz/anchor"', "market-engine lock");
 assertContains(marketLock, '"node_modules/@solana/spl-token"', "market-engine lock");
 
 assertContains(marketIndex, 'export * from "./executor.js";', "market-engine index");
 assertContains(marketIndex, 'export * from "./idl.js";', "market-engine index");
 assertContains(marketIndex, 'export * from "./anchor-client.js";', "market-engine index");
+assertContains(marketIndex, 'export * from "./runtime.js";', "market-engine index");
+assertContains(marketIndex, 'export * from "./start-executor.js";', "market-engine index");
 
 console.log("Settlement source guards passed.");
