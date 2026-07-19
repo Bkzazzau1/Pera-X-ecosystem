@@ -113,15 +113,26 @@ export type SettlementRecordView = {
   marketPexReceived: bigint;
   policyVaultPexReceived: bigint;
   directPexReceived: bigint;
+  productId?: Uint8Array;
+  observationId?: Uint8Array;
+  beneficiary?: string;
+  destinationTokenAccount?: string;
+  effectivePrice?: bigint;
   settlementRecordAddress?: string;
   transactionSignature?: string;
+};
+
+export type SettlementRemainingAccount = {
+  publicKey: string;
+  isWritable: boolean;
+  isSigner?: boolean;
 };
 
 export type AtomicMarketPurchase = {
   maximumQuoteAmount: bigint;
   minimumPexOut: bigint;
   instructionData: Uint8Array;
-  remainingAccounts?: string[];
+  remainingAccounts?: SettlementRemainingAccount[];
 };
 
 export interface SettlementExecutionVenue {
