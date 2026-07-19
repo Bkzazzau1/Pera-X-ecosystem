@@ -21,13 +21,29 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Reconstruct and verify runtime
+      - name: Reconstruct reviewed runtime artifacts
         working-directory: perax-market-adapters/meteora-dlmm-runtime
         run: |
           mkdir -p ../../verification-logs
-          set +e
           timeout 60 node scripts/bootstrap.mjs > ../../verification-logs/meteora-bootstrap.log 2>&1
-          bootstrap_status=$?
+          cat ../../verification-logs/meteora-bootstrap.log
+
+      - name: Upload reconstructed runtime source
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteora-runtime-reconstructed-source
+          if-no-files-found: error
+          path: |
+            perax-market-adapters/meteora-dlmm-runtime/src
+            perax-market-adapters/meteora-dlmm-runtime/test
+            perax-market-adapters/meteora-dlmm-runtime/package-lock.json
+            perax-market-adapters/meteora-dlmm-runtime/tsconfig.json
+            perax-market-adapters/meteora-dlmm-runtime/vendor
+
+      - name: Verify reconstructed runtime
+        working-directory: perax-market-adapters/meteora-dlmm-runtime
+        run: |
+          set +e
           timeout 600 npm ci --ignore-scripts --no-audit --no-fund > ../../verification-logs/meteora-npm-ci.log 2>&1
           ci_status=$?
           timeout 120 npm run typecheck > ../../verification-logs/meteora-typecheck.log 2>&1
@@ -43,20 +59,14 @@ jobs:
             echo "===== ${log} tail ====="
             tail -n 160 "${log}" || true
           done
-          if [ "${bootstrap_status}" -ne 0 ] || [ "${ci_status}" -ne 0 ] || [ "${typecheck_status}" -ne 0 ] || [ "${test_status}" -ne 0 ] || [ "${build_status}" -ne 0 ] || [ "${audit_status}" -ne 0 ]; then
+          if [ "${ci_status}" -ne 0 ] || [ "${typecheck_status}" -ne 0 ] || [ "${test_status}" -ne 0 ] || [ "${build_status}" -ne 0 ] || [ "${audit_status}" -ne 0 ]; then
             exit 1
           fi
 
-      - name: Upload runtime evidence
+      - name: Upload runtime verification logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: meteora-runtime-completion-evidence
+          name: meteora-runtime-verification-logs
           if-no-files-found: warn
-          path: |
-            verification-logs
-            perax-market-adapters/meteora-dlmm-runtime/src
-            perax-market-adapters/meteora-dlmm-runtime/test
-            perax-market-adapters/meteora-dlmm-runtime/package-lock.json
-            perax-market-adapters/meteora-dlmm-runtime/tsconfig.json
-            perax-market-adapters/meteora-dlmm-runtime/vendor
+          path: verification-logs
