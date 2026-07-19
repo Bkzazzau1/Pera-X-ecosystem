@@ -26,7 +26,10 @@ const marketTypes = read("../perax-market-engine/src/types.ts");
 const coordinator = read("../perax-market-engine/src/settlement.ts");
 const executor = read("../perax-market-engine/src/executor.ts");
 const idlGate = read("../perax-market-engine/src/idl.ts");
+const anchorClient = read("../perax-market-engine/src/anchor-client.ts");
 const marketIndex = read("../perax-market-engine/src/index.ts");
+const marketPackage = read("../perax-market-engine/package.json");
+const marketLock = read("../perax-market-engine/package-lock.json");
 const legacyHandler = path.join(
   root,
   "programs/perax-core/src/instructions/settlement.rs",
@@ -118,10 +121,22 @@ assertContains(errors, "SettlementNotFunded", "errors.rs");
 assertContains(marketTypes, "SettlementProgramClient", "market-engine types");
 assertContains(marketTypes, "SettlementObservationProvider", "market-engine types");
 assertContains(marketTypes, "SettlementExecutorRequest", "market-engine types");
+assertContains(marketTypes, "SettlementRemainingAccount", "market-engine types");
+assertContains(marketTypes, "isWritable: boolean", "market-engine types");
 assertContains(marketTypes, "settlementRecordAddress?: string", "market-engine types");
 assertContains(
   coordinator,
   "switch (settlement.marketMode)",
+  "market-engine coordinator",
+);
+assertContains(
+  coordinator,
+  'settlement.status === "finalized"',
+  "market-engine coordinator",
+);
+assertContains(
+  coordinator,
+  'settlement.status === "ready"',
   "market-engine coordinator",
 );
 assertContains(
@@ -143,7 +158,25 @@ assertNotContains(executor, "overrideMarketMode", "settlement executor");
 assertContains(idlGate, "assertSettlementIdlCompatible", "settlement IDL gate");
 assertContains(idlGate, "settlementCustody", "settlement IDL gate");
 assertContains(idlGate, "does not match configured program", "settlement IDL gate");
+
+assertContains(anchorClient, "AnchorSettlementProgramClient", "Anchor settlement client");
+assertContains(anchorClient, "assertExistingPlanMatches", "Anchor settlement client");
+assertContains(anchorClient, '"settlement-custody-authority"', "Anchor settlement client");
+assertContains(anchorClient, "getAssociatedTokenAddressSync", "Anchor settlement client");
+assertContains(anchorClient, "confirmTransaction", "Anchor settlement client");
+assertContains(anchorClient, "resolveQuoteSource", "Anchor settlement client");
+assertContains(anchorClient, "assertRemainingSignersAvailable", "Anchor settlement client");
+assertContains(anchorClient, "latestSignature", "Anchor settlement client");
+assertNotContains(anchorClient, "requestedMarketMode", "Anchor settlement client");
+assertNotContains(anchorClient, "overrideMarketMode", "Anchor settlement client");
+
+assertContains(marketPackage, '"@coral-xyz/anchor": "0.30.1"', "market-engine package");
+assertContains(marketPackage, '"@solana/spl-token": "^0.4.8"', "market-engine package");
+assertContains(marketLock, '"node_modules/@coral-xyz/anchor"', "market-engine lock");
+assertContains(marketLock, '"node_modules/@solana/spl-token"', "market-engine lock");
+
 assertContains(marketIndex, 'export * from "./executor.js";', "market-engine index");
 assertContains(marketIndex, 'export * from "./idl.js";', "market-engine index");
+assertContains(marketIndex, 'export * from "./anchor-client.js";', "market-engine index");
 
 console.log("Settlement source guards passed.");
