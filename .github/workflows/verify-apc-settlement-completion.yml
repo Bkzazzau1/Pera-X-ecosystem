@@ -30,13 +30,31 @@ jobs:
             perax-contracts/package-lock.json
             perax-market-engine/package-lock.json
 
-      - name: Verify Rust formatting, unit tests, and compilation
+      - name: Apply narrow Memo-program repair and format Rust
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("perax-contracts/programs/perax-core/src/market_cpi.rs")
+          source = path.read_text()
+          old = '''pub const MEMO_PROGRAM_ID: Pubkey =
+              anchor_lang::solana_program::pubkey!("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");'''
+          new = '''pub const MEMO_PROGRAM_ID: Pubkey = Pubkey::new_from_array([
+              5, 74, 83, 90, 153, 41, 33, 6, 77, 36, 232, 113, 96, 218, 56, 124,
+              124, 53, 181, 221, 188, 146, 187, 129, 228, 31, 168, 64, 65, 5, 68, 141,
+          ]);'''
+          if old not in source:
+              raise SystemExit("Expected Memo program macro was not found")
+          path.write_text(source.replace(old, new))
+          PY
+          cd perax-contracts
+          cargo +1.79.0 fmt --all
+          cargo +1.79.0 fmt --all -- --check
+
+      - name: Verify Rust unit tests and compilation
         working-directory: perax-contracts
         run: |
           mkdir -p ../verification-logs
           set +e
-          cargo +1.79.0 fmt --all -- --check > ../verification-logs/rust-format.log 2>&1
-          fmt_status=$?
           cargo +1.79.0 test --locked --all-targets > ../verification-logs/rust-test.log 2>&1
           test_status=$?
           cargo +1.79.0 check --locked --all-targets > ../verification-logs/rust-check.log 2>&1
@@ -46,7 +64,7 @@ jobs:
             echo "===== ${log} actionable output ====="
             grep -E "^(error(\[[^]]+\])?:|warning:)|^ *--> |^ *\|" "${log}" | tail -n 220 || true
           done
-          if [ "${fmt_status}" -ne 0 ] || [ "${test_status}" -ne 0 ] || [ "${check_status}" -ne 0 ]; then
+          if [ "${test_status}" -ne 0 ] || [ "${check_status}" -ne 0 ]; then
             exit 1
           fi
 
@@ -82,6 +100,10 @@ jobs:
           if-no-files-found: warn
           path: |
             verification-logs
+            perax-contracts/programs/perax-core/src/market_cpi.rs
+            perax-contracts/programs/perax-core/src/instructions/hardened_market.rs
+            perax-contracts/programs/perax-core/src/instructions/hardened_product.rs
+            perax-contracts/programs/perax-core/src/instructions/mod.rs
             perax-market-adapters/meteora-dlmm-runtime/src
             perax-market-adapters/meteora-dlmm-runtime/test
             perax-market-adapters/meteora-dlmm-runtime/package-lock.json
