@@ -8,6 +8,7 @@ const { BN } = anchor;
 type AnchorBn = InstanceType<typeof BN>;
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountIdempotentInstruction,
   getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
@@ -16,6 +17,7 @@ import type {
   Commitment,
   PublicKey,
   Signer,
+  TransactionInstruction,
 } from "@solana/web3.js";
 
 import { assertSettlementIdlCompatible, type SettlementIdl } from "./idl.js";
@@ -41,6 +43,7 @@ type AccountClient = {
 type MethodBuilder = {
   accountsStrict(accounts: Record<string, PublicKey>): MethodBuilder;
   remainingAccounts(accounts: AccountMeta[]): MethodBuilder;
+  preInstructions(instructions: TransactionInstruction[]): MethodBuilder;
   signers(signers: Signer[]): MethodBuilder;
   rpc(options?: {
     commitment?: Commitment;
@@ -358,30 +361,31 @@ export class AnchorSettlementProgramClient implements SettlementProgramClient {
       TOKEN_PROGRAM_ID,
       ASSOCIATED_TOKEN_PROGRAM_ID,
     );
-    const destinationTokenAccount = await this.resolveDestination(
+    const destination = await this.resolveDestination(
       current,
       rawRecord,
       policy,
     );
 
-    const method = this.method("finalizeSettlement")({
+    let method = this.method("finalizeSettlement")({
       settlementId: Array.from(settlementId),
+    }).accountsStrict({
+      state: this.statePda,
+      settlementPolicy: this.settlementPolicyPda,
+      productPolicy,
+      settlementRecord: recordAddress,
+      settlementCustody,
+      settlementAuthority,
+      settlementPexVault,
+      destinationTokenAccount: destination.tokenAccount,
+      lockVault: publicKeyField(policy, "lockVault"),
+      pexMint: this.pexMint,
+      tokenProgram: TOKEN_PROGRAM_ID,
     });
-    const signature = await this.send(
-      method.accountsStrict({
-        state: this.statePda,
-        settlementPolicy: this.settlementPolicyPda,
-        productPolicy,
-        settlementRecord: recordAddress,
-        settlementCustody,
-        settlementAuthority,
-        settlementPexVault,
-        destinationTokenAccount,
-        lockVault: publicKeyField(policy, "lockVault"),
-        pexMint: this.pexMint,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      }),
-    );
+    if (destination.preInstructions.length > 0) {
+      method = method.preInstructions(destination.preInstructions);
+    }
+    const signature = await this.send(method);
     return this.readSettlement(settlementId, signature);
   }
 
@@ -457,30 +461,52 @@ export class AnchorSettlementProgramClient implements SettlementProgramClient {
     current: SettlementRecordView,
     rawRecord: DynamicRecord,
     policy: DynamicRecord,
-  ): Promise<PublicKey> {
+  ): Promise<{ tokenAccount: PublicKey; preInstructions: TransactionInstruction[] }> {
     switch (current.disposition) {
       case "utilityPayment":
-        return publicKeyField(rawRecord, "destinationTokenAccount");
+        return {
+          tokenAccount: publicKeyField(rawRecord, "destinationTokenAccount"),
+          preInstructions: [],
+        };
       case "customerDelivery": {
         const beneficiary = publicKeyField(rawRecord, "beneficiary");
         if (this.config.resolveCustomerDestination) {
-          return this.config.resolveCustomerDestination(
-            beneficiary,
-            this.pexMint,
-            current,
-          );
+          return {
+            tokenAccount: await this.config.resolveCustomerDestination(
+              beneficiary,
+              this.pexMint,
+              current,
+            ),
+            preInstructions: [],
+          };
         }
-        return getAssociatedTokenAddressSync(
+        const tokenAccount = getAssociatedTokenAddressSync(
           this.pexMint,
           beneficiary,
           true,
           TOKEN_PROGRAM_ID,
           ASSOCIATED_TOKEN_PROGRAM_ID,
         );
+        return {
+          tokenAccount,
+          preInstructions: [
+            createAssociatedTokenAccountIdempotentInstruction(
+              this.config.provider.publicKey,
+              tokenAccount,
+              beneficiary,
+              this.pexMint,
+              TOKEN_PROGRAM_ID,
+              ASSOCIATED_TOKEN_PROGRAM_ID,
+            ),
+          ],
+        };
       }
       case "burn":
       case "lock":
-        return publicKeyField(policy, "lockVault");
+        return {
+          tokenAccount: publicKeyField(policy, "lockVault"),
+          preInstructions: [],
+        };
       default:
         return assertNever(current.disposition);
     }

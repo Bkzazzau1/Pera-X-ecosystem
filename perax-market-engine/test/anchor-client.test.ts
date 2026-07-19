@@ -4,7 +4,8 @@ import test from "node:test";
 import anchor, { AnchorProvider, type Idl } from "@coral-xyz/anchor";
 const { BN } = anchor;
 type AnchorBn = InstanceType<typeof BN>;
-import { Keypair, PublicKey } from "@solana/web3.js";
+import { Keypair, PublicKey, type TransactionInstruction } from "@solana/web3.js";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 
 import { AnchorSettlementProgramClient } from "../src/anchor-client.js";
 import type { SettlementIdl } from "../src/idl.js";
@@ -32,6 +33,7 @@ type Call = {
   params: unknown;
   accounts?: Record<string, PublicKey>;
   remaining?: Array<{ pubkey: PublicKey; isWritable: boolean; isSigner: boolean }>;
+  preInstructions?: TransactionInstruction[];
 };
 
 class MockBuilder {
@@ -45,6 +47,10 @@ class MockBuilder {
   }
   remainingAccounts(accounts: Array<{ pubkey: PublicKey; isWritable: boolean; isSigner: boolean }>): this {
     this.call.remaining = accounts;
+    return this;
+  }
+  preInstructions(instructions: TransactionInstruction[]): this {
+    this.call.preInstructions = instructions;
     return this;
   }
   signers(): this {
@@ -186,6 +192,7 @@ function createHarness() {
     beneficiary,
     fixedDestination,
     lockVault,
+    pexMint,
     get finalSignatureLookupCount() {
       return finalSignatureLookupCount;
     },
@@ -261,4 +268,31 @@ test("Anchor client finalizes to the contract-recorded destination and returns c
   assert.equal(replay.transactionSignature, "historic-final-signature");
   assert.equal(harness.finalSignatureLookupCount, 1);
   assert.equal(harness.calls.filter((item) => item.name === "finalizeSettlement").length, 1);
+});
+
+
+test("Anchor client creates a customer PEX ATA idempotently during finalization", async () => {
+  const harness = createHarness();
+  const input = planInput(harness.beneficiary);
+  const planned = await harness.client.planSettlement(input);
+  const raw = harness.records.get(planned.settlementRecordAddress!)!;
+  raw.status = { ready: {} };
+  raw.disposition = { customerDelivery: {} };
+  raw.policyVaultPexReceived = new BN(1_000);
+
+  await harness.client.finalizeSettlement(input.settlementId);
+
+  const call = harness.calls.find((item) => item.name === "finalizeSettlement")!;
+  const expectedAta = getAssociatedTokenAddressSync(
+    harness.pexMint,
+    harness.beneficiary,
+    true,
+    TOKEN_PROGRAM_ID,
+    ASSOCIATED_TOKEN_PROGRAM_ID,
+  );
+  assert.equal(
+    account(call, "destinationTokenAccount").toBase58(),
+    expectedAta.toBase58(),
+  );
+  assert.equal(call.preInstructions?.length, 1);
 });
