@@ -17,7 +17,7 @@ use anchor_spl::{
 #[derive(Accounts)]
 pub struct Initialize<'info> {
     #[account(init, payer = authority, space = 8 + PeraxState::INIT_SPACE, seeds = [b"perax-state"], bump)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(mut)]
     pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -26,14 +26,14 @@ pub struct Initialize<'info> {
 #[derive(Accounts)]
 pub struct UpdateConfig<'info> {
     #[account(mut, seeds = [b"perax-state"], bump = state.bump, has_one = authority @ PeraxError::Unauthorized)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     pub authority: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct SafetyAdminAction<'info> {
     #[account(mut, seeds = [b"perax-state"], bump = state.bump, has_one = safety_admin @ PeraxError::Unauthorized)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     pub safety_admin: Signer<'info>,
 }
 
@@ -46,7 +46,7 @@ pub struct InitializeReserveVault<'info> {
         has_one = authority @ PeraxError::Unauthorized,
         constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint
     )]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(mut)]
     pub authority: Signer<'info>,
     #[account(
@@ -56,7 +56,7 @@ pub struct InitializeReserveVault<'info> {
         seeds = [b"reserve-config", params.allocation_id.as_ref()],
         bump
     )]
-    pub reserve_vault_config: Account<'info, ReserveVaultConfig>,
+    pub reserve_vault_config: Box<Account<'info, ReserveVaultConfig>>,
     /// CHECK: PDA authority constrained by seeds; it has no private key.
     #[account(seeds = [b"reserve-authority", params.allocation_id.as_ref()], bump)]
     pub vault_authority: UncheckedAccount<'info>,
@@ -66,8 +66,8 @@ pub struct InitializeReserveVault<'info> {
         associated_token::mint = token_mint,
         associated_token::authority = vault_authority
     )]
-    pub vault_token_account: Account<'info, TokenAccount>,
-    pub token_mint: Account<'info, Mint>,
+    pub vault_token_account: Box<Account<'info, TokenAccount>>,
+    pub token_mint: Box<Account<'info, Mint>>,
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
@@ -81,7 +81,7 @@ pub struct DepositIntoReserveVault<'info> {
         bump = state.bump,
         constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint
     )]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(
         mut,
         seeds = [b"reserve-config", allocation_id.as_ref()],
@@ -90,7 +90,7 @@ pub struct DepositIntoReserveVault<'info> {
         constraint = reserve_vault_config.allocation_id == allocation_id @ PeraxError::InvalidVaultConfiguration,
         constraint = reserve_vault_config.token_mint == token_mint.key() @ PeraxError::InvalidTokenMint
     )]
-    pub reserve_vault_config: Account<'info, ReserveVaultConfig>,
+    pub reserve_vault_config: Box<Account<'info, ReserveVaultConfig>>,
     /// CHECK: PDA authority constrained by seeds and stored configuration.
     #[account(
         seeds = [b"reserve-authority", allocation_id.as_ref()],
@@ -112,15 +112,15 @@ pub struct DepositIntoReserveVault<'info> {
         constraint = source_token_account.mint == token_mint.key()
             @ PeraxError::InvalidTokenMint
     )]
-    pub source_token_account: Account<'info, TokenAccount>,
+    pub source_token_account: Box<Account<'info, TokenAccount>>,
     #[account(
         mut,
         address = reserve_vault_config.vault_token_account @ PeraxError::InvalidVaultTokenAccount,
         constraint = vault_token_account.owner == vault_authority.key() @ PeraxError::InvalidVaultAuthority,
         constraint = vault_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
     )]
-    pub vault_token_account: Account<'info, TokenAccount>,
-    pub token_mint: Account<'info, Mint>,
+    pub vault_token_account: Box<Account<'info, TokenAccount>>,
+    pub token_mint: Box<Account<'info, Mint>>,
     pub token_program: Program<'info, Token>,
 }
 
@@ -140,7 +140,7 @@ impl<'info> DepositIntoReserveVault<'info> {
 #[instruction(allocation_id: [u8; 32], is_paused: bool)]
 pub struct SetReserveVaultPause<'info> {
     #[account(seeds = [b"perax-state"], bump = state.bump)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(
         mut,
         seeds = [b"reserve-config", allocation_id.as_ref()],
@@ -148,7 +148,7 @@ pub struct SetReserveVaultPause<'info> {
         has_one = state @ PeraxError::InvalidVaultConfiguration,
         constraint = reserve_vault_config.allocation_id == allocation_id @ PeraxError::InvalidVaultConfiguration
     )]
-    pub reserve_vault_config: Account<'info, ReserveVaultConfig>,
+    pub reserve_vault_config: Box<Account<'info, ReserveVaultConfig>>,
     pub actor: Signer<'info>,
 }
 
@@ -160,7 +160,7 @@ pub struct ReconcileReserveVault<'info> {
         bump = state.bump,
         has_one = authority @ PeraxError::Unauthorized
     )]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     pub authority: Signer<'info>,
     #[account(
         mut,
@@ -169,13 +169,13 @@ pub struct ReconcileReserveVault<'info> {
         has_one = state @ PeraxError::InvalidVaultConfiguration,
         constraint = reserve_vault_config.allocation_id == allocation_id @ PeraxError::InvalidVaultConfiguration
     )]
-    pub reserve_vault_config: Account<'info, ReserveVaultConfig>,
+    pub reserve_vault_config: Box<Account<'info, ReserveVaultConfig>>,
     #[account(
         address = reserve_vault_config.vault_token_account @ PeraxError::InvalidVaultTokenAccount,
         constraint = vault_token_account.owner == reserve_vault_config.vault_authority @ PeraxError::InvalidVaultAuthority,
         constraint = vault_token_account.mint == reserve_vault_config.token_mint @ PeraxError::InvalidTokenMint
     )]
-    pub vault_token_account: Account<'info, TokenAccount>,
+    pub vault_token_account: Box<Account<'info, TokenAccount>>,
 }
 
 #[derive(Accounts)]
@@ -188,7 +188,7 @@ pub struct ExecuteMarketConditionalRelease<'info> {
         has_one = oracle_feed @ PeraxError::Unauthorized,
         constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint
     )]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(
         mut,
         seeds = [b"reserve-config", params.allocation_id.as_ref()],
@@ -197,7 +197,7 @@ pub struct ExecuteMarketConditionalRelease<'info> {
         constraint = reserve_vault_config.allocation_id == params.allocation_id @ PeraxError::InvalidVaultConfiguration,
         constraint = reserve_vault_config.token_mint == token_mint.key() @ PeraxError::InvalidTokenMint
     )]
-    pub reserve_vault_config: Account<'info, ReserveVaultConfig>,
+    pub reserve_vault_config: Box<Account<'info, ReserveVaultConfig>>,
     /// CHECK: PDA authority constrained by seeds and stored configuration.
     #[account(
         seeds = [b"reserve-authority", params.allocation_id.as_ref()],
@@ -211,7 +211,7 @@ pub struct ExecuteMarketConditionalRelease<'info> {
         constraint = vault_token_account.owner == vault_authority.key() @ PeraxError::InvalidVaultAuthority,
         constraint = vault_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
     )]
-    pub vault_token_account: Account<'info, TokenAccount>,
+    pub vault_token_account: Box<Account<'info, TokenAccount>>,
     #[account(
         mut,
         address = reserve_vault_config.approved_destination_token_account
@@ -223,7 +223,7 @@ pub struct ExecuteMarketConditionalRelease<'info> {
         constraint = destination_token_account.mint == token_mint.key()
             @ PeraxError::InvalidTokenMint
     )]
-    pub destination_token_account: Account<'info, TokenAccount>,
+    pub destination_token_account: Box<Account<'info, TokenAccount>>,
     #[account(
         init,
         payer = oracle_feed,
@@ -231,10 +231,10 @@ pub struct ExecuteMarketConditionalRelease<'info> {
         seeds = [b"vault-release", params.release_id.as_ref()],
         bump
     )]
-    pub release_record: Account<'info, ReserveReleaseRecord>,
+    pub release_record: Box<Account<'info, ReserveReleaseRecord>>,
     #[account(mut)]
     pub oracle_feed: Signer<'info>,
-    pub token_mint: Account<'info, Mint>,
+    pub token_mint: Box<Account<'info, Mint>>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
@@ -243,7 +243,7 @@ pub struct ExecuteMarketConditionalRelease<'info> {
 #[instruction(params: MarketConditionalReleaseParams)]
 pub struct RecordMarketConditionalRelease<'info> {
     #[account(mut, seeds = [b"perax-state"], bump = state.bump, has_one = oracle_feed @ PeraxError::Unauthorized)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(
         init,
         payer = oracle_feed,
@@ -251,7 +251,7 @@ pub struct RecordMarketConditionalRelease<'info> {
         seeds = [b"release", params.release_id.as_ref()],
         bump
     )]
-    pub release_record: Account<'info, ReleaseRecord>,
+    pub release_record: Box<Account<'info, ReleaseRecord>>,
     #[account(mut)]
     pub oracle_feed: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -260,7 +260,7 @@ pub struct RecordMarketConditionalRelease<'info> {
 #[derive(Accounts)]
 pub struct AcceptAuthority<'info> {
     #[account(mut, seeds = [b"perax-state"], bump = state.bump)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     pub pending_authority: Signer<'info>,
 }
 
@@ -268,16 +268,16 @@ pub struct AcceptAuthority<'info> {
 #[instruction(amount: u64, reference: [u8; 32])]
 pub struct PayToTradingCompany<'info> {
     #[account(seeds = [b"perax-state"], bump = state.bump, constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint, constraint = trading_company_revenue_token_account.key() == state.trading_company_revenue_token_account @ PeraxError::InvalidTradingCompanyRevenueAccount)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(init, payer = payer, space = 8 + PaymentRecord::SPACE, seeds = [b"payment", reference.as_ref()], bump)]
-    pub payment_record: Account<'info, PaymentRecord>,
+    pub payment_record: Box<Account<'info, PaymentRecord>>,
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(mut, constraint = payer_token_account.owner == payer.key() @ PeraxError::Unauthorized, constraint = payer_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint)]
-    pub payer_token_account: Account<'info, TokenAccount>,
+    pub payer_token_account: Box<Account<'info, TokenAccount>>,
     #[account(mut, constraint = trading_company_revenue_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint)]
-    pub trading_company_revenue_token_account: Account<'info, TokenAccount>,
-    pub token_mint: Account<'info, Mint>,
+    pub trading_company_revenue_token_account: Box<Account<'info, TokenAccount>>,
+    pub token_mint: Box<Account<'info, Mint>>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
@@ -296,20 +296,20 @@ impl<'info> PayToTradingCompany<'info> {
 #[derive(Accounts)]
 pub struct RecordExternalUtilityPayment<'info> {
     #[account(seeds = [b"perax-state"], bump = state.bump, has_one = authority @ PeraxError::Unauthorized)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     pub authority: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct BurnFromTradingCompany<'info> {
     #[account(seeds = [b"perax-state"], bump = state.bump, has_one = authority @ PeraxError::Unauthorized, constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint, constraint = trading_company_revenue_token_account.key() == state.trading_company_revenue_token_account @ PeraxError::InvalidTradingCompanyRevenueAccount)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     pub authority: Signer<'info>,
     pub trading_company_authority: Signer<'info>,
     #[account(mut, constraint = trading_company_revenue_token_account.owner == trading_company_authority.key() @ PeraxError::Unauthorized, constraint = trading_company_revenue_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint)]
-    pub trading_company_revenue_token_account: Account<'info, TokenAccount>,
+    pub trading_company_revenue_token_account: Box<Account<'info, TokenAccount>>,
     #[account(mut)]
-    pub token_mint: Account<'info, Mint>,
+    pub token_mint: Box<Account<'info, Mint>>,
     pub token_program: Program<'info, Token>,
 }
 
@@ -317,11 +317,11 @@ pub struct BurnFromTradingCompany<'info> {
 #[instruction(params: MarketConditionBurnParams)]
 pub struct ExecuteMarketConditionBurn<'info> {
     #[account(mut, seeds = [b"perax-state"], bump = state.bump, has_one = authority @ PeraxError::Unauthorized, constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint, constraint = trading_company_revenue_token_account.key() == state.trading_company_revenue_token_account @ PeraxError::InvalidTradingCompanyRevenueAccount)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(seeds = [b"apc-config", state.key().as_ref()], bump = apc_config.bump, has_one = state @ PeraxError::ApcNotInitialized)]
-    pub apc_config: Account<'info, ApcConfig>,
+    pub apc_config: Box<Account<'info, ApcConfig>>,
     #[account(seeds = [b"apc-state", apc_config.key().as_ref()], bump = apc_state.bump, constraint = apc_state.config == apc_config.key() @ PeraxError::ApcNotInitialized)]
-    pub apc_state: Account<'info, ApcState>,
+    pub apc_state: Box<Account<'info, ApcState>>,
     #[account(mut)]
     pub authority: Signer<'info>,
     pub trading_company_authority: Signer<'info>,
@@ -332,11 +332,11 @@ pub struct ExecuteMarketConditionBurn<'info> {
         seeds = [b"burn", params.decision_id.as_ref()],
         bump
     )]
-    pub burn_record: Account<'info, BurnExecutionRecord>,
+    pub burn_record: Box<Account<'info, BurnExecutionRecord>>,
     #[account(mut, constraint = trading_company_revenue_token_account.owner == trading_company_authority.key() @ PeraxError::Unauthorized, constraint = trading_company_revenue_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint)]
-    pub trading_company_revenue_token_account: Account<'info, TokenAccount>,
+    pub trading_company_revenue_token_account: Box<Account<'info, TokenAccount>>,
     #[account(mut)]
-    pub token_mint: Account<'info, Mint>,
+    pub token_mint: Box<Account<'info, Mint>>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
@@ -351,11 +351,11 @@ pub struct ExecuteConditionalBuybackBurn<'info> {
         has_one = authority @ PeraxError::Unauthorized,
         constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint
     )]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(seeds = [b"apc-config", state.key().as_ref()], bump = apc_config.bump, has_one = state @ PeraxError::ApcNotInitialized)]
-    pub apc_config: Account<'info, ApcConfig>,
+    pub apc_config: Box<Account<'info, ApcConfig>>,
     #[account(seeds = [b"apc-state", apc_config.key().as_ref()], bump = apc_state.bump, constraint = apc_state.config == apc_config.key() @ PeraxError::ApcNotInitialized)]
-    pub apc_state: Account<'info, ApcState>,
+    pub apc_state: Box<Account<'info, ApcState>>,
     #[account(mut)]
     pub authority: Signer<'info>,
     pub source_authority: Signer<'info>,
@@ -366,15 +366,15 @@ pub struct ExecuteConditionalBuybackBurn<'info> {
         seeds = [b"burn", params.decision_id.as_ref()],
         bump
     )]
-    pub burn_record: Account<'info, BurnExecutionRecord>,
+    pub burn_record: Box<Account<'info, BurnExecutionRecord>>,
     #[account(
         mut,
         constraint = source_token_account.owner == source_authority.key() @ PeraxError::Unauthorized,
         constraint = source_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
     )]
-    pub source_token_account: Account<'info, TokenAccount>,
+    pub source_token_account: Box<Account<'info, TokenAccount>>,
     #[account(mut)]
-    pub token_mint: Account<'info, Mint>,
+    pub token_mint: Box<Account<'info, Mint>>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
@@ -388,7 +388,7 @@ pub struct InitializeRecoveryPool<'info> {
         has_one = authority @ PeraxError::Unauthorized,
         constraint = pex_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint
     )]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(mut)]
     pub authority: Signer<'info>,
     #[account(
@@ -398,7 +398,7 @@ pub struct InitializeRecoveryPool<'info> {
         seeds = [b"recovery-pool", params.pool_id.as_ref()],
         bump
     )]
-    pub recovery_pool: Account<'info, RecoveryPoolConfig>,
+    pub recovery_pool: Box<Account<'info, RecoveryPoolConfig>>,
     /// CHECK: PDA authority for the recovery pool token vaults.
     #[account(seeds = [b"recovery-pool-authority", recovery_pool.key().as_ref()], bump)]
     pub pool_authority: UncheckedAccount<'info>,
@@ -408,16 +408,16 @@ pub struct InitializeRecoveryPool<'info> {
         associated_token::mint = quote_mint,
         associated_token::authority = pool_authority
     )]
-    pub pool_quote_vault: Account<'info, TokenAccount>,
+    pub pool_quote_vault: Box<Account<'info, TokenAccount>>,
     #[account(
         init,
         payer = authority,
         associated_token::mint = pex_mint,
         associated_token::authority = pool_authority
     )]
-    pub pool_pex_vault: Account<'info, TokenAccount>,
-    pub quote_mint: Account<'info, Mint>,
-    pub pex_mint: Account<'info, Mint>,
+    pub pool_pex_vault: Box<Account<'info, TokenAccount>>,
+    pub quote_mint: Box<Account<'info, Mint>>,
+    pub pex_mint: Box<Account<'info, Mint>>,
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
@@ -432,7 +432,7 @@ pub struct InitializeApc<'info> {
         has_one = authority @ PeraxError::Unauthorized,
         constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint
     )]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(mut)]
     pub authority: Signer<'info>,
     #[account(
@@ -442,7 +442,7 @@ pub struct InitializeApc<'info> {
         seeds = [b"apc-config", state.key().as_ref()],
         bump
     )]
-    pub apc_config: Account<'info, ApcConfig>,
+    pub apc_config: Box<Account<'info, ApcConfig>>,
     #[account(
         init,
         payer = authority,
@@ -450,7 +450,7 @@ pub struct InitializeApc<'info> {
         seeds = [b"apc-state", apc_config.key().as_ref()],
         bump
     )]
-    pub apc_state: Account<'info, ApcState>,
+    pub apc_state: Box<Account<'info, ApcState>>,
     #[account(
         init,
         payer = authority,
@@ -458,7 +458,7 @@ pub struct InitializeApc<'info> {
         seeds = [b"counterweight-config", apc_config.key().as_ref()],
         bump
     )]
-    pub counterweight_config: Account<'info, CounterweightConfig>,
+    pub counterweight_config: Box<Account<'info, CounterweightConfig>>,
     /// CHECK: PDA-only authority for the quote counterweight vault.
     #[account(seeds = [b"counterweight-authority", apc_config.key().as_ref()], bump)]
     pub counterweight_authority: UncheckedAccount<'info>,
@@ -468,7 +468,7 @@ pub struct InitializeApc<'info> {
         associated_token::mint = quote_mint,
         associated_token::authority = counterweight_authority
     )]
-    pub counterweight_vault: Account<'info, TokenAccount>,
+    pub counterweight_vault: Box<Account<'info, TokenAccount>>,
     /// CHECK: PDA-only authority for deferred burn custody.
     #[account(seeds = [b"deferred-burn-authority", apc_config.key().as_ref()], bump)]
     pub deferred_burn_authority: UncheckedAccount<'info>,
@@ -478,7 +478,7 @@ pub struct InitializeApc<'info> {
         associated_token::mint = token_mint,
         associated_token::authority = deferred_burn_authority
     )]
-    pub deferred_burn_vault: Account<'info, TokenAccount>,
+    pub deferred_burn_vault: Box<Account<'info, TokenAccount>>,
     /// CHECK: PDA-only authority for locked recovery inventory.
     #[account(seeds = [b"recovery-authority", apc_config.key().as_ref()], bump)]
     pub recovery_authority: UncheckedAccount<'info>,
@@ -488,10 +488,10 @@ pub struct InitializeApc<'info> {
         associated_token::mint = token_mint,
         associated_token::authority = recovery_authority
     )]
-    pub recovery_vault: Account<'info, TokenAccount>,
+    pub recovery_vault: Box<Account<'info, TokenAccount>>,
     #[account(address = params.quote_mint @ PeraxError::InvalidCounterweightMint)]
-    pub quote_mint: Account<'info, Mint>,
-    pub token_mint: Account<'info, Mint>,
+    pub quote_mint: Box<Account<'info, Mint>>,
+    pub token_mint: Box<Account<'info, Mint>>,
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
@@ -501,21 +501,21 @@ pub struct InitializeApc<'info> {
 #[instruction(params: SubmitApcObservationParams)]
 pub struct SubmitApcObservation<'info> {
     #[account(seeds = [b"perax-state"], bump = state.bump)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(
         seeds = [b"apc-config", state.key().as_ref()],
         bump = apc_config.bump,
         has_one = state @ PeraxError::ApcNotInitialized,
         has_one = oracle_feed @ PeraxError::Unauthorized
     )]
-    pub apc_config: Account<'info, ApcConfig>,
+    pub apc_config: Box<Account<'info, ApcConfig>>,
     #[account(
         mut,
         seeds = [b"apc-state", apc_config.key().as_ref()],
         bump = apc_state.bump,
         constraint = apc_state.config == apc_config.key() @ PeraxError::ApcNotInitialized
     )]
-    pub apc_state: Account<'info, ApcState>,
+    pub apc_state: Box<Account<'info, ApcState>>,
     #[account(
         init,
         payer = oracle_feed,
@@ -523,7 +523,7 @@ pub struct SubmitApcObservation<'info> {
         seeds = [b"apc-observation", params.observation_id.as_ref()],
         bump
     )]
-    pub observation: Account<'info, ApcObservation>,
+    pub observation: Box<Account<'info, ApcObservation>>,
     #[account(mut)]
     pub oracle_feed: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -533,26 +533,26 @@ pub struct SubmitApcObservation<'info> {
 #[instruction(params: ActivateApcBandParams)]
 pub struct ActivateNextApcBand<'info> {
     #[account(seeds = [b"perax-state"], bump = state.bump)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(
         seeds = [b"apc-config", state.key().as_ref()],
         bump = apc_config.bump,
         has_one = oracle_feed @ PeraxError::Unauthorized
     )]
-    pub apc_config: Account<'info, ApcConfig>,
+    pub apc_config: Box<Account<'info, ApcConfig>>,
     #[account(
         mut,
         seeds = [b"apc-state", apc_config.key().as_ref()],
         bump = apc_state.bump,
         constraint = apc_state.config == apc_config.key() @ PeraxError::ApcNotInitialized
     )]
-    pub apc_state: Account<'info, ApcState>,
+    pub apc_state: Box<Account<'info, ApcState>>,
     #[account(
         seeds = [b"apc-observation", observation.observation_id.as_ref()],
         bump = observation.bump,
         constraint = observation.oracle_feed == oracle_feed.key() @ PeraxError::Unauthorized
     )]
-    pub observation: Account<'info, ApcObservation>,
+    pub observation: Box<Account<'info, ApcObservation>>,
     #[account(
         init,
         payer = oracle_feed,
@@ -560,7 +560,7 @@ pub struct ActivateNextApcBand<'info> {
         seeds = [b"apc-band", apc_state.key().as_ref(), params.band_index.to_le_bytes().as_ref()],
         bump
     )]
-    pub band_record: Account<'info, ApcBandRecord>,
+    pub band_record: Box<Account<'info, ApcBandRecord>>,
     #[account(mut)]
     pub oracle_feed: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -575,20 +575,20 @@ pub struct ExecuteApcRelease<'info> {
         bump = state.bump,
         constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint
     )]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(
         seeds = [b"apc-config", state.key().as_ref()],
         bump = apc_config.bump,
         has_one = oracle_feed @ PeraxError::Unauthorized
     )]
-    pub apc_config: Account<'info, ApcConfig>,
+    pub apc_config: Box<Account<'info, ApcConfig>>,
     #[account(
         mut,
         seeds = [b"apc-state", apc_config.key().as_ref()],
         bump = apc_state.bump,
         constraint = apc_state.config == apc_config.key() @ PeraxError::ApcNotInitialized
     )]
-    pub apc_state: Account<'info, ApcState>,
+    pub apc_state: Box<Account<'info, ApcState>>,
     #[account(
         mut,
         seeds = [b"apc-observation", params.observation_id.as_ref()],
@@ -596,7 +596,7 @@ pub struct ExecuteApcRelease<'info> {
         constraint = observation.observation_id == params.observation_id @ PeraxError::InvalidReference,
         constraint = observation.oracle_feed == oracle_feed.key() @ PeraxError::Unauthorized
     )]
-    pub observation: Account<'info, ApcObservation>,
+    pub observation: Box<Account<'info, ApcObservation>>,
     #[account(
         mut,
         seeds = [b"apc-band", apc_state.key().as_ref(), params.band_index.to_le_bytes().as_ref()],
@@ -604,7 +604,7 @@ pub struct ExecuteApcRelease<'info> {
         constraint = band_record.band_index == params.band_index @ PeraxError::InvalidBandIndex,
         constraint = band_record.apc_state == apc_state.key() @ PeraxError::InvalidBandIndex
     )]
-    pub band_record: Account<'info, ApcBandRecord>,
+    pub band_record: Box<Account<'info, ApcBandRecord>>,
     #[account(
         mut,
         seeds = [b"reserve-config", params.allocation_id.as_ref()],
@@ -613,7 +613,7 @@ pub struct ExecuteApcRelease<'info> {
         constraint = reserve_vault_config.allocation_id == params.allocation_id @ PeraxError::InvalidVaultConfiguration,
         constraint = reserve_vault_config.token_mint == token_mint.key() @ PeraxError::InvalidTokenMint
     )]
-    pub reserve_vault_config: Account<'info, ReserveVaultConfig>,
+    pub reserve_vault_config: Box<Account<'info, ReserveVaultConfig>>,
     /// CHECK: PDA authority constrained by the Correction 1 reserve configuration.
     #[account(
         seeds = [b"reserve-authority", params.allocation_id.as_ref()],
@@ -627,7 +627,7 @@ pub struct ExecuteApcRelease<'info> {
         constraint = vault_token_account.owner == vault_authority.key() @ PeraxError::InvalidVaultAuthority,
         constraint = vault_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
     )]
-    pub vault_token_account: Account<'info, TokenAccount>,
+    pub vault_token_account: Box<Account<'info, TokenAccount>>,
     #[account(
         mut,
         address = reserve_vault_config.approved_destination_token_account @ PeraxError::InvalidApprovedDestination,
@@ -635,19 +635,19 @@ pub struct ExecuteApcRelease<'info> {
         constraint = destination_token_account.owner == reserve_vault_config.approved_destination_owner @ PeraxError::InvalidApprovedDestination,
         constraint = destination_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint
     )]
-    pub destination_token_account: Account<'info, TokenAccount>,
+    pub destination_token_account: Box<Account<'info, TokenAccount>>,
     #[account(
         seeds = [b"counterweight-config", apc_config.key().as_ref()],
         bump = counterweight_config.bump,
         constraint = counterweight_config.apc_config == apc_config.key() @ PeraxError::InvalidCounterweightVault
     )]
-    pub counterweight_config: Account<'info, CounterweightConfig>,
+    pub counterweight_config: Box<Account<'info, CounterweightConfig>>,
     #[account(
         address = counterweight_config.counterweight_vault @ PeraxError::InvalidCounterweightVault,
         constraint = counterweight_vault.owner == counterweight_config.counterweight_authority @ PeraxError::InvalidCounterweightVault,
         constraint = counterweight_vault.mint == apc_config.quote_mint @ PeraxError::InvalidCounterweightMint
     )]
-    pub counterweight_vault: Account<'info, TokenAccount>,
+    pub counterweight_vault: Box<Account<'info, TokenAccount>>,
     #[account(
         init,
         payer = oracle_feed,
@@ -655,10 +655,10 @@ pub struct ExecuteApcRelease<'info> {
         seeds = [b"apc-release", params.release_id.as_ref()],
         bump
     )]
-    pub release_record: Account<'info, ApcReleaseRecord>,
+    pub release_record: Box<Account<'info, ApcReleaseRecord>>,
     #[account(mut)]
     pub oracle_feed: Signer<'info>,
-    pub token_mint: Account<'info, Mint>,
+    pub token_mint: Box<Account<'info, Mint>>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
@@ -667,20 +667,20 @@ pub struct ExecuteApcRelease<'info> {
 #[instruction(params: DepositCounterweightParams)]
 pub struct DepositCounterweightProceeds<'info> {
     #[account(seeds = [b"perax-state"], bump = state.bump)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(seeds = [b"apc-config", state.key().as_ref()], bump = apc_config.bump)]
-    pub apc_config: Account<'info, ApcConfig>,
+    pub apc_config: Box<Account<'info, ApcConfig>>,
     #[account(
         mut,
         seeds = [b"apc-state", apc_config.key().as_ref()],
         bump = apc_state.bump
     )]
-    pub apc_state: Account<'info, ApcState>,
+    pub apc_state: Box<Account<'info, ApcState>>,
     #[account(
         seeds = [b"counterweight-config", apc_config.key().as_ref()],
         bump = counterweight_config.bump
     )]
-    pub counterweight_config: Account<'info, CounterweightConfig>,
+    pub counterweight_config: Box<Account<'info, CounterweightConfig>>,
     #[account(
         mut,
         constraint = source_owner.key() == counterweight_config.approved_proceeds_owner @ PeraxError::Unauthorized
@@ -692,15 +692,15 @@ pub struct DepositCounterweightProceeds<'info> {
         constraint = source_token_account.owner == source_owner.key() @ PeraxError::Unauthorized,
         constraint = source_token_account.mint == quote_mint.key() @ PeraxError::InvalidCounterweightMint
     )]
-    pub source_token_account: Account<'info, TokenAccount>,
+    pub source_token_account: Box<Account<'info, TokenAccount>>,
     #[account(
         mut,
         address = counterweight_config.counterweight_vault @ PeraxError::InvalidCounterweightVault,
         constraint = counterweight_vault.mint == quote_mint.key() @ PeraxError::InvalidCounterweightMint
     )]
-    pub counterweight_vault: Account<'info, TokenAccount>,
+    pub counterweight_vault: Box<Account<'info, TokenAccount>>,
     #[account(address = counterweight_config.quote_mint @ PeraxError::InvalidCounterweightMint)]
-    pub quote_mint: Account<'info, Mint>,
+    pub quote_mint: Box<Account<'info, Mint>>,
     #[account(
         init,
         payer = source_owner,
@@ -708,7 +708,7 @@ pub struct DepositCounterweightProceeds<'info> {
         seeds = [b"counterweight-deposit", params.deposit_id.as_ref()],
         bump
     )]
-    pub deposit_record: Account<'info, CounterweightDepositRecord>,
+    pub deposit_record: Box<Account<'info, CounterweightDepositRecord>>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
@@ -717,20 +717,20 @@ pub struct DepositCounterweightProceeds<'info> {
 #[instruction(params: RecordDeferredBurnParams)]
 pub struct RecordDeferredBurn<'info> {
     #[account(seeds = [b"perax-state"], bump = state.bump, constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(seeds = [b"apc-config", state.key().as_ref()], bump = apc_config.bump)]
-    pub apc_config: Account<'info, ApcConfig>,
+    pub apc_config: Box<Account<'info, ApcConfig>>,
     #[account(mut, seeds = [b"apc-state", apc_config.key().as_ref()], bump = apc_state.bump)]
-    pub apc_state: Account<'info, ApcState>,
+    pub apc_state: Box<Account<'info, ApcState>>,
     #[account(seeds = [b"counterweight-config", apc_config.key().as_ref()], bump = counterweight_config.bump)]
-    pub counterweight_config: Account<'info, CounterweightConfig>,
+    pub counterweight_config: Box<Account<'info, CounterweightConfig>>,
     #[account(mut)]
     pub source_authority: Signer<'info>,
     #[account(mut, constraint = source_token_account.owner == source_authority.key() @ PeraxError::Unauthorized, constraint = source_token_account.mint == token_mint.key() @ PeraxError::InvalidTokenMint)]
-    pub source_token_account: Account<'info, TokenAccount>,
+    pub source_token_account: Box<Account<'info, TokenAccount>>,
     #[account(mut, address = counterweight_config.deferred_burn_vault @ PeraxError::InvalidCounterweightVault, constraint = deferred_burn_vault.mint == token_mint.key() @ PeraxError::InvalidTokenMint)]
-    pub deferred_burn_vault: Account<'info, TokenAccount>,
-    pub token_mint: Account<'info, Mint>,
+    pub deferred_burn_vault: Box<Account<'info, TokenAccount>>,
+    pub token_mint: Box<Account<'info, Mint>>,
     #[account(
         init,
         payer = source_authority,
@@ -738,7 +738,7 @@ pub struct RecordDeferredBurn<'info> {
         seeds = [b"deferred-burn", params.decision_id.as_ref()],
         bump
     )]
-    pub deferred_burn_record: Account<'info, DeferredBurnRecord>,
+    pub deferred_burn_record: Box<Account<'info, DeferredBurnRecord>>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
@@ -746,27 +746,27 @@ pub struct RecordDeferredBurn<'info> {
 #[derive(Accounts)]
 pub struct ExecuteDeferredBurn<'info> {
     #[account(mut, seeds = [b"perax-state"], bump = state.bump, constraint = token_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(seeds = [b"apc-config", state.key().as_ref()], bump = apc_config.bump, has_one = oracle_feed @ PeraxError::Unauthorized)]
-    pub apc_config: Account<'info, ApcConfig>,
+    pub apc_config: Box<Account<'info, ApcConfig>>,
     #[account(mut, seeds = [b"apc-state", apc_config.key().as_ref()], bump = apc_state.bump)]
-    pub apc_state: Account<'info, ApcState>,
+    pub apc_state: Box<Account<'info, ApcState>>,
     #[account(seeds = [b"counterweight-config", apc_config.key().as_ref()], bump = counterweight_config.bump)]
-    pub counterweight_config: Account<'info, CounterweightConfig>,
+    pub counterweight_config: Box<Account<'info, CounterweightConfig>>,
     /// CHECK: PDA authority constrained by configured seeds.
     #[account(seeds = [b"deferred-burn-authority", apc_config.key().as_ref()], bump = counterweight_config.deferred_burn_authority_bump)]
     pub deferred_burn_authority: UncheckedAccount<'info>,
     #[account(mut, address = counterweight_config.deferred_burn_vault @ PeraxError::InvalidCounterweightVault, constraint = deferred_burn_vault.owner == deferred_burn_authority.key() @ PeraxError::InvalidCounterweightVault, constraint = deferred_burn_vault.mint == token_mint.key() @ PeraxError::InvalidTokenMint)]
-    pub deferred_burn_vault: Account<'info, TokenAccount>,
+    pub deferred_burn_vault: Box<Account<'info, TokenAccount>>,
     #[account(
         mut,
         seeds = [b"deferred-burn", deferred_burn_record.decision_id.as_ref()],
         bump = deferred_burn_record.bump,
         constraint = deferred_burn_record.apc_state == apc_state.key() @ PeraxError::DeferredBurnNotExecutable
     )]
-    pub deferred_burn_record: Account<'info, DeferredBurnRecord>,
+    pub deferred_burn_record: Box<Account<'info, DeferredBurnRecord>>,
     #[account(mut)]
-    pub token_mint: Account<'info, Mint>,
+    pub token_mint: Box<Account<'info, Mint>>,
     pub oracle_feed: Signer<'info>,
     pub token_program: Program<'info, Token>,
 }
@@ -774,45 +774,45 @@ pub struct ExecuteDeferredBurn<'info> {
 #[derive(Accounts)]
 pub struct ConfirmApcAbsorption<'info> {
     #[account(seeds = [b"perax-state"], bump = state.bump)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(
         seeds = [b"apc-config", state.key().as_ref()],
         bump = apc_config.bump,
         has_one = oracle_feed @ PeraxError::Unauthorized
     )]
-    pub apc_config: Account<'info, ApcConfig>,
+    pub apc_config: Box<Account<'info, ApcConfig>>,
     #[account(
         mut,
         seeds = [b"apc-state", apc_config.key().as_ref()],
         bump = apc_state.bump,
         constraint = apc_state.config == apc_config.key() @ PeraxError::ApcNotInitialized
     )]
-    pub apc_state: Account<'info, ApcState>,
+    pub apc_state: Box<Account<'info, ApcState>>,
     #[account(
         mut,
         seeds = [b"apc-observation", observation.observation_id.as_ref()],
         bump = observation.bump,
         constraint = observation.oracle_feed == oracle_feed.key() @ PeraxError::Unauthorized
     )]
-    pub observation: Account<'info, ApcObservation>,
+    pub observation: Box<Account<'info, ApcObservation>>,
     pub oracle_feed: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct EnterApcRecovery<'info> {
     #[account(seeds = [b"perax-state"], bump = state.bump)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(seeds = [b"apc-config", state.key().as_ref()], bump = apc_config.bump, has_one = oracle_feed @ PeraxError::Unauthorized)]
-    pub apc_config: Account<'info, ApcConfig>,
+    pub apc_config: Box<Account<'info, ApcConfig>>,
     #[account(mut, seeds = [b"apc-state", apc_config.key().as_ref()], bump = apc_state.bump)]
-    pub apc_state: Account<'info, ApcState>,
+    pub apc_state: Box<Account<'info, ApcState>>,
     #[account(
         mut,
         seeds = [b"apc-observation", observation.observation_id.as_ref()],
         bump = observation.bump,
         constraint = observation.oracle_feed == oracle_feed.key() @ PeraxError::Unauthorized
     )]
-    pub observation: Account<'info, ApcObservation>,
+    pub observation: Box<Account<'info, ApcObservation>>,
     pub oracle_feed: Signer<'info>,
 }
 
@@ -820,11 +820,11 @@ pub struct EnterApcRecovery<'info> {
 #[instruction(params: ExecuteCounterweightPurchaseParams)]
 pub struct ExecuteCounterweightPurchase<'info> {
     #[account(seeds = [b"perax-state"], bump = state.bump, constraint = pex_mint.key() == state.token_mint @ PeraxError::InvalidTokenMint)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(seeds = [b"apc-config", state.key().as_ref()], bump = apc_config.bump, has_one = oracle_feed @ PeraxError::Unauthorized)]
-    pub apc_config: Account<'info, ApcConfig>,
+    pub apc_config: Box<Account<'info, ApcConfig>>,
     #[account(mut, seeds = [b"apc-state", apc_config.key().as_ref()], bump = apc_state.bump)]
-    pub apc_state: Account<'info, ApcState>,
+    pub apc_state: Box<Account<'info, ApcState>>,
     #[account(
         mut,
         seeds = [b"apc-observation", params.observation_id.as_ref()],
@@ -832,24 +832,24 @@ pub struct ExecuteCounterweightPurchase<'info> {
         constraint = observation.observation_id == params.observation_id @ PeraxError::InvalidReference,
         constraint = observation.oracle_feed == oracle_feed.key() @ PeraxError::Unauthorized
     )]
-    pub observation: Account<'info, ApcObservation>,
+    pub observation: Box<Account<'info, ApcObservation>>,
     #[account(seeds = [b"counterweight-config", apc_config.key().as_ref()], bump = counterweight_config.bump)]
-    pub counterweight_config: Account<'info, CounterweightConfig>,
+    pub counterweight_config: Box<Account<'info, CounterweightConfig>>,
     /// CHECK: PDA authority used by the approved atomic recovery adapter.
     #[account(seeds = [b"counterweight-authority", apc_config.key().as_ref()], bump = counterweight_config.counterweight_authority_bump)]
     pub counterweight_authority: UncheckedAccount<'info>,
     #[account(mut, address = counterweight_config.counterweight_vault @ PeraxError::InvalidCounterweightVault, constraint = counterweight_vault.owner == counterweight_authority.key() @ PeraxError::InvalidCounterweightVault, constraint = counterweight_vault.mint == quote_mint.key() @ PeraxError::InvalidCounterweightMint)]
-    pub counterweight_vault: Account<'info, TokenAccount>,
+    pub counterweight_vault: Box<Account<'info, TokenAccount>>,
     #[account(
         mut,
         address = counterweight_config.recovery_vault @ PeraxError::InvalidCounterweightVault,
         constraint = recovery_vault.owner == counterweight_config.recovery_authority @ PeraxError::InvalidCounterweightVault,
         constraint = recovery_vault.mint == pex_mint.key() @ PeraxError::InvalidTokenMint
     )]
-    pub recovery_vault: Account<'info, TokenAccount>,
+    pub recovery_vault: Box<Account<'info, TokenAccount>>,
     #[account(address = counterweight_config.quote_mint @ PeraxError::InvalidCounterweightMint)]
-    pub quote_mint: Account<'info, Mint>,
-    pub pex_mint: Account<'info, Mint>,
+    pub quote_mint: Box<Account<'info, Mint>>,
+    pub pex_mint: Box<Account<'info, Mint>>,
     /// CHECK: Address is constrained to the immutable approved market pool.
     #[account(address = apc_config.approved_pool @ PeraxError::InvalidApcPool)]
     pub approved_pool: UncheckedAccount<'info>,
@@ -863,7 +863,7 @@ pub struct ExecuteCounterweightPurchase<'info> {
         seeds = [b"apc-recovery", params.recovery_id.as_ref()],
         bump
     )]
-    pub recovery_record: Account<'info, ApcRecoveryRecord>,
+    pub recovery_record: Box<Account<'info, ApcRecoveryRecord>>,
     #[account(mut)]
     pub oracle_feed: Signer<'info>,
     pub token_program: Program<'info, Token>,
@@ -873,9 +873,9 @@ pub struct ExecuteCounterweightPurchase<'info> {
 #[derive(Accounts)]
 pub struct RecoverySwapAdapter<'info> {
     #[account(mut, constraint = counterweight_vault.mint == quote_mint.key() @ PeraxError::InvalidCounterweightMint)]
-    pub counterweight_vault: Account<'info, TokenAccount>,
+    pub counterweight_vault: Box<Account<'info, TokenAccount>>,
     #[account(mut, constraint = recovery_vault.mint == pex_mint.key() @ PeraxError::InvalidTokenMint)]
-    pub recovery_vault: Account<'info, TokenAccount>,
+    pub recovery_vault: Box<Account<'info, TokenAccount>>,
     pub counterweight_authority: Signer<'info>,
     #[account(
         mut,
@@ -883,10 +883,10 @@ pub struct RecoverySwapAdapter<'info> {
         constraint = recovery_pool.quote_mint == quote_mint.key() @ PeraxError::InvalidRecoveryPool,
         constraint = recovery_pool.pex_mint == pex_mint.key() @ PeraxError::InvalidRecoveryPool
     )]
-    pub recovery_pool: Account<'info, RecoveryPoolConfig>,
+    pub recovery_pool: Box<Account<'info, RecoveryPoolConfig>>,
     pub token_program: Program<'info, Token>,
-    pub quote_mint: Account<'info, Mint>,
-    pub pex_mint: Account<'info, Mint>,
+    pub quote_mint: Box<Account<'info, Mint>>,
+    pub pex_mint: Box<Account<'info, Mint>>,
     /// CHECK: PDA authority constrained by the recovery pool configuration.
     #[account(
         seeds = [b"recovery-pool-authority", recovery_pool.key().as_ref()],
@@ -900,23 +900,23 @@ pub struct RecoverySwapAdapter<'info> {
         constraint = pool_quote_vault.owner == pool_authority.key() @ PeraxError::InvalidRecoveryPool,
         constraint = pool_quote_vault.mint == quote_mint.key() @ PeraxError::InvalidCounterweightMint
     )]
-    pub pool_quote_vault: Account<'info, TokenAccount>,
+    pub pool_quote_vault: Box<Account<'info, TokenAccount>>,
     #[account(
         mut,
         address = recovery_pool.pool_pex_vault @ PeraxError::InvalidRecoveryPool,
         constraint = pool_pex_vault.owner == pool_authority.key() @ PeraxError::InvalidRecoveryPool,
         constraint = pool_pex_vault.mint == pex_mint.key() @ PeraxError::InvalidTokenMint
     )]
-    pub pool_pex_vault: Account<'info, TokenAccount>,
+    pub pool_pex_vault: Box<Account<'info, TokenAccount>>,
 }
 
 #[derive(Accounts)]
 pub struct PauseApc<'info> {
     #[account(seeds = [b"perax-state"], bump = state.bump)]
-    pub state: Account<'info, PeraxState>,
+    pub state: Box<Account<'info, PeraxState>>,
     #[account(mut, seeds = [b"apc-config", state.key().as_ref()], bump = apc_config.bump)]
-    pub apc_config: Account<'info, ApcConfig>,
+    pub apc_config: Box<Account<'info, ApcConfig>>,
     #[account(mut, seeds = [b"apc-state", apc_config.key().as_ref()], bump = apc_state.bump)]
-    pub apc_state: Account<'info, ApcState>,
+    pub apc_state: Box<Account<'info, ApcState>>,
     pub actor: Signer<'info>,
 }
