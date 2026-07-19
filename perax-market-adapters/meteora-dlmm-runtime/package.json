@@ -1,0 +1,30 @@
+{
+  "name": "perax-meteora-dlmm-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --import tsx test/*.test.ts",
+    "build": "tsc",
+    "audit:runtime": "npm audit --omit=dev --audit-level=high"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "0.31.0",
+    "@meteora-ag/dlmm": "1.9.13",
+    "@solana/web3.js": "^1.95.3",
+    "bigint-buffer": "file:vendor/bigint-buffer-safe",
+    "decimal.js": "^10.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.5.4"
+  },
+  "overrides": {
+    "bigint-buffer": "file:vendor/bigint-buffer-safe",
+    "jayson": {
+      "uuid": "11.1.1"
+    }
+  }
+}
