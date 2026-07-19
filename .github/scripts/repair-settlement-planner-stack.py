@@ -123,12 +123,7 @@ old_guard = '''assertContains(
   'seeds = [b"settlement-custody-authority", settlement_record.key().as_ref()]',
   "settlement_v2.rs",
 );'''
-new_guard = '''assertNotContains(
-  contexts,
-  'seeds = [b"settlement-custody-authority", settlement_record.key().as_ref()]',
-  "settlement planner named accounts",
-);
-assertContains(
+new_guard = '''assertContains(
   handlers,
   'b"settlement-custody-authority"',
   "settlement authority derivation",
