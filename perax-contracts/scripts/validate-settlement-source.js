@@ -65,10 +65,25 @@ assertContains(
   'seeds = [b"settlement-custody-authority", settlement_record.key().as_ref()]',
   "settlement_v2.rs",
 );
-assertContains(
+assertNotContains(
   contexts,
   "associated_token::authority = settlement_authority",
-  "settlement_v2.rs",
+  "settlement_v2.rs planning context",
+);
+assertContains(
+  handlers,
+  "settlement_pex_vault.owner == ctx.accounts.settlement_authority.key()",
+  "settlement custody handler",
+);
+assertContains(
+  handlers,
+  "settlement_pex_vault.mint == ctx.accounts.pex_mint.key()",
+  "settlement custody handler",
+);
+assertContains(
+  anchorClient,
+  "addresses.settlementAuthority",
+  "Anchor settlement vault precreation",
 );
 assertContains(
   contexts,
