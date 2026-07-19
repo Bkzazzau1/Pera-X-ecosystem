@@ -46,7 +46,6 @@ pub struct PlanSettlementV2<'info> {
     pub settlement_custody: Box<Account<'info, SettlementCustody>>,
     #[account(mut)]
     pub settlement_pex_vault: Box<Account<'info, TokenAccount>>,
-    pub pex_mint: Box<Account<'info, Mint>>,
     #[account(mut)]
     pub initiator: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -63,7 +62,7 @@ insert = '''    let record_key = ctx.accounts.settlement_record.key();
     );
     require!(
         ctx.accounts.settlement_pex_vault.owner == authority_key
-            && ctx.accounts.settlement_pex_vault.mint == ctx.accounts.pex_mint.key(),
+            && ctx.accounts.settlement_pex_vault.mint == ctx.accounts.settlement_policy.pex_mint,
         SettlementError::InvalidSettlementDestination
     );
 '''
@@ -71,6 +70,19 @@ handler = handler.replace("    let record_key = ctx.accounts.settlement_record.k
 handler = handler.replace("    let authority_key = ctx.accounts.settlement_authority.key();\n", "", 1)
 if insert.strip() not in handler:
     handler = handler.replace(header, header + insert, 1)
+handler = handler.replace(
+    '''    require_keys_eq!(
+        ctx.accounts.pex_mint.key(),
+        ctx.accounts.settlement_policy.pex_mint,
+        crate::PeraxError::InvalidTokenMint
+    );''',
+    '''    require_keys_eq!(
+        ctx.accounts.state.token_mint,
+        ctx.accounts.settlement_policy.pex_mint,
+        crate::PeraxError::InvalidTokenMint
+    );''',
+    1,
+)
 handler = handler.replace(
     "    custody.authority_bump = ctx.bumps.settlement_authority;",
     "    custody.authority_bump = authority_bump;",
@@ -80,8 +92,8 @@ handler_path.write_text(handler)
 client_path = Path("perax-market-engine/src/anchor-client.ts")
 client = client_path.read_text()
 client = client.replace("        settlementAuthority: addresses.settlementAuthority,\n", "", 1)
+client = client.replace("        pexMint: this.pexMint,\n", "", 1)
 old = '''        settlementPexVault: addresses.settlementPexVault,
-        pexMint: this.pexMint,
         initiator: this.config.provider.publicKey,
         tokenProgram: TOKEN_PROGRAM_ID,
         associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -89,7 +101,6 @@ old = '''        settlementPexVault: addresses.settlementPexVault,
       }),
     );'''
 new = '''        settlementPexVault: addresses.settlementPexVault,
-        pexMint: this.pexMint,
         initiator: this.config.provider.publicKey,
         systemProgram: web3.SystemProgram.programId,
       }).preInstructions([
@@ -110,7 +121,7 @@ client_path.write_text(client.replace(old, new, 1))
 idl_guard_path = Path("perax-contracts/scripts/validate-settlement-idl.js")
 idl_guard = idl_guard_path.read_text()
 idl_guard = idl_guard.replace(
-    '  "settlementAuthority",\n  "settlementPexVault",',
+    '  "settlementAuthority",\n  "settlementPexVault",\n  "pexMint",',
     '  "settlementPexVault",',
     1,
 )
@@ -133,5 +144,9 @@ if old_guard in source_guard:
 source_guard = source_guard.replace(
     'settlement_pex_vault.owner == ctx.accounts.settlement_authority.key()',
     'settlement_pex_vault.owner == authority_key',
+)
+source_guard = source_guard.replace(
+    'settlement_pex_vault.mint == ctx.accounts.pex_mint.key()',
+    'settlement_pex_vault.mint == ctx.accounts.settlement_policy.pex_mint',
 )
 source_guard_path.write_text(source_guard)
