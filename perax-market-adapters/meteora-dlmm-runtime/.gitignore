@@ -1,0 +1,6 @@
+node_modules/
+dist/
+package-lock.json
+src/index.ts
+test/runtime.test.ts
+test/bigint-buffer.test.ts
