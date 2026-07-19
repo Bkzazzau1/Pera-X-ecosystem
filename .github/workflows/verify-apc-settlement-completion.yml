@@ -27,7 +27,6 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: |
-            perax-contracts/package-lock.json
             perax-market-engine/package-lock.json
 
       - name: Apply narrow Memo-program repair and format Rust
@@ -68,6 +67,10 @@ jobs:
             exit 1
           fi
 
+      - name: Generate contract dependency lock
+        working-directory: perax-contracts
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
       - name: Verify contract source, tokenomics, and TypeScript
         working-directory: perax-contracts
         run: |
@@ -81,12 +84,14 @@ jobs:
           settlement_status=$?
           npm run typecheck > ../verification-logs/contract-typecheck.log 2>&1
           typecheck_status=$?
+          npm audit --omit=dev --audit-level=high > ../verification-logs/contract-audit.log 2>&1
+          audit_status=$?
           set -e
           for log in ../verification-logs/contract-*.log; do
             echo "===== ${log} tail ====="
             tail -n 120 "${log}" || true
           done
-          if [ "${ci_status}" -ne 0 ] || [ "${tokenomics_status}" -ne 0 ] || [ "${settlement_status}" -ne 0 ] || [ "${typecheck_status}" -ne 0 ]; then
+          if [ "${ci_status}" -ne 0 ] || [ "${tokenomics_status}" -ne 0 ] || [ "${settlement_status}" -ne 0 ] || [ "${typecheck_status}" -ne 0 ] || [ "${audit_status}" -ne 0 ]; then
             exit 1
           fi
 
@@ -114,6 +119,7 @@ jobs:
           if-no-files-found: warn
           path: |
             verification-logs
+            perax-contracts/package-lock.json
             perax-contracts/programs/perax-core/src/market_cpi.rs
             perax-contracts/programs/perax-core/src/instructions/hardened_market.rs
             perax-contracts/programs/perax-core/src/instructions/hardened_product.rs
