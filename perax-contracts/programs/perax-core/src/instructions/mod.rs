@@ -4,7 +4,6 @@ mod config;
 mod counterweight;
 mod hardened_market;
 mod hardened_product;
-#[path = "../market_cpi.rs"]
 mod market_cpi;
 mod payments;
 mod recovery;
