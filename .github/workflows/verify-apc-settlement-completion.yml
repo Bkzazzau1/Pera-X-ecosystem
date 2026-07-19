@@ -1,0 +1,75 @@
+name: Verify APC Settlement Completion
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-contract-and-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout verification branch
+        uses: actions/checkout@v4
+
+      - name: Set up Rust 1.79
+        uses: dtolnay/rust-toolchain@1.79.0
+        with:
+          components: rustfmt
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            perax-contracts/package-lock.json
+            perax-market-engine/package-lock.json
+
+      - name: Verify Rust formatting, unit tests, and compilation
+        working-directory: perax-contracts
+        run: |
+          cargo +1.79.0 fmt --all -- --check
+          cargo +1.79.0 test --locked --all-targets
+          cargo +1.79.0 check --locked --all-targets
+
+      - name: Verify contract source, tokenomics, and TypeScript
+        working-directory: perax-contracts
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run validate:tokenomics
+          npm run validate:settlement
+          npm run typecheck
+
+      - name: Verify market engine
+        working-directory: perax-market-engine
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+          npm test
+          npm run build
+          npm audit --omit=dev --audit-level=high
+
+      - name: Reconstruct and verify Meteora runtime
+        working-directory: perax-market-adapters/meteora-dlmm-runtime
+        run: |
+          node scripts/bootstrap.mjs
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run verify
+
+      - name: Upload reviewed Meteora source and lock
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteora-runtime-reviewed-source
+          if-no-files-found: error
+          path: |
+            perax-market-adapters/meteora-dlmm-runtime/src
+            perax-market-adapters/meteora-dlmm-runtime/test
+            perax-market-adapters/meteora-dlmm-runtime/package-lock.json
+            perax-market-adapters/meteora-dlmm-runtime/tsconfig.json
+            perax-market-adapters/meteora-dlmm-runtime/vendor
