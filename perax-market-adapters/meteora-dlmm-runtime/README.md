@@ -12,7 +12,7 @@ npm ci --ignore-scripts --no-audit --no-fund
 npm run verify
 ```
 
-`bootstrap.mjs` reconstructs the reviewed TypeScript source and deterministic dependency lock from checked-in artifacts and verifies both SHA-256 checksums before installation.
+`bootstrap.mjs` reconstructs the reviewed TypeScript source and deterministic dependency lock from checked-in artifacts. It verifies the reviewed source checksum and validates the lockfile structure and exact approved dependency declarations before `npm ci` independently checks package-lock consistency.
 
 ## Runtime responsibilities
 
@@ -68,4 +68,4 @@ The runtime is an executor, not a policy authority. The contract independently c
 - Absence of host-fee and transfer-hook routes.
 - Actual quote spent and actual PEX received after CPI.
 
-No production activation is permitted until the APC numerical policy, recovery slippage, settlement policy, pool address, quote source, and product policies have been formally approved and initialized.
+No production activation is permitted until the APC numerical policy, settlement slippage limit, settlement policy, pool address, quote source, and product policies have been formally approved and initialized.
