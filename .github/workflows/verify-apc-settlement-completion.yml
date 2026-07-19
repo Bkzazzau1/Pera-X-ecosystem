@@ -33,9 +33,22 @@ jobs:
       - name: Verify Rust formatting, unit tests, and compilation
         working-directory: perax-contracts
         run: |
-          cargo +1.79.0 fmt --all -- --check
-          cargo +1.79.0 test --locked --all-targets
-          cargo +1.79.0 check --locked --all-targets
+          mkdir -p ../verification-logs
+          set +e
+          cargo +1.79.0 fmt --all -- --check > ../verification-logs/rust-format.log 2>&1
+          fmt_status=$?
+          cargo +1.79.0 test --locked --all-targets > ../verification-logs/rust-test.log 2>&1
+          test_status=$?
+          cargo +1.79.0 check --locked --all-targets > ../verification-logs/rust-check.log 2>&1
+          check_status=$?
+          set -e
+          for log in ../verification-logs/rust-*.log; do
+            echo "===== ${log} actionable output ====="
+            grep -E "^(error(\[[^]]+\])?:|warning:)|^ *--> |^ *\|" "${log}" | tail -n 220 || true
+          done
+          if [ "${fmt_status}" -ne 0 ] || [ "${test_status}" -ne 0 ] || [ "${check_status}" -ne 0 ]; then
+            exit 1
+          fi
 
       - name: Verify contract source, tokenomics, and TypeScript
         working-directory: perax-contracts
@@ -61,13 +74,14 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           npm run verify
 
-      - name: Upload reviewed Meteora source and lock
+      - name: Upload verification evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: meteora-runtime-reviewed-source
-          if-no-files-found: error
+          name: apc-settlement-completion-evidence
+          if-no-files-found: warn
           path: |
+            verification-logs
             perax-market-adapters/meteora-dlmm-runtime/src
             perax-market-adapters/meteora-dlmm-runtime/test
             perax-market-adapters/meteora-dlmm-runtime/package-lock.json
