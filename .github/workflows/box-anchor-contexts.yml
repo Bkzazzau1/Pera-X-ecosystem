@@ -28,6 +28,7 @@ jobs:
       - name: Install Agave SBF tools
         shell: bash
         run: |
+          rustup toolchain install 1.85.0 --profile minimal
           sh -c "$(curl -sSfL https://release.anza.xyz/v3.1.14/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 
@@ -64,7 +65,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          cargo build-sbf --manifest-path programs/perax-core/Cargo.toml --sbf-out-dir target/deploy 2>&1 | tee /tmp/boxed-sbf.log
+          RUSTUP_TOOLCHAIN=1.85.0 cargo build-sbf --manifest-path programs/perax-core/Cargo.toml --sbf-out-dir target/deploy 2>&1 | tee /tmp/boxed-sbf.log
           grep -E "Stack offset of [0-9]+ exceeded max offset|overwrites values in the frame" /tmp/boxed-sbf.log || true
 
       - name: Upload SBF diagnostics
