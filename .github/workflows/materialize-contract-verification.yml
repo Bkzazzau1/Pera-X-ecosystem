@@ -1,0 +1,72 @@
+name: Materialize Verified Contract Files
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.head_ref == 'verify/apc-settlement-completion-20260719'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout verification branch
+        uses: actions/checkout@v4
+        with:
+          ref: verify/apc-settlement-completion-20260719
+          fetch-depth: 0
+
+      - name: Set up Rust 1.79
+        uses: dtolnay/rust-toolchain@1.79.0
+        with:
+          components: rustfmt
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Materialize tested source and lock
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('perax-contracts/programs/perax-core/src/market_cpi.rs')
+          source = path.read_text()
+          old = '''pub const MEMO_PROGRAM_ID: Pubkey =
+              anchor_lang::solana_program::pubkey!("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");'''
+          new = '''pub const MEMO_PROGRAM_ID: Pubkey = Pubkey::new_from_array([
+              5, 74, 83, 90, 153, 41, 33, 6, 77, 36, 232, 113, 96, 218, 56, 124,
+              124, 53, 181, 221, 188, 146, 187, 129, 228, 31, 168, 64, 65, 5, 68, 141,
+          ]);'''
+          if old in source:
+              path.write_text(source.replace(old, new))
+          elif 'Pubkey::new_from_array([' not in source:
+              raise SystemExit('Memo program repair is neither pending nor present')
+          PY
+          cd perax-contracts
+          cargo +1.79.0 fmt --all
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run validate:tokenomics
+          npm run validate:settlement
+          npm run typecheck
+          npm audit --omit=dev --audit-level=high
+          cargo +1.79.0 fmt --all -- --check
+          cargo +1.79.0 test --locked --all-targets
+          cargo +1.79.0 check --locked --all-targets
+
+      - name: Commit verified files
+        run: |
+          git add perax-contracts/programs/perax-core/src perax-contracts/package.json perax-contracts/package-lock.json perax-contracts/vendor
+          if git diff --cached --quiet; then
+            echo 'Verified contract files are already materialized.'
+            exit 0
+          fi
+          git config user.name 'Pera-X verification automation'
+          git config user.email 'actions@github.com'
+          git commit -m 'Materialize verified contract repair and dependencies'
+          git push origin HEAD:verify/apc-settlement-completion-20260719
